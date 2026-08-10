@@ -1,0 +1,1 @@
+{"tag":"emojis","paths":{"/emojis":{"get":{"id":"emojis/get","summary":"Get emojis","desc":"Lists all the emojis available to use on GitHub.","tags":["emojis"]}}}}

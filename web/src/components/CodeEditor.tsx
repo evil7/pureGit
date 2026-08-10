@@ -23,6 +23,7 @@ import { useCodeTheme } from "@/hooks/useCodeTheme";
 import { useTheme } from "@/hooks/useTheme";
 import { createCmEditor } from "@/lib/codemirror";
 import { cn } from "@/lib/utils";
+import type { GraphQLSchema } from "graphql";
 
 interface Props {
   value: string;
@@ -40,6 +41,10 @@ interface Props {
   fill?: boolean;
   /** 只读（调试面板返回体展示等；编辑态亦不可编辑、无光标） */
   readOnly?: boolean;
+  /** GraphQL 语言专属：运行时 schema（调试面板 GraphQL 编辑器传 debug-graphql 的 schema，驱动智能补全/诊断） */
+  graphqlSchema?: GraphQLSchema | null;
+  /** JSON 语言专属：JSON-schema（调试面板 REST body 传 ReqOperation.body，驱动字段级补全） */
+  jsonSchema?: unknown;
 }
 
 export function CodeEditor({
@@ -52,6 +57,8 @@ export function CodeEditor({
   className,
   fill,
   readOnly,
+  graphqlSchema,
+  jsonSchema,
 }: Props) {
   const { codeThemeId, codeTheme } = useCodeTheme();
   const { theme } = useTheme();
@@ -100,6 +107,8 @@ export function CodeEditor({
       dark,
       colors,
       readOnly,
+      graphqlSchema,
+      jsonSchema,
       onChange: (v) => {
         lastValueRef.current = v;
         onChange(v);
@@ -111,7 +120,18 @@ export function CodeEditor({
       cmRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [preview, lang, wrap, indentMode, indentSize, dark, codeThemeId, readOnly]);
+  }, [
+    preview,
+    lang,
+    wrap,
+    indentMode,
+    indentSize,
+    dark,
+    codeThemeId,
+    readOnly,
+    graphqlSchema,
+    jsonSchema,
+  ]);
 
   // 外部 value 变化时同步进 CM6（避免覆盖用户输入中/失焦回写）
   useEffect(() => {

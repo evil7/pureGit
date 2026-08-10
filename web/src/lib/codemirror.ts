@@ -25,6 +25,7 @@ import {
   rectangularSelection,
   crosshairCursor,
   placeholder as cmPlaceholder,
+  tooltips as cmTooltips,
   Decoration,
 } from "@codemirror/view";
 import {
@@ -34,13 +35,13 @@ import {
   foldKeymap,
   syntaxHighlighting,
   HighlightStyle,
-  StreamLanguage,
 } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 import { indentWithTab, defaultKeymap, history, historyKeymap } from "@codemirror/commands";
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
+import { jsonSchemaCompletion } from "@/lib/json-schema-completion";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { lintKeymap } from "@codemirror/lint";
+import { lintKeymap, lintGutter } from "@codemirror/lint";
 import { javascript } from "@codemirror/lang-javascript";
 import { markdown } from "@codemirror/lang-markdown";
 import { json } from "@codemirror/lang-json";
@@ -54,81 +55,23 @@ import { cpp } from "@codemirror/lang-cpp";
 import { rust } from "@codemirror/lang-rust";
 import { go } from "@codemirror/lang-go";
 import { php } from "@codemirror/lang-php";
+import { graphql as cmGraphql, lint as cmGraphqlLint } from "cm6-graphql";
+import type { GraphQLSchema } from "graphql";
 import type { HighlightTokens } from "@/lib/code-theme";
 
 /**
- * GraphQL 语言（CM6 官方 StreamLanguage 手写 tokenizer）
- *
- * npm 无官方 @codemirror/lang-graphql / @lezer/graphql（实测 404），用 StreamLanguage
- * 标准 API 实现轻量高亮：注释(#)/字符串(含块字符串)/数字/变量($x)/关键字/类型名/字段名/标点。
- * 配合 buildHighlightStyle 的既有 tag 配色（keyword/string/number/typeName/propertyName 等）。
- */
-const GQL_KEYWORDS = new Set([
-  "query",
-  "mutation",
-  "subscription",
-  "fragment",
-  "on",
-  "true",
-  "false",
-  "null",
-  "schema",
-  "type",
-  "interface",
-  "union",
-  "enum",
-  "scalar",
-  "directive",
-  "extend",
-  "input",
-  "implements",
-  "repeatable",
-]);
-
-const graphqlLang = StreamLanguage.define({
-  name: "graphql",
-  startState: () => ({}),
-  token(stream) {
-    // 注释 #
-    if (stream.match("#", false)) {
-      stream.skipToEnd();
-      return "comment";
-    }
-    // 块字符串 """..."""
-    if (stream.match('"""', false)) {
-      stream.match('"""');
-      while (!stream.eol() && !stream.match('"""', false)) stream.next();
-      stream.match('"""');
-      return "string";
-    }
-    // 字符串（含未闭合）
-    if (stream.match(/"(?:[^"\\\n]|\\.)*"?/, true)) return "string";
-    // 数字
-    if (stream.match(/-?\d+(?:\.\d+)?(?:[eE][+-]?\d+)?/, true)) return "number";
-    // 变量 $name
-    if (stream.match(/\$[A-Za-z_][A-Za-z0-9_]*/, true)) return "variableName";
-    // 标识符：关键字 / 类型名（大写开头）/ 字段名
-    if (stream.match(/[A-Za-z_][A-Za-z0-9_]*/, true)) {
-      const word = stream.current();
-      if (GQL_KEYWORDS.has(word)) return "keyword";
-      if (/^[A-Z]/.test(word)) return "typeName";
-      return "propertyName";
-    }
-    // 标点
-    if (stream.match(/[{}()[\]:,!|&@=]/, true)) return "punctuation";
-    // 空白
-    if (stream.eatSpace()) return null;
-    // 其他单字符
-    stream.next();
-    return null;
-  },
-});
-
-/**
  * 语言 id → CM6 语言扩展（linguist 全量匹配后映射，见 lib/languages.ts）。
- * 缺语言（text 或未收录）回退无高亮纯文本。LanguageSupport / StreamLanguage 均为 Extension。
+ * 缺语言（text 或未收录）回退无高亮纯文本。LanguageSupport 均为 Extension。
+ *
+ * graphql 语言用官方 cm6-graphql（graphiql 同源）：Lezer 解析高亮 + schema 驱动补全/诊断
+ * （补全 = completion，诊断 = 独立 lint 扩展 + lintGutter，两者分离需分别挂载）。
+ * 无 schema 时仅高亮（lint/补全自动降级为空，无噪音）；加载 schema 后补全字段/参数/枚举。
+ *
+ * showErrorOnInvalidSchema: false —— cm6-graphql 默认 true，会运行 validateSchema 把
+ * GitHub 官方 schema 自身的结构不一致（如 Node.id 未弃用而 Project.id 弃用）标为 lint 错误；
+ * GitHub 官方 explorer 同样忽略这些，故关闭，lint 仅保留查询本身的 getDiagnostics。
  */
-const LANG_SUPPORT: Record<string, () => Extension> = {
+const LANG_SUPPORT: Record<string, (graphqlSchema?: GraphQLSchema | null) => Extension> = {
   javascript: () => javascript({ jsx: true, typescript: false }),
   typescript: () => javascript({ typescript: true, jsx: true }),
   jsx: () => javascript({ jsx: true }),
@@ -145,13 +88,22 @@ const LANG_SUPPORT: Record<string, () => Extension> = {
   rust: () => rust(),
   go: () => go(),
   php: () => php(),
-  graphql: () => graphqlLang,
+  graphql: (schema) => [
+    cmGraphql(schema ?? undefined, { showErrorOnInvalidSchema: false }),
+    // 语法/语义诊断（非法字段/参数）：gutter 标记 + hover tooltip（docs/debug-page.md §10.2）；
+    // 仅 graphql 语言挂载（其他语言无 lint 源，避免空 gutter）
+    cmGraphqlLint,
+    lintGutter(),
+  ],
 };
 
-/** 获取语言扩展（未知语言返回 null，仅纯文本编辑） */
-export function cmLanguageFor(inferLangId: string): Extension | null {
+/** 获取语言扩展（未知语言返回 null，仅纯文本编辑；graphql 语言可带 schema 驱动补全） */
+export function cmLanguageFor(
+  inferLangId: string,
+  graphqlSchema?: GraphQLSchema | null,
+): Extension | null {
   const factory = LANG_SUPPORT[inferLangId];
-  return factory ? factory() : null;
+  return factory ? factory(graphqlSchema) : null;
 }
 
 /**
@@ -231,6 +183,10 @@ export interface CmOptions {
   };
   /** 只读模式（展示用；无光标/无输入/保留选择复制） */
   readOnly?: boolean;
+  /** GraphQL 语言专属：运行时 schema（驱动字段/参数/枚举补全与诊断；null = 仅高亮） */
+  graphqlSchema?: GraphQLSchema | null;
+  /** JSON 语言专属：JSON-schema（驱动 REST body 字段级补全；见 json-schema-completion.ts） */
+  jsonSchema?: unknown;
   /** diff 行类型映射：行索引 → add/del（为行加背景装饰） */
   diffLines?: Array<{ from: number; to: number; type: "add" | "del" }>;
 }
@@ -312,6 +268,8 @@ export function createCmEditor(
     dark,
     colors,
     readOnly = false,
+    graphqlSchema,
+    jsonSchema,
     diffLines,
   } = opts;
 
@@ -345,6 +303,10 @@ export function createCmEditor(
       ".cm-activeLine": {
         backgroundColor: `${colors.bg === "#ffffff" ? "#f6f8fa" : "#ffffff08"}`,
       },
+      // tooltip（补全/诊断）溢出编辑器边界时不被容器裁剪，且盖过页面 sticky 层（navbar/topbar）
+      ".cm-tooltip": {
+        zIndex: 1000,
+      },
     },
     { dark },
   );
@@ -352,11 +314,14 @@ export function createCmEditor(
   // 语法高亮规则（完整 token 调色板注入当前主题）
   const highlightStyle = syntaxHighlighting(buildHighlightStyle(colors.tokens));
 
-  // 语言扩展（有高亮则启用；调用一次避免重复实例）
-  const langExt = cmLanguageFor(lang);
+  // 语言扩展（有高亮则启用；调用一次避免重复实例；graphql 语言带 schema 驱动补全）
+  const langExt = cmLanguageFor(lang, graphqlSchema);
 
   // 基础扩展（各能力独立，模块化组合）
   const baseExtensions: Extension[] = [
+    // tooltip 定位：fixed + 挂 document.body——补全/诊断框脱离编辑器所在滚动容器，
+    // 溢出编辑器顶部/底部不被 overflow 裁剪、不被 sticky 行遮挡（z-index 由 custom.css 提升）
+    cmTooltips({ position: "fixed", parent: document.body }),
     // 行号
     lineNumbers(),
     highlightActiveLineGutter(),
@@ -379,6 +344,8 @@ export function createCmEditor(
     wrap ? EditorView.lineWrapping : [],
     // 语言（有高亮则启用）
     ...(langExt ? [langExt] : []),
+    // JSON-schema 驱动的字段级补全（REST body；json 语言 + 提供 schema 时挂载）
+    ...(jsonSchema ? [jsonSchemaCompletion(jsonSchema)] : []),
     // 语法高亮规则
     highlightStyle,
     // 占位符（官方 placeholder 扩展；只读模式不显示）

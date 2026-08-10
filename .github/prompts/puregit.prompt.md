@@ -19,7 +19,7 @@ argument-hint: "可选：本次要开发/研讨的具体任务"
 - **后端**：Cloudflare Pages Worker，只做**四件事 + 探活**（架构红线 2，详见 `docs/architecture.md`）：
   - ① OAuth2 令牌管理：`/$auth/login`、`/$auth/callback`、`/$auth/pat`（**PAT 直接登录**——github.com 主站受限时绕过授权页）、`/$auth/session`（GET 恢复 / **POST 补全用户元数据，token 验证防伪造**）、`/$auth/logout`、`/$auth/sessions`（会话列表）、`/$auth/revoke`（撤销授权）；`client_secret` 仅存 Worker Secret；
   - ② CLI git 镜像端点自动代理：clone / pull / push 流量自动转发到 GitHub（git 凭据用 PAT）；
-  - ③ Wiki 内容代理（`/$wiki/*`）；④ Raw 内容代理（`/$raw/*`）；另含 `/$healthz` 健康检查探活（dev-fast.mjs 专用）。
+  - ③ Wiki 内容代理（`/$wiki/*`）；④ Raw 内容代理（`/$raw/*`）；另含 `/$healthz` 健康检查探活（通用在线探活）。
   - **API 调试工具（`/$debug`）为纯前端路由**（App.tsx lazy 页，前端 SPA 调试面板，GraphQL/REST 统一，worker 完全不参与、无鉴权，token 复用主站会话）。
 - **CLI 集成（镜像端点自动代理）**：worker 对外提供**镜像端点**，将 git 流量自动代理转发到 GitHub；用户侧通过「配置替换镜像」方式接入，例如 `git config --global url.<worker镜像端点>/.insteadOf https://github.com/`。
 

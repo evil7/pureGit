@@ -124,7 +124,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchRawSmart`/`rawUrlToProxy`/`rawImgFallbackSrc` | ✗ | ✗ | ✅ 直连优先 | ✅ `/$raw/{o}/{r}/{ref}/{p}` | ❌ | raw.githubusercontent.com 直连（CORS 可用时）→ 失败自动降级 `/$raw` 代理（README 图片等，MarkdownView onError 触发）；代理上游白名单仅 raw，匿名闸 `PROXY_ALLOW_ANON` |
 | **Worker 端** | | | | | | |
 | `/$auth/login` `/$auth/callback` `/$auth/pat` `/$auth/session`（GET 恢复 / **POST 补全用户元数据，worker 用 token 验证身份防伪造**） `/$auth/logout` `/$auth/prefs`（KV 键 `prefs:{userId}`） `/$auth/revoke` | — | — | — | ✅ | — | worker 专属 |
-| `/$healthz`（健康检查探活；dev-fast.mjs 探活 + 浏览器调试，无条件轻量 JSON） | — | — | — | ✅ | — | worker 专属 |
+| `/$healthz`（健康检查探活；通用在线探活（外部监控/浏览器调试），无条件轻量 JSON） | — | — | — | ✅ | — | worker 专属 |
 | git 镜像端点代理（clone/pull/push） | — | — | — | ✅ | — | worker 专属 |
 | **已下线** | | | | | | |
 | ~~`/$debug/session` 身份校验 API~~ | — | — | — | ~~✅~~ | — | **已删除**：`/$debug` 为纯前端路由（`web/src/App.tsx` lazy 页），worker 完全不参与，`DEBUG_ROUTE_ENABLE` 环境变量一并移除；调试页前端直连 api.github.com（复用主站会话 token 或匿名） |

@@ -6,7 +6,7 @@ argument-hint: "需要实现/修改哪个鉴权端点或会话逻辑"
 
 # PureGit Worker OAuth2 令牌管理
 
-Worker 位于 `worker/`，共四件事 + 探活（架构红线 2，详见 `architecture.md`）：① **OAuth2 令牌管理**（本文档）；② **CLI git 镜像代理**（见 `cli-git-mirror` 技能）；③ **Wiki 内容代理**（`/$wiki/*`）；④ **Raw 内容代理**（`/$raw/*`）；另含 `/$healthz` 健康检查探活（dev-fast.mjs 专用）。**API 调试工具（`/$debug`）为纯前端路由**（App.tsx lazy 页，worker 不参与、无鉴权）。
+Worker 位于 `worker/`，共四件事 + 探活（架构红线 2，详见 `architecture.md`）：① **OAuth2 令牌管理**（本文档）；② **CLI git 镜像代理**（见 `cli-git-mirror` 技能）；③ **Wiki 内容代理**（`/$wiki/*`）；④ **Raw 内容代理**（`/$raw/*`）；另含 `/$healthz` 健康检查探活（通用在线探活）。**API 调试工具（`/$debug`）为纯前端路由**（App.tsx lazy 页，worker 不参与、无鉴权）。
 
 ## 架构约束（红线）
 
@@ -36,7 +36,7 @@ Worker 位于 `worker/`，共四件事 + 探活（架构红线 2，详见 `archi
 | `/$auth/pat` | POST | **PAT 直接登录**：body `{ pat, deviceId? }` → `GET /user`（Bearer PAT）验证 + 读 `X-OAuth-Scopes` 推断读写 → 存 KV（`authMethod: "pat"`）→ 下发 httpOnly cookie → 返回 `{ token, user, scopes, grantedScopes, expiresAt }`。GitHub 主站受限时绕过 OAuth 授权页；PAT 只存 KV（服务端），前端不落 localStorage |
 | `/$auth/session` | GET | 读 cookie → 查 KV 取 token → 返回 `{ token, user, scopes, grantedScopes, expiresAt }`（供前端恢复内存令牌；`lastSeenAt` 节流 ≥1h 更新） |
 | `/$auth/session` | **POST** | **补全用户元数据**：OAuth 回调网络受限时 `/user` 降级（login/userId 空）→ 前端补全后写回 KV。body `{ login, userId, avatarUrl }`；**worker 用会话 token 请求 `GET /user` 验证声称身份与真实一致才写回**，不一致 403 `identity_mismatch`（防任意登录用户冒充任意 userId）；仅补缺省不覆盖 |
-| `/$healthz` | GET | 健康检查探活：无条件轻量 JSON `{ ok, service, ts }`，无业务逻辑（dev-fast.mjs 探活专用，防误判 worker 卡死） |
+| `/$healthz` | GET | 健康检查探活：无条件轻量 JSON `{ ok, service, ts }`，无业务逻辑（通用在线探活：外部监控/浏览器调试） |
 | `/$auth/logout` | POST | 删除 KV 键 + 清除 cookie → 前端清内存令牌 |
 | `/$auth/sessions` | GET | 当前用户全部会话**元数据**（含 isCurrent，**绝不返回 token**） |
 | `/$auth/sessions/:id/logout` | POST | 本地登出指定设备——仅删 KV 会话（GitHub 端授权保留）；登出当前设备顺带清 cookie |

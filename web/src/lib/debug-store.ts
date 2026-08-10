@@ -77,6 +77,8 @@ export const PRESET_COLLECTION: CollectionItem[] = [
     name: "__schema",
     request: {
       ...EMPTY_REQUEST,
+      protocol: "graphql",
+      method: "query",
       query: "query { __schema { queryType { name } mutationType { name } types { name kind } } }",
     },
     createdAt: 0,
@@ -86,6 +88,8 @@ export const PRESET_COLLECTION: CollectionItem[] = [
     name: "__type(Organization)",
     request: {
       ...EMPTY_REQUEST,
+      protocol: "graphql",
+      method: "query",
       query:
         'query { __type(name: "Organization") { name fields { name type { kind name ofType { kind name ofType { name } } } } } }',
     },
@@ -96,6 +100,8 @@ export const PRESET_COLLECTION: CollectionItem[] = [
     name: "__type(User)",
     request: {
       ...EMPTY_REQUEST,
+      protocol: "graphql",
+      method: "query",
       query:
         'query { __type(name: "User") { name fields { name type { kind name ofType { kind name ofType { name } } } } } }',
     },
@@ -106,6 +112,8 @@ export const PRESET_COLLECTION: CollectionItem[] = [
     name: "__type(Repository)",
     request: {
       ...EMPTY_REQUEST,
+      protocol: "graphql",
+      method: "query",
       query:
         'query { __type(name: "Repository") { name fields { name type { kind name ofType { kind name ofType { name } } } } } }',
     },
@@ -116,6 +124,8 @@ export const PRESET_COLLECTION: CollectionItem[] = [
     name: "viewer",
     request: {
       ...EMPTY_REQUEST,
+      protocol: "graphql",
+      method: "query",
       query: "query { viewer { login name avatarUrl } }",
     },
     createdAt: 0,

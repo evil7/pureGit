@@ -8,11 +8,9 @@
  *   /$debug 为纯前端路由直连 vite，不转发 worker——定稿）
  * - 实测：首屏 22s → ~0.5s，10 并发 27.6s → 8.3s
  *
- * v2：纯 Node.js 跨平台增强
- * - 启动前自动清理 8787/5173 端口占用（残留进程/上次崩溃遗留），保证干净启动
- * - worker 健康检查 + 自动重启：每 3s 探活 8787，连续 3 次失败判定卡死 →
- *   强制结束并自动拉起（wrangler dev 偶发卡死问题，实测两次）
- * - 启动顺序：worker 就绪（健康检查通过）后再起 web，消除首请求 500/502
+ * 职责（纯 Node.js 跨平台，保持简单只做统一启动）：
+ * - 启动前以 Node 原生方式清理 8787/5173 端口占用（残留进程/上次崩溃遗留），保证干净启动
+ * - 统一启动顺序：清空端口 → 启动 worker → 启动 web（不做健康检查与自动重启）
  * - 无 PowerShell/bash 专属语法，全部经 Node child_process + 平台通用命令，
  *   保证 Windows/macOS/Linux 普遍适用
  *
@@ -24,7 +22,6 @@ import { existsSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { join, resolve } from "node:path";
 import { createConnection } from "node:net";
-import { get as httpGet } from "node:http";
 
 const root = resolve(fileURLToPath(import.meta.url), "../..");
 const isWin = process.platform === "win32";
@@ -32,13 +29,6 @@ const pnpm = isWin ? "pnpm.cmd" : "pnpm";
 
 const WORKER_PORT = 8787;
 const WEB_PORT = 5173;
-// 健康检查探活 worker 专用端点（/$healthz）：
-// 之前探 "/" 会走 ASSETS/SPA fallback（读构建产物，冷启动/热重载时 >2s 超时）
-// → 误判卡死反复 SIGKILL 重启。专用端点无业务逻辑即时返回，杜绝误杀。
-const HEALTH_PATH = "/$healthz";
-const HEALTH_INTERVAL_MS = 5000; // 健康检查间隔
-const HEALTH_MAX_FAIL = 5; // 连续失败次数 → 判定卡死（放宽：wrangler 热重载/冷启动偶发慢）
-const START_TIMEOUT_MS = 90_000; // 启动等待上限（wrangler 首次启动下载 workerd 可能较慢）
 
 /* ── 端口工具（纯 Node 跨平台） ───────────────────────────── */
 
@@ -129,40 +119,15 @@ async function clearPort(port, label) {
   }
 }
 
-/* ── 健康检查 ───────────────────────────────────────────── */
-
-/** HTTP GET 探活：2s 超时内返回任意响应即视为存活 */
-function httpPing(port, path, timeoutMs = 2000) {
-  return new Promise((resolve_) => {
-    const req = httpGet({ host: "127.0.0.1", port, path, timeout: timeoutMs }, (res) => {
-      res.resume();
-      resolve_(res.statusCode !== undefined);
-    });
-    req.once("timeout", () => req.destroy());
-    req.once("error", () => resolve_(false));
-  });
-}
-
-/** 等待服务就绪（健康检查通过） */
-async function waitReady(port, label, timeoutMs = START_TIMEOUT_MS) {
-  const start = Date.now();
-  while (Date.now() - start < timeoutMs) {
-    if (await httpPing(port, HEALTH_PATH)) return true;
-    await new Promise((r) => setTimeout(r, 500));
-  }
-  console.warn(`[warn] ${label} 启动超时（${timeoutMs / 1000}s），继续但不保障就绪`);
-  return false;
-}
-
 /* ── 子进程管理 ─────────────────────────────────────────── */
 
-const children = new Map(); // label → { child, restart, port }
+const children = new Map(); // label → child
 let shuttingDown = false;
 
-function run(label, args, { restart = false } = {}) {
+function run(label, args) {
   // shell: true + 命令字符串（避免 DEP0190 警告）；参数均为硬编码，无注入风险
   const child = spawn(`${pnpm} ${args.join(" ")}`, { cwd: root, shell: true });
-  children.set(label, { child, restart, port: null });
+  children.set(label, child);
 
   // 按行输出：readline 缓冲到换行符再回调，避免 chunk 在行中被切断导致
   // 两个子进程输出交错、出现 [worker] [web] 这类双标签/错标签（修复）
@@ -173,20 +138,8 @@ function run(label, args, { restart = false } = {}) {
   }
 
   child.on("exit", (code, signal) => {
-    const entry = children.get(label);
     console.log(`[${label}] exited with code ${code} signal ${signal ?? ""}`);
-    if (entry?.restart && !shuttingDown) {
-      console.log(`[${label}] 自动重启中...`);
-      // 等端口释放再拉起（避免 EADDRINUSE）
-      setTimeout(async () => {
-        if (shuttingDown) return;
-        const port = entry.port;
-        if (port) await waitPortFree(port);
-        run(label, args, { restart: true });
-      }, 500);
-    } else {
-      shutdown();
-    }
+    shutdown();
   });
 
   return child;
@@ -246,36 +199,9 @@ async function main() {
     console.warn("       若仅前端调试可忽略；需要完整功能请先 `pnpm --filter web build`。");
   }
 
-  // 3) 启动 worker（健康检查通过后再起 web）
-  const workerEntry = run("worker", ["--filter", "worker", "dev"], {
-    restart: true,
-  });
-  workerEntry.port = WORKER_PORT;
-
-  console.log(`[setup] 等待 worker（${WORKER_PORT}）就绪...`);
-  await waitReady(WORKER_PORT, "worker");
-  console.log(`[setup] worker 就绪，启动 web（${WEB_PORT}）...`);
-  const webEntry = run("web", ["--filter", "web", "dev"], { restart: false });
-  webEntry.port = WEB_PORT;
-
-  // 4) worker 健康检查：每 3s 探活，连续失败 → 判定卡死 → 重启
-  let failCount = 0;
-  setInterval(async () => {
-    const entry = children.get("worker");
-    if (!entry || shuttingDown) return;
-    const alive = await httpPing(WORKER_PORT, HEALTH_PATH);
-    if (alive) {
-      failCount = 0;
-      return;
-    }
-    failCount += 1;
-    if (failCount >= HEALTH_MAX_FAIL) {
-      failCount = 0;
-      console.log(`[worker] 健康检查连续 ${HEALTH_MAX_FAIL} 次失败，判定卡死，重启中...`);
-      const { child } = entry;
-      if (!child.killed) child.kill("SIGKILL"); // 卡死进程 SIGTERM 可能无效，直接 SIGKILL
-    }
-  }, HEALTH_INTERVAL_MS);
+  // 3) 统一启动：worker → web（顺序固定，不做健康检查与自动重启）
+  run("worker", ["--filter", "worker", "dev"]);
+  run("web", ["--filter", "web", "dev"]);
 }
 
 main().catch((e) => {

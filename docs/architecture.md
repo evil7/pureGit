@@ -101,7 +101,7 @@ flowchart LR
 | Raw 内容代理 | `/$raw/{owner}/{repo}/{ref}/{path...}` GET——服务端 fetch `raw.githubusercontent.com/{o}/{r}/{ref}/{path}`，透传上游 Content-Type；**README 图片/资源降级通道**（前端直连 raw 失败 → onError 自动切 `/$raw`） |
 | 代理匿名闸 | `PROXY_ALLOW_ANON` env：`true`（默认）允许匿名使用 `/$wiki`/`/$raw`；`false` 强制登录（未带有效会话 401 `auth_required`）。上游白名单仅 raw.githubusercontent.com（防 SSRF）+ 仅 GET + 15s 超时 |
 
-**系统路由优先级**：系统前缀保留段（`/$auth`、`/$wiki`、`/$raw`、`/$healthz`、git 端点 `owner/repo.git/...`）**优先于**用户级通配 `/:owner/:repo`。`$` 符号前缀：GitHub 用户名/仓库名规范**不含 `$`**（仅字母数字+连字符）→ 系统前缀永不被用户路由占用（`$` 明确标识内部高优先级功能性路由）。**`/$debug` 为纯前端路由**（App.tsx lazy 页，worker 不参与）。判断顺序（`worker/src/index.ts`）：`/$healthz`（无条件探活）→ auth（switch）→ 系统代理（`/$wiki`/`/$raw` 含匿名闸）→ git → 前端静态资源（SPA fallback，`/$debug` 由前端路由接管）。
+**系统路由优先级**：系统前缀保留段（`/$auth`、`/$wiki`、`/$raw`、`/$healthz`、git 端点 `owner/repo.git/...`）**优先于**用户级通配 `/:owner/:repo`。`$` 符号前缀：GitHub 用户名/仓库名规范**不含 `$`**（仅字母数字+连字符）→ 系统前缀永不被用户路由占用（`$` 明确标识内部高优先级功能性路由）。**`/$debug` 为纯前端路由**（App.tsx lazy 页，worker 不参与）。判断顺序（`worker/src/index.ts`）：`/$healthz`（无条件探活）→ auth（switch）→ 系统代理（`/$wiki`/`/$raw` 含匿名闸）→ git → 前端静态资源（SPA fallback，`/$debug` 由前端路由接管）。**API 调试工具（`/$debug`）GraphQL schema 双通道**：主通道本地 `web/public/github-graphql.min.json`（由 `scripts/build-graphql-schema.mjs` 从 `docs/github-schema.graphql` 官方快照离线生成，秒加载/匿名可用）→ 刷新按钮带 token 在线 introspection 兜底（仅内存缓存）；驱动左栏 Schema 树（字段可展开返回类型子字段浏览）+ 编辑器智能补全（cm6-graphql）。
 
 ### CLI 接入（镜像端点自动代理）
 

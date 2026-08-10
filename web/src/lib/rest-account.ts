@@ -210,7 +210,7 @@ export async function fetchBlockedUsers(token: string): Promise<BlockedUser[]> {
   );
 }
 
-/** 屏蔽用户（PUT /user/blocks/{username}，无请求体，需完全控制） */
+/** 屏蔽用户（PUT /user/blocks/{username}，无请求数据，需完全控制） */
 export async function blockUser(token: string, username: string): Promise<void> {
   await typedRequest<void>(token, (octokit) => octokit.rest.users.block({ username }));
 }

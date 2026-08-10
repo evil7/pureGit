@@ -1,0 +1,475 @@
+/**
+ * 请求编辑器（上部：请求行 + 请求 Tabs + 当前 Tab 内容）
+ *
+ * Postman 风格：请求行（方法下拉 + URL + Send）+ Tabs（REST Headers/Body；
+ * GraphQL Query/Variables/Headers）+ Body 类型快速切换（JSON/FormUrl/FormData/Raw）。
+ * - 方法下拉：RESTful（GET/HEAD/POST/PATCH/PUT/DELETE/OPTIONS）/ GraphQL（query/mutation），
+ *   选方法即定协议；切 REST 自动规整 URL、POST/PUT 默认 JSON、GET/HEAD/OPTIONS 无请求数据
+ * - Headers：必填锁定行 + token 行（Authorization）+ 用户行（KeyValueTable）
+ * - GraphQL Query：CodeEditor 挂 cm6-graphql schema 驱动补全（字段/参数/枚举 + 诊断）
+ * - Body：json/text 用 CodeEditor；form 用 KeyValueTable；none 提示
+ */
+import { useEffect, useState } from "react";
+import { ChevronDown, List, Save, Send, Wand2 } from "lucide-react";
+import { Button } from "@/components/ui/button";
+import {
+  InputGroup,
+  InputGroupAddon,
+  InputGroupInput,
+  InputGroupText,
+} from "@/components/ui/input-group";
+import {
+  DropdownMenu,
+  DropdownMenuContent,
+  DropdownMenuGroup,
+  DropdownMenuItem,
+  DropdownMenuLabel,
+  DropdownMenuSeparator,
+  DropdownMenuTrigger,
+} from "@/components/ui/dropdown-menu";
+import { SegmentedControl } from "@/components/SegmentedControl";
+import { CodeEditor } from "@/components/CodeEditor";
+import { cn } from "@/lib/utils";
+import { KeyValueTable } from "./KeyValueTable";
+import { ParamsTable } from "./ParamsTable";
+import { GraphQLLogo } from "./GraphQLLogo";
+import { buildUrlFromParams, syncParamsFromUrl } from "@/lib/debug-params";
+import { METHOD_COLOR, REST_API_BASE, normalizeRestUrl, CT_BY_BODY } from "./rest-meta";
+import type { DebugRequest, BodyType, HeaderRow } from "@/lib/debug-api";
+import type { GraphQLSchema } from "graphql";
+
+const REST_METHODS = ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] as const;
+const GQL_METHODS = ["query", "mutation"] as const;
+
+interface RequestEditorProps {
+  t: (k: string) => string;
+  req: DebugRequest;
+  /** 请求更新：patch 或全量 updater（方法切换/bodyType 需读取当前值） */
+  set: (update: Partial<DebugRequest> | ((r: DebugRequest) => DebugRequest)) => void;
+  tokenPlaceholder: string;
+  requiredHeaders: HeaderRow[];
+  gqlSchema: GraphQLSchema | null;
+  /** 当前 REST 端点的 requestBody schema（json content-type；字段级补全数据源） */
+  bodySchema: Record<string, unknown> | null;
+  setFormFile: (i: number, file: File | null) => void;
+  running: boolean;
+  onRun: () => void;
+  onSaveHistory: () => void;
+  canSaveHistory: boolean;
+  autoSave: boolean;
+  leftHidden: boolean;
+  onToggleLeft: () => void;
+}
+
+export function RequestEditor({
+  t,
+  req,
+  set,
+  tokenPlaceholder,
+  requiredHeaders,
+  gqlSchema,
+  bodySchema,
+  setFormFile,
+  running,
+  onRun,
+  onSaveHistory,
+  canSaveHistory,
+  autoSave,
+  leftHidden,
+  onToggleLeft,
+}: RequestEditorProps) {
+  // ── 请求 Tab（Postman 风格：REST Params/Headers/Body；GraphQL Query/Variables/Headers） ──
+  type ReqTab = "params" | "headers" | "body" | "query" | "variables";
+  const [reqTab, setReqTab] = useState<ReqTab>(req.protocol === "graphql" ? "query" : "headers");
+  // 协议/方法变化时重置到默认 Tab（GraphQL→Query，REST→Headers）
+  useEffect(() => {
+    setReqTab(req.protocol === "graphql" ? "query" : "headers");
+  }, [req.protocol, req.method]);
+  /** GET/HEAD/OPTIONS 无请求数据（不渲染 Body tab） */
+  const noBodyMethod =
+    req.protocol === "rest" &&
+    (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS");
+
+  // ── 表格行操作（请求头 / form） ──
+  const addHeaderRow = () =>
+    set({ headers: [...req.headers, { key: "", value: "", enabled: true }] });
+  const deleteHeaderRow = (i: number) => set({ headers: req.headers.filter((_, xi) => xi !== i) });
+
+  /** 点选请求数据类型：设 bodyType + 自动写/更新 Content-Type 请求头（用户可改可删） */
+  const applyBodyType = (v: BodyType) => {
+    set((r) => {
+      const ct = CT_BY_BODY[v];
+      if (!ct) return { ...r, bodyType: v };
+      const has = r.headers.some((h) => h.key.trim().toLowerCase() === "content-type");
+      const headers = has
+        ? r.headers.map((h) =>
+            h.key.trim().toLowerCase() === "content-type"
+              ? { ...h, key: "Content-Type", value: ct, enabled: true }
+              : h,
+          )
+        : [...r.headers, { key: "Content-Type", value: ct, enabled: true }];
+      return { ...r, bodyType: v, headers };
+    });
+  };
+  const addFormRow = () =>
+    set({ formRows: [...(req.formRows ?? []), { key: "", value: "", enabled: true }] });
+  const deleteFormRow = (i: number) =>
+    set({ formRows: (req.formRows ?? []).filter((_, xi) => xi !== i) });
+
+  /** 手动格式化当前请求数据（GraphQL → formatGraphQL；JSON → prettyJson） */
+  const formatBody = () => {
+    if (req.protocol === "graphql") {
+      // 延迟 import 避免首屏加载 graphql 格式化逻辑
+      void import("@/lib/debug-api").then(({ formatGraphQL }) => {
+        const out = formatGraphQL(req.query);
+        if (out !== null) set({ query: out });
+      });
+      return;
+    }
+    if (req.bodyType === "json") {
+      void import("@/lib/debug-api").then(({ prettyJson }) => {
+        const out = prettyJson(req.body);
+        if (out !== req.body) set({ body: out });
+      });
+    }
+    // text/form 无格式化语义
+  };
+
+  return (
+    <div className="flex min-h-0 flex-1 flex-col">
+      {/* 请求行：[方法] [URL] [Send]；区内 sticky（List 折叠按钮已移至请求 Tabs 行前） */}
+      <div className="sticky top-0 z-10 flex items-center gap-1.5 border-b bg-card p-1.5">
+        {/* 方法下拉（DropdownMenu 分区：RESTful / GraphQL；选方法即定协议） */}
+        <DropdownMenu>
+          <DropdownMenuTrigger asChild>
+            <Button
+              variant="outline"
+              className="h-8 w-29.5 shrink-0 gap-1 px-2.5 text-xs font-medium"
+            >
+              {req.protocol === "graphql" ? (
+                <GraphQLLogo className="size-3.5 text-violet-600 dark:text-violet-400" />
+              ) : (
+                <GlobeMethodIcon />
+              )}
+              <span className={cn("truncate", METHOD_COLOR[req.method] ?? "text-foreground")}>
+                {req.method}
+              </span>
+              <ChevronDown className="ml-auto size-3.5 shrink-0 text-muted-foreground" />
+            </Button>
+          </DropdownMenuTrigger>
+          <DropdownMenuContent align="start" className="w-29.5">
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
+                <GlobeMethodIcon />
+                RESTful
+              </DropdownMenuLabel>
+              {REST_METHODS.map((m) => (
+                <DropdownMenuItem
+                  key={m}
+                  onClick={() =>
+                    set((r) => ({
+                      ...r,
+                      method: m,
+                      protocol: "rest",
+                      // 切 REST：完整 URL（如残留 GraphQL 完整地址）规整为 path
+                      url: normalizeRestUrl(r.url),
+                      // POST/PUT 自动切到 Body tab 并默认 JSON
+                      ...(m === "POST" || m === "PUT" ? { bodyType: "json" as BodyType } : {}),
+                      // GET/HEAD/OPTIONS 无请求数据
+                      ...(m === "GET" || m === "HEAD" || m === "OPTIONS"
+                        ? { bodyType: "none" as BodyType }
+                        : {}),
+                    }))
+                  }
+                >
+                  <span className={cn("font-mono text-xs font-semibold", METHOD_COLOR[m])}>
+                    {m}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+            <DropdownMenuSeparator />
+            <DropdownMenuGroup>
+              <DropdownMenuLabel className="flex items-center gap-1.5 text-xs">
+                <GraphQLLogo className="size-3 text-violet-600 dark:text-violet-400" />
+                GraphQL
+              </DropdownMenuLabel>
+              {GQL_METHODS.map((m) => (
+                <DropdownMenuItem key={m} onClick={() => set({ method: m, protocol: "graphql" })}>
+                  <span className={cn("font-mono text-xs font-semibold", METHOD_COLOR[m])}>
+                    {m}
+                  </span>
+                </DropdownMenuItem>
+              ))}
+            </DropdownMenuGroup>
+          </DropdownMenuContent>
+        </DropdownMenu>
+        {/* URL / 端点输入：InputGroup 固定前缀 https://api.github.com（仅输 path）
+              REST 可编辑 path；GraphQL 同样 addon 前缀 + 只读 /graphql（端点固定） */}
+        <InputGroup className="h-8 min-w-0 flex-1">
+          <InputGroupAddon>
+            <InputGroupText className="font-mono text-xs">{REST_API_BASE}</InputGroupText>
+          </InputGroupAddon>
+          {req.protocol === "rest" ? (
+            <InputGroupInput
+              value={req.url}
+              onChange={(e) => {
+                const url = e.target.value;
+                // 反向联动：改 URL → 同步 query 参数（path 占位同步）
+                set({ url, params: syncParamsFromUrl(req.params, url) });
+              }}
+              placeholder={t("urlPlaceholder")}
+              className="h-7 font-mono text-xs"
+            />
+          ) : (
+            <InputGroupInput
+              value="/graphql"
+              readOnly
+              className="h-7 cursor-not-allowed font-mono text-xs"
+            />
+          )}
+        </InputGroup>
+        {/* Send（凭据已由 Headers 表格 Authorization 行控制，身份下拉已删） */}
+        <Button
+          size="sm"
+          className="h-8 shrink-0 gap-1.5"
+          onClick={onRun}
+          disabled={running}
+          title={`${t("execute")} (Ctrl+Enter)`}
+        >
+          <Send className="size-3.5" />
+          {t("execute")}
+        </Button>
+        {/* 手动保存历史：autoSave 关闭时显示（发送后保存当前请求+响应） */}
+        {!autoSave && (
+          <Button
+            size="icon"
+            variant="ghost"
+            className="h-8 w-8 shrink-0 px-0 text-muted-foreground hover:text-foreground"
+            onClick={onSaveHistory}
+            disabled={!canSaveHistory}
+            title={t("history.save")}
+          >
+            <Save className="size-3.5" />
+          </Button>
+        )}
+      </div>
+
+      {/* ── 请求 Tabs（Postman 风格：REST Headers/Body；GraphQL Query/Variables/Headers） ── */}
+      <div className="flex items-center gap-0.5 border-b px-1.5">
+        {/* 左栏折叠（List 图标）：置于请求头 tabs 前方 */}
+        <Button
+          variant="ghost"
+          size="icon"
+          className={cn(
+            "mr-1 h-7 w-7 shrink-0 rounded-full px-0",
+            !leftHidden ? "bg-accent text-foreground" : "text-muted-foreground",
+          )}
+          onClick={onToggleLeft}
+          title={leftHidden ? "Show history/API" : "Hide history/API"}
+        >
+          <List className="size-3.5" />
+        </Button>
+        {(req.protocol === "graphql"
+          ? [
+              // 请求头放最前方
+              { value: "headers", label: t("headers") },
+              { value: "query", label: t("query") },
+              { value: "variables", label: t("variables") },
+            ]
+          : [
+              // 参数放最前方（path/query 双向联动，对照响应面板文档填值）
+              { value: "params", label: t("params.tab") },
+              { value: "headers", label: t("headers") },
+              // GET/HEAD/OPTIONS 无请求数据：不渲染 Body tab
+              ...(!noBodyMethod ? [{ value: "body", label: t("body") }] : []),
+            ]
+        ).map((tab) => (
+          <button
+            key={tab.value}
+            type="button"
+            onClick={() => setReqTab(tab.value as ReqTab)}
+            className={cn(
+              "border-b-2 px-3 py-1.5 text-xs font-medium transition-colors",
+              reqTab === tab.value
+                ? "border-foreground text-foreground"
+                : "border-transparent text-muted-foreground hover:text-foreground",
+            )}
+          >
+            {tab.label}
+          </button>
+        ))}
+        {/* 请求数据类型选项栏：tabs 右侧（JSON/FormUrl/FormData/Raw；点选自动设置 Content-Type） */}
+        {req.protocol === "rest" && !noBodyMethod && (
+          <div className="ml-auto flex items-center gap-1 pl-2">
+            <SegmentedControl<BodyType>
+              size="xs"
+              variant="tab"
+              value={req.bodyType}
+              onValueChange={applyBodyType}
+              options={[
+                { value: "json", label: "JSON" },
+                { value: "form-urlencoded", label: "FormUrl" },
+                { value: "form-data", label: "FormData" },
+                { value: "text", label: "Raw" },
+              ]}
+            />
+            {req.bodyType === "json" && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 shrink-0 px-0 text-muted-foreground hover:text-foreground"
+                onClick={formatBody}
+                title={t("body.format")}
+              >
+                <Wand2 className="size-3.5" />
+              </Button>
+            )}
+          </div>
+        )}
+        {/* GraphQL 格式化按钮：tabs 右侧 */}
+        {req.protocol === "graphql" && (
+          <div className="ml-auto flex items-center gap-1 pl-2">
+            <Button
+              size="icon"
+              variant="ghost"
+              className="h-6 w-6 shrink-0 px-0 text-muted-foreground hover:text-foreground"
+              onClick={formatBody}
+              title={t("body.format")}
+            >
+              <Wand2 className="size-3.5" />
+            </Button>
+          </div>
+        )}
+      </div>
+
+      {/* ── 当前 Tab 内容（flex-1 内滚） ── */}
+      <div className="min-h-0 flex-1 overflow-y-auto">
+        {reqTab === "params" && req.protocol === "rest" && (
+          /* Params：path/query 参数（编辑联动 URL；对照响应面板文档自动填充） */
+          <div className="p-2">
+            <ParamsTable
+              t={t}
+              rows={req.params}
+              onChange={(params) => {
+                // 正向联动：改参数 → 重建 URL
+                set({ params, url: buildUrlFromParams(req.url, params) });
+              }}
+            />
+          </div>
+        )}
+        {reqTab === "headers" && (
+          /* Headers：必填锁定行（Lock 占位）+ token 行（Authorization）+ 用户行 */
+          <div className="p-2">
+            <KeyValueTable
+              rows={req.headers}
+              onChange={(headers) => set({ headers })}
+              required={requiredHeaders}
+              onDeleteRow={deleteHeaderRow}
+              onAddRow={addHeaderRow}
+              keyPlaceholder={t("headers.keyPlaceholder")}
+              valuePlaceholder={t("headers.valuePlaceholder")}
+              enabledTitle={t("headers.enabled")}
+              deleteTitle={t("history.delete")}
+              addTitle={t("headers.add")}
+              lockTitle={t("headers.lock")}
+              tokenValue={tokenPlaceholder}
+              fillTokenTitle={t("headers.fillToken")}
+              clearTokenTitle={t("headers.clearToken")}
+            />
+          </div>
+        )}
+        {reqTab === "body" && req.protocol === "rest" && (
+          /* Body：类型选项栏在 tabs 右侧；none 提示；form 表格；json/text 编辑器（fill 撑满） */
+          <div className="flex min-h-full flex-col p-2">
+            {req.bodyType === "none" ? (
+              <p className="px-1 py-2 text-[11px] text-muted-foreground">{t("body.noneHint")}</p>
+            ) : req.bodyType === "form-urlencoded" || req.bodyType === "form-data" ? (
+              <KeyValueTable
+                rows={req.formRows ?? []}
+                onChange={(formRows) => set({ formRows })}
+                fileMode={req.bodyType === "form-data"}
+                onFileChange={setFormFile}
+                onDeleteRow={deleteFormRow}
+                onAddRow={addFormRow}
+                keyPlaceholder={t("headers.keyPlaceholder")}
+                valuePlaceholder={t("headers.valuePlaceholder")}
+                enabledTitle={t("headers.enabled")}
+                deleteTitle={t("history.delete")}
+                addTitle={t("headers.add")}
+                lockTitle={t("headers.lock")}
+                uploadTitle={t("body.upload")}
+                fileHint={t("body.fileHint")}
+              />
+            ) : (
+              /* json/text 编辑器：直接作为外层 flex 子项（fill 撑满，与 GraphQL query 同构）
+                 overflow-visible：补全 tooltip 溢出编辑器底部/右侧不被裁剪
+                 relative z-10：lint 诊断框向上溢出编辑器顶部时盖过 tabs 行/sticky 请求行 */
+              <CodeEditor
+                value={req.body}
+                onChange={(v) => set({ body: v })}
+                path={`body.${req.bodyType === "json" ? "json" : "txt"}`}
+                placeholder={t("bodyPlaceholder")}
+                fill
+                toolbar={false}
+                className="relative z-10 flex-1 overflow-visible rounded-md"
+                jsonSchema={bodySchema}
+              />
+            )}
+          </div>
+        )}
+        {reqTab === "query" && req.protocol === "graphql" && (
+          /* GraphQL 查询体（schema 就绪后挂载智能补全 + 语法诊断；
+             overflow-visible 防 tooltip 裁剪；relative z-10 防诊断框向上被 tabs 行遮挡） */
+          <div className="flex min-h-full flex-col p-2">
+            <CodeEditor
+              value={req.query}
+              onChange={(v) => set({ query: v })}
+              path="query.graphql"
+              placeholder={t("queryPlaceholder")}
+              fill
+              toolbar={false}
+              className="relative z-10 flex-1 overflow-visible rounded-md"
+              graphqlSchema={gqlSchema}
+            />
+          </div>
+        )}
+        {reqTab === "variables" && req.protocol === "graphql" && (
+          /* GraphQL Variables（fill 撑满；overflow-visible + relative z-10 防 tooltip 裁剪/遮挡） */
+          <div className="flex min-h-full flex-col p-2">
+            <CodeEditor
+              value={req.variables}
+              onChange={(v) => set({ variables: v })}
+              path="variables.json"
+              placeholder={t("variablesPlaceholder")}
+              fill
+              toolbar={false}
+              className="relative z-10 flex-1 overflow-visible rounded-md"
+            />
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+/** REST 地球图标（方法下拉中的 RESTful 标识，独立于 lucide Globe 以保持语义） */
+function GlobeMethodIcon() {
+  return (
+    <svg
+      xmlns="http://www.w3.org/2000/svg"
+      viewBox="0 0 24 24"
+      fill="none"
+      stroke="currentColor"
+      strokeWidth="2"
+      strokeLinecap="round"
+      strokeLinejoin="round"
+      className="size-3.5 text-emerald-600 dark:text-emerald-400"
+      aria-hidden="true"
+    >
+      <circle cx="12" cy="12" r="10" />
+      <path d="M12 2a14.5 14.5 0 0 0 0 20 14.5 14.5 0 0 0 0-20" />
+      <path d="M2 12h20" />
+    </svg>
+  );
+}

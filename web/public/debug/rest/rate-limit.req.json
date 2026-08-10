@@ -1,0 +1,1 @@
+{"tag":"rate-limit","paths":{"/rate_limit":{"get":{"id":"rate-limit/get","summary":"Get rate limit status for the authenticated user","tags":["rate-limit"]}}}}

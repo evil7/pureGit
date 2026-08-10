@@ -1,0 +1,1 @@
+{"tag":"meta","paths":{"/":{"get":[{"s":"200","desc":"Response"}]},"/meta":{"get":[{"s":"200","desc":"Response"},{"s":"304","desc":"Not modified"}]},"/octocat":{"get":[{"s":"200","desc":"Response"}]},"/versions":{"get":[{"s":"200","desc":"Response"},{"s":"404","desc":"Resource not found"}]},"/zen":{"get":[{"s":"200","desc":"Response"}]}}}

@@ -1,0 +1,1 @@
+{"tag":"oidc","paths":{"/orgs/{org}/actions/oidc/customization/sub":{"get":[{"s":"200","desc":"A JSON serialized template for OIDC subject claim customization"}],"put":[{"s":"201","desc":"Empty response"},{"s":"403","desc":"Forbidden"},{"s":"404","desc":"Resource not found"}]}}}

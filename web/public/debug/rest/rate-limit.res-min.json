@@ -1,0 +1,1 @@
+{"tag":"rate-limit","paths":{"/rate_limit":{"get":[{"s":"200","desc":"Response"},{"s":"304","desc":"Not modified"},{"s":"404","desc":"Resource not found"}]}}}

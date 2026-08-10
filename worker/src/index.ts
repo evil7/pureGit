@@ -7,7 +7,7 @@
  * 3. Wiki 内容代理（/$wiki/...，raw.githubusercontent.com/wiki——无官方 API，
  *    ADR 扩展；服务端 fetch 解决前端 raw 被墙）
  * 4. Raw 内容代理（/$raw/...，任意仓库任意 ref 下任意路径；README 图片降级等）
- * 5. 健康检查（/$healthz，dev-fast.mjs 探活）
+ * 5. 健康检查（/$healthz，通用在线探活）
  *
  * ⚠️ API 调试工具（/$debug）已于 改为**纯前端路由**（App.tsx lazy 页），
  * Worker 不再参与——前端直连 api.github.com（当前会话 token 或匿名），无鉴权需求，
@@ -75,8 +75,7 @@ export default {
     }
 
     // 健康检查（/$healthz）：无条件轻量响应，不经过任何业务逻辑
-    // （dev-fast.mjs 探活用——之前探 "/" 走 ASSETS/SPA fallback 慢，冷启动易误判
-    // 卡死导致反复重启；专用端点返回即时 JSON，杜绝误杀）
+    // （通用在线探活端点：外部监控程序/本机调试均可探活，返回即时 JSON）
     if (url.pathname === "/$healthz") {
       return new Response(
         JSON.stringify({

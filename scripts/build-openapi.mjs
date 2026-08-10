@@ -1,28 +1,24 @@
 /**
  * GitHub REST API OpenAPI 压缩脚本
  *
- * 从官方 `github/rest-api-description` 的完整 OpenAPI（~12.9MB）生成 debug 面板
- * 集合树所需的精简版（~0.32MB）：
+ * 从官方 `github/rest-api-description` 的完整 OpenAPI（~12.9MB，docs/github-openapi.json
+ * 快照，由 scripts/update-schemas.mjs 一键下载）生成 debug 面板集合树所需的精简版
+ * （~0.32MB）：
  * - 保留：info + paths（每个 path 的 get/post/patch/put/delete/head：
  *   operationId / summary / description / tags / parameters（name,in,required,schema 精简）/
  *   requestBody（content 类型清单）/ responses（状态码清单））
  * - 丢弃：components（全部 schema 定义——体积大头，集合树用不到）
  *
- * 用法（完整版下载后运行）：
- *   1. 下载官方 OpenAPI（jsDelivr 已 gzip，需 --compressed）：
- *      curl.exe -L --compressed -o web/public/github-openapi.json \
- *        https://cdn.jsdelivr.net/gh/github/rest-api-description@main/descriptions/api.github.com/api.github.com.json
- *   2. `pnpm --filter web build:openapi`
- *      （输入 web/public/github-openapi.json，输出 web/public/github-openapi.min.json）
- *   3. 删除完整版（不进仓库）：Remove-Item web/public/github-openapi.json
- *   注意：octokit 运行时不带 OpenAPI（仅 TS 类型），故需下载官方文件；min.json 已入库。
+ * 用法：`pnpm update:schemas`（下载 + 构建一步到位）或 `pnpm --filter web build:openapi`
+ * （仅构建，需 docs/github-openapi.json 已存在）
+ * 注意：octokit 运行时不带 OpenAPI（仅 TS 类型），故需官方文件；min.json 已入库。
  */
 import { readFileSync, writeFileSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
-const SRC = join(root, "web", "public", "github-openapi.json");
+const SRC = join(root, "docs", "github-openapi.json");
 const OUT = join(root, "web", "public", "github-openapi.min.json");
 
 const raw = JSON.parse(readFileSync(SRC, "utf8"));

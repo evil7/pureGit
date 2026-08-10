@@ -35,7 +35,7 @@ export function rewriteGitUrl(requestUrl: URL): URL {
 /** 透传请求头：移除 host（由 fetch 重算），其余按 git 协议原样保留 */
 function buildForwardHeaders(request: Request): Headers {
   const headers = new Headers(request.headers);
-  // fetch 会自动设置 Host；Content-Length 由请求体重建
+  // fetch 会自动设置 Host；Content-Length 由请求数据重建
   headers.delete("host");
   headers.delete("content-length");
   // git 智能协议要求：Content-Type（application/x-git-*）、Accept、Git-Protocol、User-Agent 均透传

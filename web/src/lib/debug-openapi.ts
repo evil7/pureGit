@@ -1,16 +1,20 @@
 /**
  * GitHub REST API OpenAPI 解析（调试工具用）
  *
- * 数据源：`/github-openapi.min.json`（scripts/build-openapi.mjs 从官方
- * `github/rest-api-description` 压缩生成，0.32MB / 808 路径）。octokit SDK 仅带
- * TS 类型（@octokit/openapi-types）**不带运行时 OpenAPI**，故下载官方描述文件。
+ * 数据源：`/debug/rest/*`（scripts/build-schemas-octokit.mjs 从 @octokit/openapi deref
+ * 转录，按 tag 拆三层：req / res-min / res-full + index.json）。完整 OpenAPI 的
+ * body schema（requestBody）全量保留——字段级 JSON 补全数据源（REST 缺补全的根因修复）。
  *
- * 用途：debug 面板「集合」自动构建 REST API 树（按 tag 分组）——点按端点自动
- * 填充方法 / 路径 / 参数。按需 fetch（仅 debug 页访问时加载），不增加首屏 bundle。
+ * 消费方式（由 schema-loader.ts 统一加载 + 缓存，页面组件不直接 fetch）：
+ * - RestIndex（index.json）：tag 骨架（首屏）
+ * - RestReqFile + RestResMinFile（tag 懒加载）→ buildGroupFromTag → OpenApiGroup（集合树）
+ * - RestResFullFile（文档 drawer 按需）
+ *
+ * OpenApiGroup/OpenApiEndpoint 是集合树 UI 的消费类型（method/path/op/label + resMin）。
  */
-import type { DebugRequest } from "./debug-api";
+import type { DebugParam, DebugRequest } from "./debug-api";
 
-/** 精简版 OpenAPI 结构（与 scripts/build-openapi.mjs 输出对应） */
+/** OpenAPI parameter 精简（name/in/required/type/desc） */
 export interface OpenApiParam {
   name: string;
   in: "path" | "query" | "header" | "cookie";
@@ -19,114 +23,127 @@ export interface OpenApiParam {
   desc?: string;
 }
 
-export interface OpenApiOperation {
+/** 请求部分 operation（req 文件内单条） */
+export interface ReqOperation {
   id?: string;
   summary?: string;
   desc?: string;
   tags?: string[];
   params?: OpenApiParam[];
+  /** requestBody content-type 列表（POST/PUT/PATCH 等） */
   bodyTypes?: string[];
-  responses?: string[];
+  /** content-type → schema 全量（字段级补全数据源） */
+  body?: Record<string, unknown>;
 }
 
 export type OpenApiMethod = "get" | "post" | "patch" | "put" | "delete" | "head";
 
-export interface OpenApiDoc {
-  info?: { title?: string; version?: string };
-  paths: Record<string, Partial<Record<OpenApiMethod, OpenApiOperation>>>;
+/** 响应状态码精简（res-min 文件内单条） */
+export interface ResMinItem {
+  s: string;
+  desc?: string;
 }
 
-/** 分组后的集合节点（tag → 端点列表） */
+/* ── 转录产物文件结构（web/public/debug/rest/） ───────────── */
+
+export interface RestTagInfo {
+  tag: string;
+  ops: number;
+  reqKB: number;
+  resMinKB: number;
+  resFullKB: number;
+}
+
+export interface RestIndex {
+  version: string;
+  tags: RestTagInfo[];
+}
+
+/** <tag>.req.json */
+export interface RestReqFile {
+  tag: string;
+  paths: Record<string, Partial<Record<OpenApiMethod, ReqOperation>>>;
+}
+
+/** <tag>.res-min.json */
+export interface RestResMinFile {
+  tag: string;
+  paths: Record<string, Partial<Record<OpenApiMethod, ResMinItem[]>>>;
+}
+
+/** <tag>.res-full.json（responses 完整 schema，文档 drawer 浏览） */
+export interface RestResFullFile {
+  tag: string;
+  paths: Record<string, Partial<Record<OpenApiMethod, Record<string, unknown>>>>;
+}
+
+/* ── 集合树 UI 消费类型 ───────────────────────────────────── */
+
 export interface OpenApiGroup {
   tag: string;
   items: OpenApiEndpoint[];
 }
 
 export interface OpenApiEndpoint {
-  /** 分组 key（无 tag 时用首段路径） */
+  /** 分组 key */
   tag: string;
   path: string;
   method: OpenApiMethod;
-  op: OpenApiOperation;
+  op: ReqOperation;
   /** 人类可读名：summary 或 operationId */
   label: string;
+  /** 响应状态码列表（res-min；集合树状态码展示） */
+  resMin?: ResMinItem[];
 }
 
-let cached: OpenApiDoc | null = null;
-let loadPromise: Promise<OpenApiDoc | null> | null = null;
-
-/** 加载精简 OpenAPI（按需 fetch + 缓存；失败返回 null） */
-export function loadOpenApi(): Promise<OpenApiDoc | null> {
-  if (cached) return Promise.resolve(cached);
-  if (loadPromise) return loadPromise;
-  loadPromise = fetch("/github-openapi.min.json")
-    .then((r) => {
-      if (!r.ok) throw new Error(`openapi ${r.status}`);
-      return r.json();
-    })
-    .then((doc) => {
-      cached = doc as OpenApiDoc;
-      return cached;
-    })
-    .catch(() => {
-      loadPromise = null; // 失败允许重试
-      return null;
-    });
-  return loadPromise;
-}
-
-/** 端点分组 key：operation.tags[0] 或路径首段（/repos/... → repos） */
-function tagOf(path: string, op: OpenApiOperation): string {
-  if (op.tags?.[0]) return op.tags[0];
-  const seg = path.split("/").filter(Boolean)[0];
-  return seg || "misc";
-}
-
-/** 构建按 tag 分组的 REST 端点集合（按路径排序） */
-export function buildOpenApiGroups(doc: OpenApiDoc): OpenApiGroup[] {
-  const map = new Map<string, OpenApiEndpoint[]>();
-  const paths = Object.entries(doc.paths ?? {}).sort(([a], [b]) => a.localeCompare(b));
+/** 将 req + res-min 两个 tag 文件合并为集合树分组 */
+export function buildGroupFromTag(
+  reqFile: RestReqFile,
+  resMinFile: RestResMinFile | null,
+): OpenApiGroup {
+  const items: OpenApiEndpoint[] = [];
+  const paths = Object.entries(reqFile.paths ?? {}).sort(([a], [b]) => a.localeCompare(b));
   for (const [path, methods] of paths) {
     for (const [m, op] of Object.entries(methods ?? {})) {
       const method = m as OpenApiMethod;
       if (!op) continue;
-      const tag = tagOf(path, op);
-      const ep: OpenApiEndpoint = {
-        tag,
+      const resMin = resMinFile?.paths?.[path]?.[method] ?? undefined;
+      items.push({
+        tag: reqFile.tag,
         path,
         method,
         op,
         label: op.summary || op.id || `${method.toUpperCase()} ${path}`,
-      };
-      const list = map.get(tag) ?? [];
-      list.push(ep);
-      map.set(tag, list);
+        resMin,
+      });
     }
   }
-  return [...map.entries()]
-    .map(([tag, items]) => ({ tag, items }))
-    .sort((a, b) => a.tag.localeCompare(b.tag));
+  return { tag: reqFile.tag, items };
 }
 
-/** 将 OpenAPI 端点转为 DebugRequest（方法 + 路径 + 路径参数占位） */
+/** 将 OpenAPI 端点转为 DebugRequest（方法 + 路径 + 路径参数占位 + Params 表） */
 export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
-  const pathParams =
-    ep.op.params
-      ?.filter((p) => p.in === "path")
-      .map((p) => p.name)
-      .filter((n) => n) ?? [];
+  const pathParams = ep.op.params?.filter((p) => p.in === "path") ?? [];
+  const queryParams = ep.op.params?.filter((p) => p.in === "query") ?? [];
   let url = ep.path;
-  for (const p of pathParams) {
-    url = url.replace(`{${p}}`, `{${p}}`); // 保留占位符，用户自行替换
-  }
   // 常用参数默认值（repository/owner 常用占位）
   const defaults: Record<string, string> = {
     owner: "{owner}",
     repo: "{repo}",
     org: "{org}",
   };
-  for (const p of pathParams) {
-    url = url.replace(`{${p}}`, defaults[p] ?? `{${p}}`);
+  // Params 表：path 行带模板段位置 index（path[n] 徽章显示，误删占位可定位）；
+  // 值默认占位符 `{name}`（或常用占位）→ buildUrlFromParams 替换
+  const params: DebugParam[] = pathParams.map((p) => {
+    const name = p.name;
+    const segments = ep.path.split("/");
+    const idx = segments.findIndex((seg) => seg === `{${name}}`);
+    const placeholder = defaults[name] ?? `{${name}}`;
+    url = url.replace(`{${name}}`, placeholder);
+    return { name, in: "path" as const, value: placeholder, enabled: true, index: idx };
+  });
+  for (const p of queryParams) {
+    params.push({ name: p.name, in: "query" as const, value: "", enabled: true });
   }
   const method = ep.method.toUpperCase() as DebugRequest["method"];
   return {
@@ -139,5 +156,6 @@ export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
     body: "",
     bodyType: method === "GET" || method === "DELETE" || method === "HEAD" ? "none" : "json",
     formRows: [],
+    params,
   };
 }

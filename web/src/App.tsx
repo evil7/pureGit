@@ -102,9 +102,9 @@ const OrganizationsSettings = lazy(() => import("@/pages/settings/OrganizationsS
 const RepoSettingsPage = lazy(() => import("@/pages/settings/RepoSettingsPage"));
 const PreferencesSettings = lazy(() => import("@/pages/settings/PreferencesSettings"));
 const BlockedUsersSettings = lazy(() => import("@/pages/settings/BlockedUsersSettings"));
-/* API 调试工具（/$debug 纯前端路由）：三栏 GraphQL/REST 统一调试面板；
+/* API 调试工具（/$debug 纯前端路由）：统一 GraphQL/REST 调试面板；
    系统级页面，放 /:login 动态路由之前（静态段评分更高，双保险） */
-const DebugPage = lazy(() => import("@/pages/DebugPage"));
+const DebugPage = lazy(() => import("@/pages/debug"));
 const UserProfilePage = lazy(() =>
   import("@/pages/ProfilePages").then((m) => ({ default: m.UserProfilePage })),
 );

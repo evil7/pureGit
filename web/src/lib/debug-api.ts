@@ -36,7 +36,17 @@ export interface HeaderRow {
   token?: boolean;
 }
 
-/** REST 请求体类型（快速切换发送内容格式；form-urlencoded/form-data 均走表格） */
+/** REST 请求参数行（Params tab）：path 参数绑定 URL 占位段，query 参数绑定 URL query string */
+export interface DebugParam {
+  name: string;
+  in: "path" | "query";
+  value: string;
+  enabled?: boolean;
+  /** path 参数在 URL 模板中的段位置（split('/') 索引，静态来自端点模板；`path[n]` 徽章显示） */
+  index?: number;
+}
+
+/** REST 请求数据类型（快速切换发送内容格式；form-urlencoded/form-data 均走表格） */
 export type BodyType = "none" | "json" | "form-urlencoded" | "form-data" | "text";
 
 export interface DebugRequest {
@@ -50,17 +60,19 @@ export interface DebugRequest {
   variables: string;
   /** 附加请求头（Postman 风格 K/V 表格行） */
   headers: HeaderRow[];
-  /** REST 请求体内容类型 */
+  /** REST 请求数据内容类型 */
   bodyType: BodyType;
-  /** REST 请求体 */
+  /** REST 请求数据 */
   body: string;
   /** bodyType=form 时的 K/V 行（表格填写） */
   formRows: HeaderRow[];
+  /** REST 请求参数（Params tab：path/query；编辑联动 URL，见 debug-params.ts） */
+  params: DebugParam[];
 }
 
 export const EMPTY_REQUEST: DebugRequest = {
-  protocol: "graphql",
-  method: "query",
+  protocol: "rest",
+  method: "GET",
   url: "",
   query: "query { viewer { login } }",
   variables: "",
@@ -69,6 +81,7 @@ export const EMPTY_REQUEST: DebugRequest = {
   bodyType: "none",
   body: "",
   formRows: [],
+  params: [],
 };
 
 export interface DebugResult {
@@ -163,7 +176,7 @@ export async function executeDebug(
       const url = /^https?:\/\//.test(req.url.trim())
         ? req.url.trim()
         : `${REST_BASE}${req.url.startsWith("/") ? req.url : `/${req.url}`}`;
-      // 按 bodyType 构造请求体与 Content-Type（Postman 风格快速切换）
+      // 按 bodyType 构造请求数据与 Content-Type（Postman 风格快速切换）
       const formRows = req.formRows ?? [];
       // form 行有效：非空 key 即可（form-data 下已选文件的行也算）
       const hasFormRows = formRows.some((r) => r && r.enabled !== false && r.key?.trim());

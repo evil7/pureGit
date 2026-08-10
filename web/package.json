@@ -10,7 +10,9 @@
     "format": "oxfmt src",
     "format:check": "oxfmt --check src",
     "preview": "vite preview",
-    "build:openapi": "node ../scripts/build-openapi.mjs"
+    "build:openapi": "node ../scripts/build-openapi.mjs",
+    "build:gqlschema": "node ../scripts/build-graphql-schema.mjs",
+    "build:octoschema": "node ../scripts/build-schemas-octokit.mjs"
   },
   "dependencies": {
     "@codemirror/autocomplete": "^6.20.3",
@@ -45,6 +47,7 @@
     "@lezer/common": "^1.5.2",
     "@lezer/highlight": "^1.2.3",
     "@octokit/graphql": "^9.0.4",
+    "@octokit/graphql-schema": "^15.26.1",
     "@octokit/rest": "^22.0.1",
     "@radix-ui/react-slot": "^1.3.3",
     "@shikijs/langs": "^4.4.1",
@@ -54,8 +57,10 @@
     "animejs": "^4.5.0",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
+    "cm6-graphql": "^0.2.1",
     "cmdk": "^1.1.1",
     "diff": "^9.0.0",
+    "graphql": "^17.0.2",
     "i18next": "^26.3.6",
     "linguist-languages": "^9.4.0",
     "lucide-react": "^1.28.0",

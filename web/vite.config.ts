@@ -29,7 +29,7 @@ export default defineConfig({
         target: 'http://127.0.0.1:8787',
         changeOrigin: true,
       },
-      // 健康检查探活（worker /$healthz；2026-08-10，dev-fast.mjs 探活 + 浏览器调试）
+      // 健康检查探活（worker /$healthz；2026-08-10，通用在线探活 + 浏览器调试）
       '/$healthz': {
         target: 'http://127.0.0.1:8787',
         changeOrigin: true,
@@ -87,5 +87,30 @@ export default defineConfig({
   // 隐式设置，插件移除后需显式声明）。部署前必须 `pnpm --filter web build`。
   build: {
     outDir: 'dist/client',
+    rolldownOptions: {
+      output: {
+        // 重依赖分片（/$debug 懒加载触发时并行加载；docs/debug-page.md §12）：
+        // - graphql-vendor：graphql-js（schema 解析）+ cm6-graphql（补全/悬停）——
+        //   仅 debug 页（补全）使用，独立 chunk 避免打进共享 codemirror chunk
+        // - codemirror-vendor：CM6 全站编辑器工厂（CodeEditor）及其语言扩展、
+        //   lezer 解析器，独立 chunk（首屏不进，首次编辑页触发时加载）
+        // rolldown 按 groups 将匹配 node_modules 的模块归入命名 chunk；未匹配的
+        // 小依赖仍随使用方合并，避免碎片化。
+        codeSplitting: {
+          groups: [
+            {
+              name: 'graphql-vendor',
+              test: /node_modules\/(graphql|cm6-graphql)\//,
+              priority: 30,
+            },
+            {
+              name: 'codemirror-vendor',
+              test: /node_modules\/@?(codemirror|lezer|style-mod|w3c-keyname|crelt)\//,
+              priority: 20,
+            },
+          ],
+        },
+      },
+    },
   },
 })

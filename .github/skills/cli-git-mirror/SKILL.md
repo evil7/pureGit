@@ -32,7 +32,7 @@ git config --global url.https://<worker域名>/.insteadOf https://github.com/
 1. **路径重写**：原样保留 path，替换 host 为 `github.com`，转发到 `https://github.com<path>`
 2. **header 透传**：`Content-Type`、`Accept`、`User-Agent` 按 git 协议要求透传；移除 `Host`/`Content-Length` 由 fetch 重算
 3. **响应透传**：保留 `Content-Type`（`application/x-git-upload-pack-result` 等）、`Content-Length` 或 chunked（`Transfer-Encoding`）
-4. **请求体**：POST 体须原样转发（`request.body` 直通）
+4. **请求数据**：POST 体须原样转发（`request.body` 直通）
 5. **错误处理**：404 仓库不存在 / 403 无权限，透传 GitHub 状态码与 body
 
 ## 鉴权（push）

@@ -123,7 +123,13 @@ main > * {
 .page-enter {
   animation: page-enter 0.28s ease both;
 }
-
+/* ===== CodeMirror 弹层（补全/诊断 tooltip）层级提升（2026-08-10） =====
+ * codemirror.ts 已把 tooltip 挂到 document.body（fixed 定位，脱离编辑器滚动容器）——
+ * 此处 z-index 兜底：压过页面 sticky 层（请求行/请求 tabs 行/topbar），
+ * 诊断框向上溢出编辑器顶部时完整可见不被遮挡。 */
+.cm-tooltip {
+  z-index: 9999 !important;
+}
 /* ===== 列表项交错入场动画（加载完成后逐项增长进入，避免生硬塞入） =====
  * 配合 inline style animationDelay（如 i*60ms）实现逐项错峰出现；
  * fill-mode both：delay 期间保持 from（透明）→ 到位后播放进入。 */

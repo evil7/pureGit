@@ -1,0 +1,1 @@
+{"tag":"codes-of-conduct","paths":{"/codes_of_conduct":{"get":[{"s":"200","desc":"Response"},{"s":"304","desc":"Not modified"}]},"/codes_of_conduct/{key}":{"get":[{"s":"200","desc":"Response"},{"s":"304","desc":"Not modified"},{"s":"404","desc":"Resource not found"}]}}}
