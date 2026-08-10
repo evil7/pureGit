@@ -1,0 +1,17 @@
+{
+  "$schema": "./node_modules/oxfmt/configuration_schema.json",
+  "tabWidth": 2,
+  "useTabs": false,
+  "singleQuote": false,
+  "semi": true,
+  "printWidth": 100,
+  "trailingComma": "all",
+  "endOfLine": "lf",
+  "arrowParens": "always",
+  "ignorePatterns": [
+    "web/src/components/ui/**",
+    "**/dist/**",
+    "**/node_modules/**",
+    "web/public/github-openapi.min.json"
+  ]
+}

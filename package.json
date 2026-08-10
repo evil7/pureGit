@@ -1,0 +1,24 @@
+{
+  "name": "puregit",
+  "private": true,
+  "description": "纯粹的 GitHub 站点库浏览站点：React + shadcn/ui 前端 + Cloudflare Pages Worker (OAuth2 + CLI git 镜像代理)",
+  "scripts": {
+    "dev": "node scripts/dev-fast.mjs",
+    "build": "pnpm --filter web build",
+    "typegen": "pnpm --filter worker typegen",
+    "typecheck": "pnpm --filter web typecheck",
+    "lint": "pnpm --filter web lint",
+    "format": "oxfmt web/src worker/src worker/test scripts",
+    "format:check": "oxfmt --check web/src worker/src worker/test scripts",
+    "deploy": "pnpm --filter web build && pnpm --filter worker deploy",
+    "clean": "node scripts/clean.mjs --all",
+    "clean:cache": "node scripts/clean.mjs"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1",
+  "devDependencies": {
+    "oxfmt": "^0.62.0"
+  }
+}

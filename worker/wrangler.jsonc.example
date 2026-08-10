@@ -1,0 +1,79 @@
+/**
+ * PureGit Worker 部署配置模板（他人/二次部署用）
+ *
+ * 仓库自带的 wrangler.jsonc 为原作者生产配置（含其专属 KV id 与自定义域名），
+ * 部署前请基于本模板生成自己的配置：
+ *   copy worker/wrangler.jsonc.example worker/wrangler.jsonc
+ *
+ * 需要替换的项（见下方注释）：
+ *   1. vars.*  → 你的 GitHub OAuth App 与生产域名
+ *   2. kv_namespaces[0].id → `pnpm --filter worker kv:create` 输出的 id
+ *   3. routes → 不用自定义域名则保持删除（默认 *.workers.dev 即可）
+ *
+ * 生产密钥 GITHUB_CLIENT_SECRET 用 `wrangler secret put GITHUB_CLIENT_SECRET` 配置，
+ * 不要写入本文件。
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "puregit",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-03-10",
+	"observability": {
+		"enabled": true
+	},
+	"upload_source_maps": true,
+	/**
+	 * 本地 dev 固定端口 8787：vite.config.ts 的 server.proxy（/$auth、git 端点）写死转发到
+	 * 127.0.0.1:8787。⚠️ wrangler 4.118 检测到 AI agent 环境（AI_AGENT 变量）会把默认端口
+	 * 偏移到 8788（并启用 Local Explorer），不固定端口会导致 proxy 502（2026-08-08 实测）。
+	 */
+	"dev": {
+		"port": 8787
+	},
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	/**
+	 * 前端静态资产：指向 web 构建产物 dist/client。
+	 * run_worker_first: true —— 所有请求先进 Worker（/$auth/*、git 代理优先），
+	 * 其余经 env.ASSETS 服务前端 + Worker 内 SPA 回退（见 src/index.ts）。
+	 * 部署前必须先 `pnpm --filter web build`（根目录 `pnpm deploy` 已自动包含）。
+	 */
+	"assets": {
+		"directory": "../web/dist/client",
+		"binding": "ASSETS",
+		"run_worker_first": true
+	},
+	/**
+	 * OAuth2 与前端配置
+	 * GITHUB_CLIENT_SECRET 不在此配置（敏感）：本地用 .dev.vars，生产用 wrangler secret put
+	 */
+	"vars": {
+		"GITHUB_CLIENT_ID": "<你的 GitHub OAuth App Client ID>",
+		"GITHUB_OAUTH_CALLBACK": "https://<你的域名>/$auth/callback",
+		"SESSION_COOKIE_NAME": "puregit_session",
+		"FRONTEND_URL": "https://<你的域名>"
+	},
+	/**
+	 * KV 会话存储
+	 * 创建：`pnpm --filter worker kv:create`，把输出的 id 填入下方（勿使用原作者 id）
+	 * 本地开发: wrangler dev 默认使用本地模拟 KV，无需真实 id
+	 */
+	"kv_namespaces": [
+		{
+			"binding": "SESSIONS",
+			"id": "<pnpm --filter worker kv:create 输出的 namespace id>"
+		}
+	]
+	/**
+	 * routes（自定义域名）：不使用则保持删除——默认域名
+	 * `<name>.<你的子域>.workers.dev`（或 Pages 项目域）即可直接访问。
+	 * 需要自定义域名时取消注释并替换：
+	 */
+	// "routes": [
+	// 	{
+	// 		"pattern": "<你的域名>",
+	// 		"custom_domain": true
+	// 	}
+	// ]
+}

@@ -1,0 +1,530 @@
+/**
+ * 项目自定义样式（2026-08-07 从 index.css 分离）
+ *
+ * ⚠️ 重要：本文件存放**非 shadcn 脚手架**的自定义 CSS（动画/滚动条/代码行号等）。
+ * shadcn 脚手架（`pnpm dlx shadcn@latest add <组件>`）会**重置 `src/index.css`**，
+ * 若自定义样式混在其中会被一并覆盖丢失。分离后脚手架重置只影响 index.css，
+ * 本文件在 `main.tsx` 中于 index.css **之后**导入（可覆盖/追加，独立保存）。
+ *
+ * 依赖：使用 index.css 中 Tailwind v4 定义的 CSS 变量（--border/--muted-foreground 等），
+ * 运行时全局生效，无需重复定义。
+ */
+
+/* ===== markdown 渲染（2026-08-08 换用成品库 @uiw/react-markdown-preview） =====
+ * 库自带 GitHub 风格样式（.wmde-markdown）与深色模式（[data-color-mode]）。
+ * 仅需少量站点适配：
+ * - 背景透明：跟随站点背景（bg-card/background），而非库内置纯白/纯黑画布
+ * - 前景/代码块等颜色由库 [data-color-mode] 变量自动切换（MarkdownView 已传）
+ * - 标题 scroll-margin：blob 页 sticky 面包屑 top-14 下方留出空间（outline 面板点击滚动）
+ */
+
+/* 表面色完全跟随站点主题（2026-08-08 用户决策：去 GitHub 内置色板，简约跟随平台）：
+ * 库在 @media (prefers-color-scheme) 内 .wmde-markdown（0,1,0）定义明/暗两套 GitHub 色板
+ * （canvas #0d1117/#fff、fg #c9d1d9/#24292f…）与站点 zinc 主题色温不符；
+ * 这里用 .wmde-markdown[data-color-mode]（0,2,0）覆盖全部表面变量 → 站点变量，
+ * --color-prettylights-syntax-* 语法 token 保留库值（代码高亮必需）。
+ * 站点色：--background/--foreground/--muted/--muted-foreground/--border/--primary/
+ * --destructive/--chart-1(蓝)/--chart-2(绿)/--chart-3(灰蓝)/--chart-4(紫)/--chart-5(红)。
+ * GitHub alert 语义映射：note→chart-1、tip→chart-2、important→chart-4、warning→chart-3、
+ * caution→destructive（站点无黄/橙，warning 用灰蓝中性化，跟随平台色系）。 */
+.wmde-markdown[data-color-mode].wmde-markdown {
+  /* 双类 + 属性（0,3,0）压过库的 .wmde-markdown[data-color-mode*='dark']（0,2,0） */
+  /* 前景 */
+  --color-fg-default: var(--foreground);
+  --color-fg-muted: var(--muted-foreground);
+  --color-fg-subtle: var(--muted-foreground);
+  --color-text-primary: var(--foreground);
+  /* 背景（表格行/代码块/页面）跟随站点 */
+  --color-canvas-default: transparent;
+  --color-canvas-subtle: var(--muted);
+  /* 边框 / 中性（行内 code 背景等） */
+  --color-border-default: var(--border);
+  --color-border-muted: color-mix(in oklab, var(--foreground) 10%, transparent);
+  /* 行内 code 背景 = 站外 bg-muted 实色（2026-08-08：原 foreground 12% 透明与站外不一致） */
+  --color-neutral-muted: var(--muted);
+  /* 链接强调（官方蓝 → 站点 chart-1 蓝） */
+  --color-accent-fg: var(--chart-1);
+  --color-accent-emphasis: var(--chart-1);
+  --color-accent-subtle: color-mix(in oklab, var(--chart-1) 12%, transparent);
+  /* alerts：note/tip/important/warning/caution */
+  --color-success-fg: var(--chart-2);
+  --color-success-emphasis: var(--chart-2);
+  --color-success-subtle: color-mix(in oklab, var(--chart-2) 12%, transparent);
+  --color-done-fg: var(--chart-4);
+  --color-done-emphasis: var(--chart-4);
+  --color-done-subtle: color-mix(in oklab, var(--chart-4) 12%, transparent);
+  --color-attention-fg: var(--chart-3);
+  --color-attention-emphasis: var(--chart-3);
+  --color-attention-subtle: color-mix(in oklab, var(--chart-3) 12%, transparent);
+  --color-danger-fg: var(--destructive);
+  --color-danger-emphasis: var(--destructive);
+  --color-danger-subtle: color-mix(in oklab, var(--destructive) 12%, transparent);
+  /* 复制反馈：库自带复制按钮已禁用（MarkdownView disableCopy + 注入 lucide 按钮），
+     此变量不再使用；保留注释说明以防未来误启 */
+}
+
+.wmde-markdown[data-color-mode].wmde-markdown {
+  /* 双重类 + 属性选择器（0,3,0）压过库的 [data-color-mode] .wmde-markdown（0,2,0） */
+  background-color: transparent;
+  color: var(--color-fg-default);
+}
+.wmde-markdown :is(h1, h2, h3, h4, h5, h6)[id] {
+  scroll-margin-top: 96px;
+}
+
+/* ===== 色度统一（2026-08-08 用户反馈：markdown 与站外不一致） =====
+ * 链接：统一跟随站外 text-primary（--primary，暗色近白），hover 下划线（库 a:hover 已有）；
+ *       库 .wmde-markdown a（0,1,1）与 text-primary 同特异性且后加载 → 用 [data-color-mode] a（0,2,1）压过 */
+.wmde-markdown[data-color-mode] a {
+  color: var(--primary);
+}
+/* 表格表头：站外卡片/表头 muted 底（官方 GitHub th 同款 subtle），告别全透明素表 */
+.wmde-markdown th {
+  background-color: var(--muted);
+}
+/* 任务列表 checkbox 勾选色跟随站点（chart-2 绿） */
+.wmde-markdown input[type="checkbox"] {
+  accent-color: var(--chart-2);
+}
+/* GitHub alert：官方有 subtle 底色（note/tip/important/warning/caution 各自 12%），
+ * 库实现无背景（仅左边框+标题色）→ 补 subtle 底（--color-*-subtle 已在变量块映射） */
+.wmde-markdown .markdown-alert-note {
+  background-color: var(--color-accent-subtle);
+}
+.wmde-markdown .markdown-alert-tip {
+  background-color: var(--color-success-subtle);
+}
+.wmde-markdown .markdown-alert-important {
+  background-color: var(--color-done-subtle);
+}
+.wmde-markdown .markdown-alert-warning {
+  background-color: var(--color-attention-subtle);
+}
+.wmde-markdown .markdown-alert-caution {
+  background-color: var(--color-danger-subtle);
+}
+
+/* ===== 路由页面切换动画（fade + 轻微上移，0.28s） ===== */
+@keyframes page-enter {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+/* 非仓库页面：每次导航重挂载自动播放 */
+main > * {
+  animation: page-enter 0.28s ease both;
+}
+/* 仓库 6 tab 切换：由 RepoLayout 内部 key 容器触发 */
+.page-enter {
+  animation: page-enter 0.28s ease both;
+}
+
+/* ===== 列表项交错入场动画（加载完成后逐项增长进入，避免生硬塞入） =====
+ * 配合 inline style animationDelay（如 i*60ms）实现逐项错峰出现；
+ * fill-mode both：delay 期间保持 from（透明）→ 到位后播放进入。 */
+@keyframes list-item-enter {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+.list-item-enter {
+  animation: list-item-enter 0.3s ease-out both;
+}
+
+/* ===== 登录聚光灯动画 =====
+ * 遮罩视为有内外径的环形（pie/donut），圆心固定在目标元素（如右上角登录按钮）：
+ * 变暗聚拢 → 收缩聚焦环 → 目标摇头 + 聚焦环匀速淡出。
+ * mask radial-gradient 环形由 JS（LoginSpotlight.tsx）rAF 驱动。
+ * 元素固定半透明遮罩背景，仅环形区域可见。
+ * 遮罩色（2026-08-09）：用主题前景色 color-mix——light 前景黑→黑遮罩（暗化）；
+ * dark 前景白→白遮罩（亮化），明暗主题自动反转，不再硬编码黑。 */
+.login-spotlight {
+  position: fixed;
+  inset: 0;
+  z-index: 200;
+  pointer-events: none;
+  background: color-mix(in oklab, var(--foreground) 55%, transparent);
+  will-change:
+    mask-image,
+    -webkit-mask-image,
+    opacity;
+}
+
+/* 聚焦目标组件摇头抖动（聚光灯聚焦环形成时，2026-08-07）：
+ * 轻微 rotate 来回摆动，像摇头（如「不」的示意），0.45s 一次 */
+@keyframes spotlight-shake {
+  0%,
+  100% {
+    transform: rotate(0deg);
+  }
+  20% {
+    transform: rotate(-2.5deg);
+  }
+  40% {
+    transform: rotate(2.5deg);
+  }
+  60% {
+    transform: rotate(-2deg);
+  }
+  80% {
+    transform: rotate(1.5deg);
+  }
+}
+.spotlight-shake {
+  animation: spotlight-shake 0.45s ease-in-out;
+}
+
+/* ===== 404 2D 场景（2026-08-09：animejs v4 驱动，弃用纯 CSS 原型） =====
+ * 叙事「寻物侦探」：小猫左右歪头张望（rotateZ 倾斜 + translateX 平移，纯 2D 无翻身），
+ * 放大镜随视线横移摆动（2D 不变形），每次歪头到尽头「没找到」→ 头顶冒出问号。
+ * animejs 只驱动内层（.nf3d-cat/.nf3d-mag）transform，
+ * 静态定位由外层 -pos 容器负责（避免 animejs 覆盖居中 translate）。
+ * 问号由 animejs timeline 驱动，散点/404 数字由 CSS 动画驱动。 */
+.nf3d-stage {
+  position: relative;
+  width: 100%;
+  max-width: 28rem;
+  height: 18rem;
+  margin-inline: auto;
+  overflow: hidden;
+}
+
+/* —— 小猫定位（2D 歪头舞台） —— */
+.nf3d-cat-pos {
+  position: absolute;
+  left: 43%;
+  top: 56%;
+  width: 8rem;
+  height: 8rem;
+  transform: translate(-50%, -50%);
+}
+.nf3d-cat {
+  width: 100%;
+  height: 100%;
+}
+.nf3d-cat svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  color: var(--muted-foreground);
+}
+
+.nf3d-mag-pos {
+  position: absolute;
+  left: 54%;
+  top: 52%;
+  width: 3.5rem;
+  height: 3.5rem;
+}
+.nf3d-mag {
+  width: 100%;
+  height: 100%;
+  color: var(--muted-foreground);
+  transform-origin: 64% 64%; /* 镜圈右下角≈手柄连接点，绕此摆动 */
+}
+.nf3d-mag svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  /* lucide Search 手柄默认朝右下 → 水平镜像使手柄朝左下=朝小猫（朝身体） */
+  transform: scaleX(-1);
+}
+
+/* —— 背景符号粒子（问号/PR/分支/repo/代码/星标）：淡入→停留→淡出 单次动画。
+ * 动画播完 onAnimationEnd → React 随机重生到新位置/新类型（key 变化重挂载）。
+ * 位置/大小/延迟/时长由 inline style 控制；animation-fill-mode both 保证延迟期隐藏。
+ * 淡入淡出柔和：25% 缓入 → 60% 停留 → 15% 缓出。
+ * position:fixed 铺满整个视口（不受内容区高度局限），z-index:-1 置于 body 背景之上、
+ * 正常内容（nav/footer/内容层）之下——星光作为整页动态背景，绝不遮挡交互。 */
+.nf3d-bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+/* 内容层主题色径向渐变遮罩（2026-08-09 新方案）：
+ * 遮罩是**自包裹 wrapper**（.nf3d-content-mask 包裹 scene + children），
+ * 尺寸 = 内容实际包围盒 → 渐变百分比相对 wrapper 自身，无论内容高宽如何变化
+ * 都自动贴合（shrink-to-fit 天然自适应，无需测量/配置）。
+ * 中央不透明盖住粒子，向外渐变透明露出粒子 → 聚光灯式留白焦点。
+ * padding 收紧避免过渡带浪费；椭圆覆盖全部内容（动画区偏上 + 下方文字），
+ * 不透明至 55%、82% 渐隐——粒子紧贴内容边缘显现。 */
+.nf3d-content-mask {
+  padding: 1.5rem 1rem;
+  background: radial-gradient(
+    ellipse 58% 84% at 50% 50%,
+    var(--background) 0%,
+    var(--background) 55%,
+    transparent 85%
+  );
+}
+.nf3d-symbol {
+  position: absolute;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: var(--muted-foreground);
+  opacity: 0;
+  animation: nf3d-symbol-rise 3s ease-in-out both;
+}
+.nf3d-symbol svg {
+  width: 100%;
+  height: 100%;
+}
+@keyframes nf3d-symbol-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(10px) scale(0.55);
+  }
+  22% {
+    opacity: 0.7;
+    transform: translateY(0) scale(1);
+  }
+  78% {
+    opacity: 0.7;
+    transform: translateY(-3px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-10px) scale(0.8);
+  }
+}
+
+/* —— 背景光点粒子：淡入→停留→淡出 单次动画（重生逻辑同上） —— */
+.nf3d-dot {
+  position: absolute;
+  border-radius: 9999px;
+  background: var(--muted-foreground);
+  opacity: 0;
+  animation: nf3d-dot-rise 2.4s ease-in-out both;
+}
+@keyframes nf3d-dot-rise {
+  0% {
+    opacity: 0;
+    transform: translateY(6px) scale(0.5);
+  }
+  25% {
+    opacity: 0.65;
+    transform: translateY(0) scale(1);
+  }
+  75% {
+    opacity: 0.65;
+    transform: translateY(-2px) scale(1);
+  }
+  100% {
+    opacity: 0;
+    transform: translateY(-8px) scale(0.6);
+  }
+}
+
+/* 降低动态效果偏好：背景粒子隐藏，仅保留小猫 + 放大镜 静态展示 */
+@media (prefers-reduced-motion: reduce) {
+  .nf3d-bg {
+    display: none;
+  }
+  .nf3d-stage * {
+    animation: none !important;
+  }
+}
+
+/* ===== 全局自定义滚动条（细、圆角、低对比，适配浅色/深色） ===== */
+* {
+  scrollbar-width: thin;
+  scrollbar-color: var(--border) transparent;
+}
+*::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+*::-webkit-scrollbar-track {
+  background: transparent;
+}
+*::-webkit-scrollbar-thumb {
+  background-color: var(--border);
+  border-radius: 9999px;
+  border: 2px solid transparent;
+  background-clip: content-box;
+}
+*::-webkit-scrollbar-thumb:hover {
+  background-color: var(--muted-foreground);
+}
+*::-webkit-scrollbar-corner {
+  background: transparent;
+}
+
+/* ===== CodeMirror 6 编辑/展示（2026-08-07 迁移；shiki 高亮已移除） =====
+ * 原则：**对照 CM6 官方默认样式**（gutter 与内容天然对齐），仅做最小主题定制：
+ * - 字体/行高与页面一致（monospace 13px / 1.5rem）
+ * - 行号列宽与折叠 gutter 宽度明确，折叠符号居中
+ * - 移除 shiki 时代的 padding 对齐 hack（gutter/scroller 纵向 padding 会破坏
+ *   CM6 原生对齐，导致行号/折叠符号与内容错位）
+ * - 注释文本内严禁出现星号加斜杠（会提前闭合注释，规则被丢弃）。 */
+.cm-host {
+  overflow: hidden;
+}
+.cm-host .cm-editor {
+  height: 100%;
+}
+.cm-host .cm-scroller {
+  font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.5rem;
+  overflow: auto;
+}
+/* 行号列：右对齐，宽 2.5rem（官方 GitHub 视觉；CM6 默认 1rem 偏窄） */
+.cm-host .cm-lineNumbers .cm-gutterElement {
+  min-width: 2.5rem;
+  padding: 0 0.5rem 0 0;
+  text-align: right;
+  color: var(--muted-foreground);
+}
+/* 折叠 gutter：宽 1.4rem，符号居中（官方 GitHub 折叠箭头在行号右侧居中） */
+.cm-host .cm-foldGutter {
+  width: 1.4rem;
+}
+.cm-host .cm-foldGutter .cm-gutterElement {
+  text-align: center;
+  padding: 0;
+}
+/* 折叠符号（GitHub 官方样式：小三角 ▸/▾，低对比，hover 高亮 + 可点击） */
+.cm-host .cm-foldGutter .cm-gutterElement {
+  cursor: pointer;
+}
+.cm-host .cm-foldMarker {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1rem;
+  font-size: 11px;
+  line-height: 1;
+  color: var(--muted-foreground);
+  border-radius: 3px;
+  transition:
+    color 0.12s ease,
+    background-color 0.12s ease;
+}
+.cm-host .cm-foldGutter .cm-gutterElement:hover .cm-foldMarker {
+  color: var(--foreground);
+  background-color: color-mix(in oklab, var(--muted) 40%, transparent);
+}
+.cm-host .cm-content {
+  caret-color: currentColor;
+}
+.cm-host .cm-placeholder {
+  color: var(--muted-foreground);
+  font-style: italic;
+}
+.cm-host .cm-activeLine {
+  background-color: color-mix(in oklab, var(--muted) 25%, transparent);
+}
+/* 选区背景（GitHub 官方：半透明蓝，聚焦/非聚焦一致；覆盖 CM6 默认浅灰/浅紫） */
+.cm-host .cm-editor .cm-selectionBackground,
+.cm-host .cm-editor.cm-focused .cm-selectionBackground {
+  background-color: color-mix(in oklab, var(--primary) 30%, transparent);
+}
+
+/* CodeView 只读展示（2026-08-07）：diff 行背景 + 只读无光标/无 activeLine */
+.cm-view .cm-editor {
+  height: 100%;
+}
+.cm-view .cm-activeLine,
+.cm-view .cm-activeLineGutter {
+  background-color: transparent !important; /* 只读不显示当前行高亮 */
+}
+.cm-view .cm-cursor {
+  display: none; /* 只读无光标 */
+}
+/* diff 行背景（官方 GitHub PR Files changed 同款：add 绿 / del 红） */
+/* ===== Diff 专用色板（2026-08-10 特殊处置：不依赖 shadcn chart/destructive 变量，
+ * 独立固定色，明暗两套 GitHub 官方 diff 配色——dark 下 --chart-1 接近白色会让 add 绿变白）
+ * 参照 LangColorBar「单独解决/集中管理」：本色板变量仅 diff 相关规则引用。
+ * 官方配色：light add #1a7f37/del #cf222e；dark add #3fb950/del #f85149（背景各配淡色） */
+:root {
+  --diff-add-bg: #e6ffec;
+  --diff-add-fg: #1a7f37;
+  --diff-del-bg: #ffebe9;
+  --diff-del-fg: #cf222e;
+}
+.dark {
+  --diff-add-bg: #122427;
+  --diff-add-fg: #3fb950;
+  --diff-del-bg: #2d1515;
+  --diff-del-fg: #f85149;
+}
+
+.cm-diff-add {
+  background-color: var(--diff-add-bg);
+}
+.cm-diff-add .cm-lineNumbers,
+.cm-diff-add.cm-gutterElement {
+  color: var(--diff-add-fg);
+}
+.cm-diff-del {
+  background-color: var(--diff-del-bg);
+}
+.cm-diff-del .cm-lineNumbers,
+.cm-diff-del.cm-gutterElement {
+  color: var(--diff-del-fg);
+}
+
+/* ===== P2 diff 3 列表格（2026-08-08，官方 PR Files changed 结构）===== */
+.diff-table .diff-cell-num {
+  width: 50px;
+  min-width: 50px;
+  padding: 0 8px;
+  text-align: right;
+  border-right: 1px solid var(--border);
+  white-space: nowrap;
+  vertical-align: top;
+}
+.diff-table .diff-cell-empty {
+  background: transparent;
+}
+/* add 绿 / del 红 行（官方 blob-code-addition / blob-code-deletion；用独立色板 --diff-*） */
+.diff-table .diff-cell-add {
+  background-color: var(--diff-add-bg);
+}
+.diff-table .diff-cell-del {
+  background-color: var(--diff-del-bg);
+}
+/* 代码列：等宽 + 前缀 marker（官方 blob-code-inner + blob-code-marker） */
+.diff-table .diff-cell-code {
+  padding: 0 12px 0 4px;
+  font-family: var(--font-mono, ui-monospace, "SF Mono", Menlo, Consolas, monospace);
+  font-size: 12px;
+  line-height: 20px;
+  white-space: pre;
+  vertical-align: top;
+}
+.diff-table .diff-marker {
+  display: inline-block;
+  width: 12px;
+  margin-right: 6px;
+  user-select: none;
+  color: var(--muted-foreground);
+}
+.diff-table .diff-cell-add .diff-marker {
+  color: var(--diff-add-fg);
+}
+.diff-table .diff-cell-del .diff-marker {
+  color: var(--diff-del-fg);
+}
+/* 行内评论入口按钮（hover 显示） */
+.diff-comment-btn {
+  border-radius: 4px;
+}
+.diff-comment-btn:hover {
+  background-color: color-mix(in oklab, var(--primary) 15%, transparent);
+}
