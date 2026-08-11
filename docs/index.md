@@ -18,6 +18,7 @@
 | [api-compat.md](./api-compat.md) | **API 兼容性对照表单与实施指导**：全量 API 实现方式一览（GraphQL/REST/selfcode fetch/worker 代理/smart 状态）+ 不可抗力清单 + 新增 API CheckList | **新增 API / 新页面接入前必读**；审计 API 实现方式时 | 先查 §2 对照表定通道；双端点走 §3 smart 模板；不可抗力查 §4 |
 | [github-schema.graphql](./github-schema.graphql) | **GitHub GraphQL 官方 schema（快照，官方源）**：字段/枚举/输入对象权威定义；也是 **debug 面板本地 schema 数据源**（`scripts/build-graphql-schema.mjs` 离线生成 `web/public/github-graphql.min.json`） | 写 GraphQL 查询前**确认真实枚举值/字段名**；更新 schema 快照后跑 `pnpm --filter web build:gqlschema` | grep 对应枚举/类型；以官方为准，勿凭记忆猜枚举 |
 | [debug-page.md](./debug-page.md) | **`/$debug` API 调试页技术架构与开发文档（独立自包含）**：octokit 双库零下载转录、req/res 三层产物、体积实测、智能请求器（缓存/SWR/预热）、骨架屏 + 底部缓存进度条、补全设计、目录拆分、codeSplitting | 开发 / 修改 `/$debug` 页面（页面组件、schema 数据、加载缓存策略、补全）时 | 先读总体架构与产物契约再动手；数据产物由 `scripts/build-schemas-octokit.mjs` 生成，前端消费结构见 §11/§15 |
+| [debug-graphql-redesign.md](./debug-graphql-redesign.md) | **`/$debug` GraphQL 能力重构设计 + 实施记录**：D1–D8 决策、勾选树/variables 校验/分页方案、里程碑实施状态（M1–M4 已完成与偏离项）、复合数组编辑器调研（StructuredTable 方案） | 继续 GraphQL 调试能力开发（M5 分页 / M5.5 StructuredTable / M6 多 operation）时 | 先读 §0 实施状态（已完成/偏离），再接 §10 计划里程碑 |
 | [cli-setup.md](./cli-setup.md) | **CLI 接入指南**：git 镜像端点 insteadOf 配置 | 用户配置 git / 排查 clone/pull/push 问题时 | 按步骤操作 |
 
 ### 1.2 内部文档（不随仓库公开，仅本地开发使用）
