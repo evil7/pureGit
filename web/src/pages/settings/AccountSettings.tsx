@@ -74,7 +74,8 @@ function canReadGpgKeys(grantedScopes: string[] | null): boolean {
 }
 
 export default function AccountSettings() {
-  const { token, scopes, grantedScopes, canWrite, logout, login, missingScopes } = useAuth();
+  const { token, scopes, grantedScopes, canWrite, logout, logoutAll, login, missingScopes } =
+    useAuth();
   const { t } = useI18n();
   const mode = scopes?.mode === "write" ? "write" : "read";
   // 竞态/卸载防护：load/loadGpg/loadSessions 由 effect 调用，也由增删后手动调用
@@ -238,6 +239,9 @@ export default function AccountSettings() {
   const [sessionsError, setSessionsError] = useState<string | null>(null);
   const [logoutTarget, setLogoutTarget] = useState<SessionMeta | null>(null);
   const [logoutBusy, setLogoutBusy] = useState(false);
+  /** 全部登出确认框开关（全部设备退出；当前设备也会退出） */
+  const [logoutAllOpen, setLogoutAllOpen] = useState(false);
+  const [logoutAllBusy, setLogoutAllBusy] = useState(false);
 
   const loadSessions = () => {
     if (!mountedRef.current) return;
@@ -283,6 +287,23 @@ export default function AccountSettings() {
       setSessionsError(apiErrorMessage(e, t("accountSettings.sessionsLogoutFailed")));
     } finally {
       setLogoutBusy(false);
+    }
+  };
+
+  /** 登出全部设备（删当前用户全部 KV 会话；当前设备也退出） */
+  const doLogoutAll = async () => {
+    if (logoutAllBusy) return;
+    setLogoutAllBusy(true);
+    setSessionsError(null);
+    try {
+      setLogoutAllOpen(false);
+      await logoutAll();
+      // 全部会话已删 → 本地列表清空（前端登录态由 logoutAll 同步清理）
+      setSessions([]);
+    } catch (e) {
+      setSessionsError(apiErrorMessage(e, t("accountSettings.sessionsLogoutFailed")));
+    } finally {
+      setLogoutAllBusy(false);
     }
   };
 
@@ -349,8 +370,28 @@ export default function AccountSettings() {
 
       {/* 已登录设备（持久会话 + 会话列表管理；第一位） */}
       <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t("accountSettings.sessions")}</h2>
+        <div className="flex items-start justify-between gap-3">
+          <div className="min-w-0">
+            <h2 className="text-lg font-semibold">
+              {t("accountSettings.sessions")}
+              {/* 会话计数徽章（加载完成才显示；对齐 SSH keys 计数） */}
+              {sessions && (
+                <Badge variant="secondary" className="ml-2 align-middle">
+                  {sessions.length}
+                </Badge>
+              )}
+            </h2>
+          </div>
+          {/* 全部登出：删除当前用户全部 KV 会话（所有设备退出） */}
+          <Button
+            variant="outline"
+            size="sm"
+            disabled={logoutAllBusy || sessions === null}
+            onClick={() => setLogoutAllOpen(true)}
+          >
+            <LogOut className="size-3.5" />
+            {t("accountSettings.sessionsLogoutAll")}
+          </Button>
         </div>
         {sessionsError ? (
           <InlineError message={sessionsError} className="py-6 text-center" />
@@ -712,6 +753,30 @@ export default function AccountSettings() {
               }}
             >
               {t("accountSettings.sessionsLogout")}
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* 全部登出确认框（所有设备退出，含当前设备） */}
+      <AlertDialog open={logoutAllOpen} onOpenChange={setLogoutAllOpen}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>{t("accountSettings.sessionsLogoutAllTitle")}</AlertDialogTitle>
+            <AlertDialogDescription>
+              {t("accountSettings.sessionsLogoutAllDesc")}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel disabled={logoutAllBusy}>取消</AlertDialogCancel>
+            <AlertDialogAction
+              disabled={logoutAllBusy}
+              onClick={(e) => {
+                e.preventDefault();
+                void doLogoutAll();
+              }}
+            >
+              {t("accountSettings.sessionsLogoutAll")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

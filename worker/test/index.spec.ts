@@ -177,6 +177,35 @@ describe("PureGit worker sessions", () => {
     expect(response.status).toBe(401);
   });
 
+  it("/$auth/logout/all returns 401 without cookie", async () => {
+    const response = await SELF.fetch("https://example.com/$auth/logout/all", {
+      method: "POST",
+    });
+    expect(response.status).toBe(401);
+  });
+
+  it("logout/all removes all same-login sessions (current + others), keeps alien, clears cookie", async () => {
+    const cookieName = env.SESSION_COOKIE_NAME;
+    await env.SESSIONS.put("session:cur-all", JSON.stringify(makeSession("octocat")));
+    await env.SESSIONS.put("session:other-all", JSON.stringify(makeSession("octocat")));
+    await env.SESSIONS.put("session:alien-all", JSON.stringify(makeSession("someone-else")));
+
+    const response = await SELF.fetch("https://example.com/$auth/logout/all", {
+      method: "POST",
+      headers: { Cookie: `${cookieName}=cur-all` },
+    });
+    expect(response.status).toBe(200);
+    const data = (await response.json()) as { removed?: number };
+    expect(data.removed).toBe(2);
+    // 当前 + 其他设备全部删除；其他用户会话不受影响
+    expect(await env.SESSIONS.get("session:cur-all")).toBeNull();
+    expect(await env.SESSIONS.get("session:other-all")).toBeNull();
+    expect(await env.SESSIONS.get("session:alien-all")).not.toBeNull();
+    // 清 cookie（当前设备登出）
+    expect(response.headers.get("Set-Cookie") ?? "").toContain(cookieName);
+    expect(response.headers.get("Set-Cookie") ?? "").toContain("Max-Age=0");
+  });
+
   it("lists only same-login sessions with meta (no token leaked)", async () => {
     const cookieName = env.SESSION_COOKIE_NAME;
     await env.SESSIONS.put(

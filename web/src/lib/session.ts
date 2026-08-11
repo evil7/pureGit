@@ -41,6 +41,15 @@ export async function logoutSession(id: string): Promise<void> {
   if (!res.ok) throw new Error(`HTTP ${res.status}`);
 }
 
+/** POST /$auth/logout/all — 登出全部设备（删当前用户全部 KV 会话，GitHub 端授权保留） */
+export async function logoutAllSessions(): Promise<void> {
+  const res = await fetch(`${WORKER_BASE}/$auth/logout/all`, {
+    method: "POST",
+    credentials: "include",
+  });
+  if (!res.ok) throw new Error(`HTTP ${res.status}`);
+}
+
 /** POST /$auth/revoke — 撤销 PureGit OAuth App 授权（GitHub 端真撤销 + 退出所有设备） */
 export async function revokeApp(): Promise<void> {
   const res = await fetch(`${WORKER_BASE}/$auth/revoke`, {

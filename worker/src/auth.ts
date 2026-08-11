@@ -662,6 +662,38 @@ export async function handleLogout(request: Request, env: Env): Promise<Response
   });
 }
 
+/**
+ * POST /$auth/logout/all — 登出全部设备（删当前用户全部 KV 会话 + 清 cookie）
+ *
+ * - 归属校验：只能删除与当前 cookie 会话同 login 的会话（含当前设备）
+ * - GitHub 端 token 保留（与单设备登出一致；真撤销走 /$auth/revoke）
+ * - 幂等：无有效会话 → 401；删除后返回实际删除数
+ */
+export async function handleLogoutAll(request: Request, env: Env): Promise<Response> {
+  const cookies = parseCookies(request);
+  const sessionId = cookies[env.SESSION_COOKIE_NAME];
+  const current = parseSession(sessionId ? await env.SESSIONS.get(`session:${sessionId}`) : null);
+  if (!sessionId || !current) {
+    return json({ authenticated: false }, 401, corsHeaders(env.FRONTEND_URL));
+  }
+
+  // 枚举全部会话 → 删除与当前 login 相同的（含当前设备；其他用户会话不受影响）
+  const list = await env.SESSIONS.list({ prefix: "session:" });
+  const entries = await Promise.all(
+    list.keys.map(async (k) => ({
+      name: k.name,
+      login: parseSession(await env.SESSIONS.get(k.name))?.login ?? null,
+    })),
+  );
+  const mine = entries.filter((e) => e.login === current.login);
+  await Promise.all(mine.map((e) => env.SESSIONS.delete(e.name)));
+
+  return json({ ok: true, removed: mine.length }, 200, {
+    ...corsHeaders(env.FRONTEND_URL),
+    "Set-Cookie": buildDeleteCookie(env.SESSION_COOKIE_NAME),
+  });
+}
+
 /** 会话元数据（绝不含 token —— 列表接口最小暴露） */
 function toSessionMeta(s: SessionData, id: string, isCurrent: boolean) {
   return {

@@ -110,6 +110,8 @@ interface AuthState {
   /** PAT 直接登录（Worker /$auth/pat）：true=成功 / false=PAT 无效 / 异常=网络等错误 */
   loginWithPat: (pat: string) => Promise<boolean>;
   logout: () => Promise<void>;
+  /** 登出全部设备（删当前用户全部 KV 会话，GitHub 端授权保留） */
+  logoutAll: () => Promise<void>;
 }
 
 const AuthContext = createContext<AuthState | null>(null);
@@ -296,6 +298,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
+  /** 登出全部设备（/$auth/logout/all 删当前用户全部 KV 会话；本地同样清空） */
+  const logoutAll = async () => {
+    try {
+      await fetch(`${WORKER_BASE}/$auth/logout/all`, {
+        method: "POST",
+        credentials: "include",
+      });
+    } finally {
+      clearCache();
+      setToken(null);
+      setUser(null);
+      setScopes(null);
+      setGrantedScopes(null);
+    }
+  };
+
   // 偏好云同步：token 就绪 → 注册 auth 供 prefs push，并拉取云端偏好覆盖本地；
   // 登出 → 注销 push 能力（本地偏好保留，登录后再次同步）
   useEffect(() => {
@@ -353,6 +371,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         login,
         loginWithPat,
         logout,
+        logoutAll,
       }}
     >
       {children}

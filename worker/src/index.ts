@@ -26,6 +26,7 @@ import {
   handleCallback,
   handleLogin,
   handleLogout,
+  handleLogoutAll,
   handlePatLogin,
   handlePrefs,
   handleRevokeApp,
@@ -102,6 +103,8 @@ export default {
         return request.method === "POST"
           ? handleSessionPatch(request, env)
           : handleSession(request, env, ctx);
+      case "/$auth/logout/all":
+        return handleLogoutAll(request, env);
       case "/$auth/logout":
         return handleLogout(request, env);
       case "/$auth/sessions":
