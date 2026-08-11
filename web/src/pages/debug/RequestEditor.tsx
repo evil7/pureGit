@@ -33,16 +33,17 @@ import { cn } from "@/lib/utils";
 import { KeyValueTable } from "./KeyValueTable";
 import { ParamsTable } from "./ParamsTable";
 import { GraphQLLogo } from "./GraphQLLogo";
-import { buildUrlFromParams, syncParamsFromUrl } from "@/lib/debug-params";
+import { buildUrlFromParams, syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
 import { METHOD_COLOR, REST_API_BASE, normalizeRestUrl, CT_BY_BODY } from "./rest-meta";
 import type { DebugRequest, BodyType, HeaderRow } from "@/lib/debug-api";
+import type { OpenApiEndpoint } from "@/lib/debug-openapi";
 import type { GraphQLSchema } from "graphql";
 
 const REST_METHODS = ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] as const;
 const GQL_METHODS = ["query", "mutation"] as const;
 
 interface RequestEditorProps {
-  t: (k: string) => string;
+  t: (k: string, vars?: Record<string, unknown>) => string;
   req: DebugRequest;
   /** 请求更新：patch 或全量 updater（方法切换/bodyType 需读取当前值） */
   set: (update: Partial<DebugRequest> | ((r: DebugRequest) => DebugRequest)) => void;
@@ -51,6 +52,8 @@ interface RequestEditorProps {
   gqlSchema: GraphQLSchema | null;
   /** 当前 REST 端点的 requestBody schema（json content-type；字段级补全数据源） */
   bodySchema: Record<string, unknown> | null;
+  /** 当前匹配的 REST 端点（URL+method 匹配或点选；未匹配为 null）——参数表对照文档 */
+  endpoint: OpenApiEndpoint | null;
   setFormFile: (i: number, file: File | null) => void;
   running: boolean;
   onRun: () => void;
@@ -69,6 +72,7 @@ export function RequestEditor({
   requiredHeaders,
   gqlSchema,
   bodySchema,
+  endpoint,
   setFormFile,
   running,
   onRun,
@@ -81,10 +85,22 @@ export function RequestEditor({
   // ── 请求 Tab（Postman 风格：REST Params/Headers/Body；GraphQL Query/Variables/Headers） ──
   type ReqTab = "params" | "headers" | "body" | "query" | "variables";
   const [reqTab, setReqTab] = useState<ReqTab>(req.protocol === "graphql" ? "query" : "headers");
-  // 协议/方法变化时重置到默认 Tab（GraphQL→Query，REST→Headers）
+  /** 参数 tab 显示条件：匹配到端点文档且文档含需设定的参数（path/query）——
+   *  未匹配（自定义 URL）或无参数 → 不显示参数 tab（仅请求头/请求数据） */
+  const hasDocParams =
+    !!endpoint && (endpoint.op.params ?? []).some((p) => p.in === "path" || p.in === "query");
+  // 默认选中 Tab：协议/方法/端点匹配变化时重置——GraphQL→Query；
+  // REST：有文档参数 → 参数（对照文档填值）；否则 → 请求头（第一个 tab）
   useEffect(() => {
-    setReqTab(req.protocol === "graphql" ? "query" : "headers");
-  }, [req.protocol, req.method]);
+    if (req.protocol === "graphql") {
+      setReqTab("query");
+    } else if (hasDocParams) {
+      setReqTab("params");
+    } else {
+      setReqTab("headers");
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [req.protocol, req.method, endpoint]);
   /** GET/HEAD/OPTIONS 无请求数据（不渲染 Body tab） */
   const noBodyMethod =
     req.protocol === "rest" &&
@@ -215,8 +231,18 @@ export function RequestEditor({
               value={req.url}
               onChange={(e) => {
                 const url = e.target.value;
-                // 反向联动：改 URL → 同步 query 参数（path 占位同步）
-                set({ url, params: syncParamsFromUrl(req.params, url) });
+                // 反向联动：改 URL → 在参数模型内同步（文档权威骨架稳定，不重建端点）。
+                // endpoint 存在时传 doc：path 行对齐模板 index、query 按文档全集保留
+                // （结构变化换端点由 DebugPage 防抖判定，此处仅同步值）
+                const doc: DocParams | undefined = endpoint
+                  ? {
+                      path: endpoint.path,
+                      queryNames: (endpoint.op.params ?? [])
+                        .filter((p) => p.in === "query")
+                        .map((p) => p.name),
+                    }
+                  : undefined;
+                set({ url, params: syncParamsFromUrl(req.params, url, doc) });
               }}
               placeholder={t("urlPlaceholder")}
               className="h-7 font-mono text-xs"
@@ -278,8 +304,9 @@ export function RequestEditor({
               { value: "variables", label: t("variables") },
             ]
           : [
-              // 参数放最前方（path/query 双向联动，对照响应面板文档填值）
-              { value: "params", label: t("params.tab") },
+              // 参数放最前方（path/query 双向联动，对照响应面板文档填值）；
+              // 仅匹配到文档且含需设定的参数（path/query）才显示，否则不显示参数
+              ...(hasDocParams ? [{ value: "params", label: t("params.tab") }] : []),
               { value: "headers", label: t("headers") },
               // GET/HEAD/OPTIONS 无请求数据：不渲染 Body tab
               ...(!noBodyMethod ? [{ value: "body", label: t("body") }] : []),
@@ -346,15 +373,29 @@ export function RequestEditor({
       {/* ── 当前 Tab 内容（flex-1 内滚） ── */}
       <div className="min-h-0 flex-1 overflow-y-auto">
         {reqTab === "params" && req.protocol === "rest" && (
-          /* Params：path/query 参数（编辑联动 URL；对照响应面板文档自动填充） */
+          /* Params：path/query 参数（编辑联动 URL；对照响应面板文档自动填充 + 待选 badge） */
           <div className="p-2">
             <ParamsTable
               t={t}
               rows={req.params}
               onChange={(params) => {
-                // 正向联动：改参数 → 重建 URL
-                set({ params, url: buildUrlFromParams(req.url, params) });
+                // 正向联动：改参数 → 重建 URL。endpoint 存在时传 doc——复合占位段
+                // （{base}...{head}）从模板段重建（分次编辑不毁其余子占位）
+                const doc: DocParams | undefined = endpoint
+                  ? {
+                      path: endpoint.path,
+                      queryNames: (endpoint.op.params ?? [])
+                        .filter((p) => p.in === "query")
+                        .map((p) => p.name),
+                    }
+                  : undefined;
+                set({ params, url: buildUrlFromParams(req.url, params, doc) });
               }}
+              docQueryNames={
+                endpoint
+                  ? (endpoint.op.params ?? []).filter((p) => p.in === "query").map((p) => p.name)
+                  : []
+              }
             />
           </div>
         )}

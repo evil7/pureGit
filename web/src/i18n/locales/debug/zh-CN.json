@@ -65,5 +65,6 @@
   "params.pathIndex": "URL 模板中的段位置（split('/') 索引）",
   "params.namePlaceholder": "参数名",
   "params.valuePlaceholder": "值",
-  "params.addQuery": "添加 query 参数"
+  "params.addQuery": "添加 query 参数",
+  "params.pickDocQuery": "添加文档参数 {{name}}"
 }

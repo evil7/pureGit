@@ -15,6 +15,10 @@
  * 与响应面板空状态端点文档对照：端点选择后自动填充（path 占位 + query 空值），
  * 用户按文档填值 → 参数编辑 onChange 同步重建 URL（debug-params.ts 正向）；
  * 直接改 URL → syncParamsFromUrl 反向更新本表。事件驱动无 useEffect 防循环。
+ *
+ * **文档可选参数待选 badge**：docQueryNames（当前匹配端点的 query 参数名）− 表格已有
+ * query 行 → 显示在添加按钮右侧（虚线胶囊）；点击 → 补行（空值，explicit=false，
+ * 填值后输出 URL）→ badge 消失。被删除/未用的文档参数以此对照呈现。
  */
 import { Lock, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -24,9 +28,11 @@ import { cn } from "@/lib/utils";
 import type { DebugParam } from "@/lib/debug-api";
 
 interface ParamsTableProps {
-  t: (k: string) => string;
+  t: (k: string, vars?: Record<string, unknown>) => string;
   rows: DebugParam[];
   onChange: (rows: DebugParam[]) => void;
+  /** 当前匹配端点的文档 query 参数名（对照文档可选参数 → 待选 badge；未匹配/无文档为空） */
+  docQueryNames?: string[];
 }
 
 /** 类型胶囊（key 输入框内嵌 addon，inline-end 靠右）：path → path[n]，query → query */
@@ -45,16 +51,23 @@ function TypePill({ p, t }: { p: DebugParam; t: (k: string) => string }) {
   );
 }
 
-export function ParamsTable({ t, rows, onChange }: ParamsTableProps) {
+export function ParamsTable({ t, rows, onChange, docQueryNames }: ParamsTableProps) {
   const update = (i: number, patch: Partial<DebugParam>) => {
     onChange(rows.map((r, xi) => (xi === i ? { ...r, ...patch } : r)));
   };
-  const addQuery = () => {
-    onChange([...rows, { name: "", in: "query", value: "", enabled: true }]);
+  /** 添加 query 行（name 给定 → 文档 badge 补选；空 → 手动添加空白行） */
+  const addQuery = (name = "") => {
+    onChange([
+      ...rows,
+      { name, in: "query" as const, value: "", enabled: true, explicit: name ? false : undefined },
+    ]);
   };
   const remove = (i: number) => {
     onChange(rows.filter((_, xi) => xi !== i));
   };
+  /** 文档可选参数待选 badge：文档 query 参数 − 表格已有（含 disabled 行） */
+  const docBadges =
+    docQueryNames?.filter((n) => !rows.some((r) => r.in === "query" && r.name === n)) ?? [];
 
   return (
     <div>
@@ -134,27 +147,43 @@ export function ParamsTable({ t, rows, onChange }: ParamsTableProps) {
                       onClick={() => remove(i)}
                       title={t("history.delete")}
                     >
-                      <X className="size-3.5" />
+                      <X className="size-3.5" />{" "}
                     </Button>
                   )}
                 </td>
               </tr>
             );
           })}
-          {/* 添加按钮行：横跨全宽、按钮靠左（与 checkbox 槽同起点同宽 → 中心对齐，同请求头） */}
+          {/* 添加按钮行：横跨全宽、按钮靠左（与 checkbox 槽同起点同宽 → 中心对齐，同请求头）；
+              右侧排列文档可选参数 badges（对照文档：被删/未用的文档 query 参数待选） */}
           <tr>
             <td colSpan={4} className="py-1 pl-3 pr-3">
-              <div className="flex items-center gap-1.5">
+              <div className="flex flex-wrap items-center gap-1.5">
                 <Button
                   size="icon"
                   variant="ghost"
                   className="h-6 w-6 px-0 text-muted-foreground hover:text-foreground"
-                  onClick={addQuery}
+                  onClick={() => addQuery()}
                   title={t("params.addQuery")}
                 >
                   <Plus className="size-3.5" />
                 </Button>
                 <span className="text-xs text-muted-foreground">{t("params.addQuery")}</span>
+                {docBadges.length > 0 && (
+                  <span className="flex flex-wrap items-center gap-1 border-l border-border pl-2">
+                    {docBadges.map((n) => (
+                      <button
+                        key={n}
+                        type="button"
+                        className="rounded-full border border-dashed border-muted-foreground/50 px-2 py-0.5 font-mono text-[10px] text-muted-foreground transition-colors hover:border-foreground hover:text-foreground"
+                        onClick={() => addQuery(n)}
+                        title={t("params.pickDocQuery", { name: n })}
+                      >
+                        {n}
+                      </button>
+                    ))}
+                  </span>
+                )}
               </div>
             </td>
           </tr>

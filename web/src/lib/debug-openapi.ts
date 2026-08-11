@@ -121,6 +121,16 @@ export function buildGroupFromTag(
   return { tag: reqFile.tag, items };
 }
 
+/** 段是否为模板占位段（含 `{name}` 标记；兼容 `{base}...{head}` 复合占位） */
+function isPlaceholderSeg(seg: string): boolean {
+  return /\{[^}]+\}/.test(seg);
+}
+
+/** 占位段中的字面片段（非 `{name}` 部分；如 `{base}...{head}` → `["..."]`，`{basehead}` → []） */
+function literalPartsOf(seg: string): string[] {
+  return seg.split(/\{[^}]+\}/).filter((s) => s.length > 0);
+}
+
 /** 将 OpenAPI 端点转为 DebugRequest（方法 + 路径 + 路径参数占位 + Params 表） */
 export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
   const pathParams = ep.op.params?.filter((p) => p.in === "path") ?? [];
@@ -133,17 +143,20 @@ export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
     org: "{org}",
   };
   // Params 表：path 行带模板段位置 index（path[n] 徽章显示，误删占位可定位）；
-  // 值默认占位符 `{name}`（或常用占位）→ buildUrlFromParams 替换
+  // 值默认占位符 `{name}`（或常用占位）→ buildUrlFromParams 替换。
+  // index 取「段包含 `{name}`」的位置——兼容 compare 类 `{base}...{head}` 复合占位
+  // （两个 path 参数共享同一段 index）
   const params: DebugParam[] = pathParams.map((p) => {
     const name = p.name;
     const segments = ep.path.split("/");
-    const idx = segments.findIndex((seg) => seg === `{${name}}`);
+    const idx = segments.findIndex((seg) => seg.includes(`{${name}}`));
     const placeholder = defaults[name] ?? `{${name}}`;
     url = url.replace(`{${name}}`, placeholder);
     return { name, in: "path" as const, value: placeholder, enabled: true, index: idx };
   });
   for (const p of queryParams) {
-    params.push({ name: p.name, in: "query" as const, value: "", enabled: true });
+    // explicit=false：编辑中行——空值不输出 URL，反向解析保留（文档参数未填值时不消失）
+    params.push({ name: p.name, in: "query" as const, value: "", enabled: true, explicit: false });
   }
   const method = ep.method.toUpperCase() as DebugRequest["method"];
   return {
@@ -158,4 +171,90 @@ export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
     formRows: [],
     params,
   };
+}
+
+/**
+ * URL + 方法 → 匹配文档端点（段级模板匹配）
+ * - 段数必须相同；模板占位段（含 `{name}`，兼容 `{base}...{head}` 复合）通配任意值；
+ *   其余段精确相等
+ * - 方法大小写不敏感（GET ↔ get）
+ * - **最具体端点优先**（评分制）：① 非占位段（静态段）越多的越具体；② 静态段数相同
+ *   时，占位段与 URL 段的「结构相似度」高的优先——模板自身（`t === u`）最高分，
+ *   其次段内字面片段（如 `{base}...{head}` 的 `...`）出现在 URL 段中 → 结构分。
+ *   解决两类误匹配：`/orgs/{org}/rulesets/rule-suites` 不被 `{ruleset_id}` 占位端点抢；
+ *   `compare/{base}...{head}` 不被 `compare/{basehead}` 抢（真实产物两者共存且
+ *   localeCompare 排序 `{basehead}` 在前，**不依赖数组顺序**）——填值 URL
+ *   `main...dev` 含 `...` → 命中复合占位；无 `...` 的 `abc123` → 命中 `{basehead}`
+ * - 用于需求 5：无论端点点选还是手写 URL，只要条件匹配即加载对应端点文档
+ */
+export function matchEndpoint(
+  method: string,
+  url: string,
+  endpoints: OpenApiEndpoint[],
+): OpenApiEndpoint | null {
+  const urlPath = url.split("?")[0];
+  const urlSegs = urlPath.split("/").filter(Boolean);
+  if (url.trim() === "") return null; // 真正空 URL（`/` 根路径段数 0 仍可匹配）
+  const m = method.toUpperCase();
+  let best: OpenApiEndpoint | null = null;
+  let bestStatic = -1;
+  let bestPlaceholder = -1;
+  for (const ep of endpoints) {
+    if (ep.method.toUpperCase() !== m) continue;
+    const tplSegs = ep.path.split("/").filter(Boolean);
+    if (tplSegs.length !== urlSegs.length) continue;
+    let ok = true;
+    let staticCount = 0;
+    let placeholderScore = 0;
+    for (let i = 0; i < tplSegs.length; i++) {
+      const t = tplSegs[i];
+      if (isPlaceholderSeg(t)) {
+        if (t === urlSegs[i]) {
+          placeholderScore += 2; // 模板自身 round-trip（最高分）
+        } else {
+          // 字面片段结构分：`{base}...{head}` 的 `...` 在 `main...dev` 中出现 → 命中
+          for (const part of literalPartsOf(t)) {
+            if (urlSegs[i].includes(part)) placeholderScore++;
+          }
+        }
+        continue;
+      }
+      staticCount++;
+      if (t !== urlSegs[i]) {
+        ok = false;
+        break;
+      }
+    }
+    if (!ok) continue;
+    // 最具体优先：静态段数 → 占位段结构相似度（同分保留第一个，稳定）
+    if (
+      staticCount > bestStatic ||
+      (staticCount === bestStatic && placeholderScore > bestPlaceholder)
+    ) {
+      bestStatic = staticCount;
+      bestPlaceholder = placeholderScore;
+      best = ep;
+    }
+  }
+  return best;
+}
+
+/**
+ * 当前端点是否仍匹配 URL + 方法（端点固化判定）
+ * - 方法必须一致；段数相同；模板静态段（非占位段）位置值必须相等；占位段任意值
+ * - 全占位端点（无静态段）→ 仅方法 + 段数校验（其匹配依赖方法，无法从静态段判断结构变化）
+ * - 用途：端点确定后 URL 微编辑（填值/改值）不触发重新匹配——同结构只同步参数值；
+ *   URL 结构变化（静态段不同/段数不同）或方法切换 → 判定失败 → 重新匹配换端点/清空
+ */
+export function endpointStillMatches(ep: OpenApiEndpoint, url: string, method: string): boolean {
+  if (ep.method.toUpperCase() !== method.toUpperCase()) return false;
+  const urlSegs = url.split("?")[0].split("/").filter(Boolean);
+  const tplSegs = ep.path.split("/").filter(Boolean);
+  if (tplSegs.length !== urlSegs.length) return false;
+  for (let i = 0; i < tplSegs.length; i++) {
+    const t = tplSegs[i];
+    if (isPlaceholderSeg(t)) continue; // 占位段任意（含复合占位）
+    if (t !== urlSegs[i]) return false;
+  }
+  return true;
 }

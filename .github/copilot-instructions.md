@@ -56,6 +56,7 @@
 10. **提交前质量门禁（每次编写与提交新 commit 前必须通过）**：
     - **oxlint 零警告**：`pnpm lint`（web）/ `pnpm --filter worker lint`（worker）——必须**解决全部故障与警告**（error 与 warning 均清零）；**非必要不使用 `eslint-disable`/`oxlint-disable` 注释简单消除**，确属误报才允许豁免并注释理由。
     - **oxfmt 格式一致**：`pnpm format`（根：web/worker/scripts 全量格式化）后 `pnpm format:check` 必须通过——格式规范化、一致性（提交前可先 `pnpm format` 自动规范；PR 评审同样按此格式要求检查 diff）。
+    - **测试质量门（web）**：`pnpm test`（vitest）必须全绿——含 `/$debug` 参数解析/填充/匹配/排序的全量真实产物验证（1108 端点 × 6 断言，见 `docs/debug-page.md` §14）；凡改动 debug 相关逻辑必跑。
 
 ## 复刻工作策略（GitHub 官方页面复刻标准流程）
 
@@ -75,7 +76,7 @@
 > pnpm workspace：根目录统一管理 `web/`（前端）与 `worker/`（Cloudflare Worker），统一 git 仓库（根目录），子目录不单独 git init。
 
 - 安装依赖：`pnpm install`（根目录，构建脚本已 approve：esbuild/sharp/workerd）
-- **代码质量门禁（oxlint + oxfmt）**：`pnpm lint`（web oxlint）/ `pnpm --filter worker lint`（worker oxlint）/ `pnpm format`（oxfmt 全量格式化：web/src、worker/src、worker/test、scripts）/ `pnpm format:check`（格式检查）——**每次提交前必须通过**（见「开发规范 10」）；oxfmt 配置 `.oxfmtrc.json`（2 空格/双引号/分号/LF/printWidth 100，ignore `web/src/components/ui/**`）
+- **代码质量门禁（oxlint + oxfmt + vitest）**：`pnpm lint`（web oxlint）/ `pnpm --filter worker lint`（worker oxlint）/ `pnpm format`（oxfmt 全量格式化：web/src、worker/src、worker/test、scripts、web/test）/ `pnpm format:check`（格式检查）/ `pnpm test`（web vitest 质量门）——**每次提交前必须通过**（见「开发规范 10」）；oxfmt 配置 `.oxfmtrc.json`（2 空格/双引号/分号/LF/printWidth 100，ignore `web/src/components/ui/**`）
 - **前端+Worker 开发（唯一模式）**：`pnpm dev`（双进程：纯 vite 前端 5173 + 独立 `wrangler dev` worker 8787；vite proxy 只转发 `/$auth`、`/$wiki`、`/$raw` 与 git 端点到 8787；启动自动 `wrangler types` 同步 worker 类型；脚本 `scripts/dev-fast.mjs`）
 - 前端构建/类型检查：`pnpm --filter web build`（tsc -b + vite build，产物 dist/client）
 - Worker 独立调试（不推荐）：`pnpm --filter worker dev`（wrangler dev 8787，仅验证用）

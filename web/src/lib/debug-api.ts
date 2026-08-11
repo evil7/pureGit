@@ -44,6 +44,11 @@ export interface DebugParam {
   enabled?: boolean;
   /** path 参数在 URL 模板中的段位置（split('/') 索引，静态来自端点模板；`path[n]` 徽章显示） */
   index?: number;
+  /** query 行「显式存在」标记：true = 已在 URL 中显式出现（反向解析写入/同步），
+   *  空值也输出裸名 `name`（`?aa&bb` 保持不丢）；URL 移除该 key → 本行从表格移除
+   *  （文档参数自动转为待选 badge）。false = 编辑中行（端点文档填充 / 手动添加），
+   *  空值不输出 URL，反向解析保留（不因 URL 无此 key 而移除） */
+  explicit?: boolean;
 }
 
 /** REST 请求数据类型（快速切换发送内容格式；form-urlencoded/form-data 均走表格） */

@@ -21,9 +21,21 @@ import { useAuth } from "@/hooks/useAuth";
 import { EMPTY_REQUEST, executeDebug } from "@/lib/debug-api";
 import type { DebugRequest, DebugResult, HeaderRow } from "@/lib/debug-api";
 import { loadHistory, addHistoryItem, clearHistory, type HistoryItem } from "@/lib/debug-store";
-import { endpointToRequest, type OpenApiEndpoint } from "@/lib/debug-openapi";
+import {
+  endpointToRequest,
+  matchEndpoint,
+  endpointStillMatches,
+  type OpenApiEndpoint,
+} from "@/lib/debug-openapi";
+import { syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
 import { cn } from "@/lib/utils";
-import { loadGqlSchema, clearGqlSchema, getCachedGqlSchema, preloadAll } from "./schema-loader";
+import {
+  loadGqlSchema,
+  clearGqlSchema,
+  getCachedGqlSchema,
+  preloadAll,
+  getAllEndpoints,
+} from "./schema-loader";
 import { LeftPanel } from "./LeftPanel";
 import { RequestEditor } from "./RequestEditor";
 import { ResponsePanel } from "./ResponsePanel";
@@ -51,8 +63,8 @@ export default function DebugPage() {
   const [result, setResult] = useState<DebugResult | null>(null);
   const [running, setRunning] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("pretty");
-  /** 响应 Tab（Body/Headers） */
-  const [respTab, setRespTab] = useState<"body" | "headers">("body");
+  /** 响应 Tab（Body/Headers）——默认第一个 tab「返回头」（与请求区默认「请求头」对称） */
+  const [respTab, setRespTab] = useState<"body" | "headers">("headers");
   /** GitHub App 专属端点 401（需 App JWT，OAuth/PAT 无法访问） */
   const appJwt401 =
     result?.status === 401 && result.bodyText.includes("A JSON web token could not be decoded");
@@ -222,6 +234,64 @@ export default function DebugPage() {
     setReq(ensureAuthRow({ ...EMPTY_REQUEST, protocol: "graphql", method, query }));
   };
 
+  // ── URL + 方法 → 匹配端点文档（文档权威：端点确定后 URL 微编辑固化，结构变化才重匹配） ──
+  /** 最新 URL/方法引用（防抖回调内读最新值 + 竞态检查） */
+  const urlRef = useRef(req.url);
+  const methodRef = useRef(req.method);
+  const endpointRef = useRef(endpoint);
+  urlRef.current = req.url;
+  methodRef.current = req.method;
+  endpointRef.current = endpoint;
+  /** 端点匹配防抖（250ms）：仅当 无端点 / 当前端点与 URL 结构不再匹配 时触发——
+   *  命中 → 加载文档 + 骨架对齐；未命中 → 清空文档（转显式行模式） */
+  useEffect(() => {
+    if (req.protocol !== "rest") return;
+    const timer = window.setTimeout(() => {
+      void (async () => {
+        const url = urlRef.current;
+        const method = methodRef.current;
+        if (url.trim() === "") {
+          // 空 URL → 无文档可匹配
+          setEndpoint(null);
+          setBodySchema(null);
+          return;
+        }
+        // 端点固化：当前端点与 URL 结构 + 方法仍匹配 → 微编辑不重匹配，
+        // 表格值已由 RequestEditor URL onChange（传 doc）同步，此处不动
+        const cur = endpointRef.current;
+        if (cur && endpointStillMatches(cur, url, method)) return;
+        try {
+          const eps = await getAllEndpoints();
+          // 竞态：等待期间 URL/method 已变 → 丢弃本次结果（下次防抖重匹配）
+          if (urlRef.current !== url || methodRef.current !== method) return;
+          const ep = matchEndpoint(method, url, eps);
+          if (ep) {
+            const doc: DocParams = {
+              path: ep.path,
+              queryNames: (ep.op.params ?? []).filter((p) => p.in === "query").map((p) => p.name),
+            };
+            setEndpoint(ep);
+            setBodySchema(
+              (ep.op.body?.["application/json"] as Record<string, unknown> | undefined) ?? null,
+            );
+            // 合并参数：path 行对齐模板（补缺失/移多余）+ query 按文档全集（不改 URL）
+            setReq((r) => {
+              if (r.url !== url) return r; // 竞态（防抖期间 URL 又变）
+              return { ...r, params: syncParamsFromUrl(r.params, r.url, doc) };
+            });
+          } else {
+            // 未匹配：清空文档（保留参数表——用户可能继续输入使其匹配）
+            setEndpoint(null);
+            setBodySchema(null);
+          }
+        } catch {
+          /* 端点索引加载失败 → 保持现状（不打断用户） */
+        }
+      })();
+    }, 250);
+    return () => window.clearTimeout(timer);
+  }, [req.url, req.method, req.protocol]);
+
   // ── 全局快捷键：Ctrl/Cmd+Enter 发送 ──
   const runRef = useRef(run);
   runRef.current = run;
@@ -279,6 +349,7 @@ export default function DebugPage() {
             requiredHeaders={requiredHeaders}
             gqlSchema={gqlSchema}
             bodySchema={bodySchema}
+            endpoint={endpoint}
             setFormFile={setFormFile}
             running={running}
             onRun={() => void run()}

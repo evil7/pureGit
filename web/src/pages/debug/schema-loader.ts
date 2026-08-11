@@ -21,6 +21,7 @@ import type {
   RestResMinFile,
   RestResFullFile,
   OpenApiGroup,
+  OpenApiEndpoint,
 } from "@/lib/debug-openapi";
 import { buildGroupFromTag, endpointToRequest } from "@/lib/debug-openapi";
 import { buildGqlSchemaFromIntrospection } from "@/lib/debug-graphql";
@@ -219,6 +220,31 @@ export function loadResFull(tag: string): Promise<LoadResult<RestResFullFile>> {
     `${REST_BASE}/${tag}.res-full.json`,
     "rest",
   );
+}
+
+/* ── 全量端点索引（URL ↔ 端点匹配数据源，需求 5） ─────────── */
+
+let allEndpoints: OpenApiEndpoint[] | null = null;
+let allEndpointsLoading: Promise<OpenApiEndpoint[]> | null = null;
+
+/**
+ * 全量端点索引（遍历所有 tag 合并；并发去重 + 内存缓存）。
+ * 预热完成后全部命中缓存（毫秒级）；首次调用会触发未缓存 tag 的 fetch。
+ * 供 DebugPage 在 URL/method 变化时匹配端点文档。
+ */
+export function getAllEndpoints(): Promise<OpenApiEndpoint[]> {
+  if (allEndpoints) return Promise.resolve(allEndpoints);
+  if (allEndpointsLoading) return allEndpointsLoading;
+  allEndpointsLoading = (async () => {
+    const idx = await getRestVersion();
+    const groups = await Promise.all(idx.data.tags.map((tag) => loadRestTag(tag.tag)));
+    const eps = groups.flatMap((g) => g.data.items);
+    allEndpoints = eps;
+    return eps;
+  })().finally(() => {
+    allEndpointsLoading = null;
+  });
+  return allEndpointsLoading;
 }
 
 /** 端点点按 → 填充请求（复用 debug-openapi 的构造逻辑） */

@@ -66,7 +66,7 @@
 - **开发进度**：L0~L5 全部实现（浏览/协作/账户/CLI 闭环）；进入**顶层整体优化**阶段（流量排查 / 请求复用集中 / 后端优化 / 文档一致性维护），计划见内部 `plan.md`
 - **文档体系规整（2026-08-10）**：**决策记录机制整体移除**——`decisions.md` 已删除、`architecture.md` 不再保留 ADR 索引表；`tasks.md` 只留需求基线、`plan.md` 只留依赖层级；注释规范为**总结性语义描述**（说明代码最终用意），不引用决策编号
 - **已部署**：Worker `puregit` + 自定义域名 `https://puregit.deepwn.io`（OAuth 回调与 CLI 镜像端点同域）
-- **开发环境**：**`pnpm dev`（双进程，唯一模式）**——纯 vite 前端 5173 + 独立 `wrangler dev` worker 8787，vite proxy 只转发 `/$auth` 与 git 端点；启动自动 `wrangler types`；构建 `pnpm --filter web build`（详见 copilot-instructions.md「构建与测试」）；**提交前门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `pnpm format:check`（oxfmt 格式一致）
+- **开发环境**：**`pnpm dev`（双进程，唯一模式）**——纯 vite 前端 5173 + 独立 `wrangler dev` worker 8787，vite proxy 只转发 `/$auth` 与 git 端点；启动自动 `wrangler types`；构建 `pnpm --filter web build`（详见 copilot-instructions.md「构建与测试」）；**提交前门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `pnpm format:check`（oxfmt 格式一致）+ `pnpm test`（vitest 质量门，`/$debug` 相关改动必跑）
 - **本地 OAuth 调试**：通用 `local-dev` App（loopback `127.0.0.1` 回调端口可任意），`.dev.vars` 填 `http://127.0.0.1:5173/$auth/callback` + local-dev 凭据
 
 ## 开发环境：Windows / PowerShell 5.1（编码与命令注意事项）

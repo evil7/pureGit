@@ -65,5 +65,6 @@
   "params.pathIndex": "Segment position in URL template (split('/') index)",
   "params.namePlaceholder": "Name",
   "params.valuePlaceholder": "Value",
-  "params.addQuery": "Add query param"
+  "params.addQuery": "Add query param",
+  "params.pickDocQuery": "Add doc param {{name}}"
 }
