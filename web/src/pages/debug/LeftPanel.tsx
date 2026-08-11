@@ -21,7 +21,6 @@ import { REST_METHOD_COLOR, statusColorClass } from "./rest-meta";
 import type { HistoryItem } from "@/lib/debug-store";
 import type { DebugProtocol } from "@/lib/debug-api";
 import type { OpenApiEndpoint } from "@/lib/debug-openapi";
-import type { GqlFieldNode } from "@/lib/debug-graphql";
 import type { GraphQLSchema } from "graphql";
 
 interface LeftPanelProps {
@@ -33,8 +32,10 @@ interface LeftPanelProps {
   onReplay: (item: HistoryItem) => void;
   onClearHistory: () => void;
   onPickEndpoint: (ep: OpenApiEndpoint) => void;
-  onPickGqlField: (field: GqlFieldNode, opType: "query" | "mutation") => void;
-  onPickGqlChild: (root: GqlFieldNode, child: GqlFieldNode, opType: "query" | "mutation") => void;
+  /** GraphQL 勾选合并 → 填充请求（query 空字符串 = 清空） */
+  onPickGqlMulti: (opType: "query" | "mutation", query: string) => void;
+  /** 当前编辑器 GraphQL 查询文本（反向同步到勾选） */
+  gqlEditorQuery: string;
   /** GraphQL Schema（受控；DebugPage 统一持有，供 GqlTree 与编辑器补全共用） */
   gqlSchema: GraphQLSchema | null;
   gqlLoading: boolean;
@@ -52,8 +53,8 @@ export function LeftPanel({
   onReplay,
   onClearHistory,
   onPickEndpoint,
-  onPickGqlField,
-  onPickGqlChild,
+  onPickGqlMulti,
+  gqlEditorQuery,
   gqlSchema,
   gqlLoading,
   gqlError,
@@ -175,11 +176,11 @@ export function LeftPanel({
             <GqlTree
               t={t}
               schema={gqlSchema}
+              editorQuery={gqlEditorQuery}
               loading={gqlLoading}
               error={gqlError}
               onReload={onGqlReload}
-              onPickGqlField={onPickGqlField}
-              onPickGqlChild={onPickGqlChild}
+              onPickGqlMulti={onPickGqlMulti}
               onPickGqlTemplate={onPickGqlTemplate}
             />
           ) : (

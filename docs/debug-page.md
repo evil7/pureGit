@@ -12,7 +12,7 @@
 
 | 能力 | 说明 |
 |---|---|
-| **查看** | REST 端点集合树（按 tag 分组，点按即用）+ GraphQL Schema 树（query/mutation 顶层字段 → 展开返回类型子字段 + union possibleTypes）+ **端点文档**（右侧 Drawer：参数表 / 请求体结构 / 响应结构，200 默认展开） |
+| **查看** | REST 端点集合树（按 tag 分组，点按即用）+ GraphQL Schema 树（query/mutation 分组 + **字段勾选合并构造** + 展开返回类型子字段 + union possibleTypes + **内省分组**）+ **端点文档**（右侧 Drawer：参数表 / 请求体结构 / 响应结构，200 默认展开） |
 | **补全** | REST：URL 路径参数 + **requestBody 字段级 JSON 补全**；GraphQL：cm6-graphql 字段/参数/枚举补全 + 悬停文档 + 语法诊断（依赖完整 schema） |
 | **测试** | 统一请求面板（GraphQL / REST 共用 DebugRequest 模型），**Params tab（path/query 双向联动）**、请求头 K/V 表格、Body 快速切换（json/form/text）、响应状态/头/体展示、History/Collection 持久化 |
 
@@ -229,7 +229,7 @@ web/src/pages/debug/
   KeyValueTable.tsx   # K/V 表格（请求头/form）
   LeftPanel.tsx       # History / API 两个 tab（含底部进度条）
   RestTree.tsx        # REST 端点树（消费 index.json + tag 懒加载）
-  GqlTree.tsx         # GraphQL Schema 树（受控：schema 由 DebugPage 统一持有）
+  GqlTree.tsx         # GraphQL Schema 树（勾选合并 + 内省分组；schema 由 DebugPage 统一持有）
   RequestEditor.tsx   # 请求行 + Tabs + Body 编辑器（含补全挂载）+ URL 框 book icon 文档触发
   ResponsePanel.tsx   # 响应状态条 + Body/Headers（空状态等待占位；文档已迁 Drawer）
   EndpointDocDrawer.tsx # 右侧文档 Drawer（完整端点文档：参数表/请求体/响应结构）
@@ -282,7 +282,10 @@ web/src/pages/debug/
 - **响应区默认 tab**：默认选中第一个 tab「返回头」（与请求区默认「请求头」对称，DebugPage respTab 初始 "headers"）
 - **事件驱动防循环**：参数编辑 onChange 重建 URL、URL 输入框 onChange 反向同步，不经 useEffect 无回写循环；端点匹配只补 path 行/文档，不改 URL
 - **默认请求**：进入页面默认 REST + GET（`EMPTY_REQUEST`，URL 直接 `/` 根路径、placeholder `/repos/{owner}/{repo}` 提示典型模板）；GraphQL 模板显式声明 protocol/method
-- **GraphQL 编辑框空 + placeholder**：切到 GraphQL（query/mutation）时 query 编辑框**默认空内容**，仅 placeholder 显示示例 `query { viewer { login } }` 提示（`EMPTY_REQUEST.query` 为空、方法下拉切 GraphQL 时 `query: ""` 清空）；左栏 Schema 树/模板点按仍主动生成查询填入（用户行为保留）
+- **GraphQL 编辑框空 + placeholder**：切到 GraphQL（query/mutation）时 query 编辑框**默认空内容**，仅 placeholder 显示示例 `query { viewer { login } }` 提示（`EMPTY_REQUEST.query` 为空、方法下拉切 GraphQL 时 `query: ""` 清空）；左栏 Schema 树/勾选合并/内省分组点按仍主动生成查询填入（用户行为保留）
+- **GraphQL 勾选合并（勾选唯一选中 + 双向同步，2026-08-11 定稿）**：query/mutation 字段行（含展开的子字段）前有 checkbox——**勾选 = 唯一选中动作**（无独立按钮，**点击字段名仅展开/收起**返回类型子字段，不再生成单字段模板）。**勾选父级 → 子项全自动勾选**（对象 root 自动带全部可见子字段）；**只有被勾选才写入**——生成 query 严格 = 勾选内容（`gqlMapToQuery`，无隐式默认字段/主键）；父级三态（checked / indeterminate / unchecked，radix `CheckedState`），**取消最后一个子项 → 父级一并取消**；取消全部勾选 → 清空 query。**反向同步（手写 → 勾选）**：监听编辑器 query（`editorQuery` prop），无语法错误时 `parseQueryFieldSelections`（graphql.parse AST 提取顶层字段+子字段）→ `buildSelectionsFromParsed` 归一化（非 schema 字段/内省字段跳过、对象空 selection 跳过）→ 与当前勾选比较，不同才更新；语法错误/空 query → 不反向/清空勾选。**状态机纯函数**（`toggleRootSelection` / `toggleChildSelection` / `buildSelectionsFromParsed` / `gqlRootCheckState` / `gqlMapToQuery`，lib/debug-graphql.ts）——不变量：对象 root entry 存在 ⇔ children>0、标量 children 恒空、正反向收敛循环稳定（debug-graphql.spec.ts 全量覆盖）
+- **GraphQL 列表排序与计数（2026-08-11）**：① **普通字符序**（`byName`，**不区分主键**——勾选合并无隐式默认字段，`id` 无特殊地位，不再恒最前）；② **父级后方数字 = 子条目数量**（对照 REST tag 的端点数语义）——字段行右侧徽章从 args 数改为可展开子字段数（`typeFields?.length`，union 用 possibleTypes），args 参数清单保留在 hover title（子字段 args 徽章一并移除）
+- **GraphQL 内省分组（替代自定义模板）**：GqlTree 底部（原模板位置）固定「内省」分组默认展开——`__schema`（queryType/mutationType/types）/ `__type(name: "…")` / `__typename`，点击填充内省查询（GraphQL spec 标准）；`PRESET_COLLECTION` GraphQL 预设渲染移除（数据保留供历史去重）
 - **URL 前缀一致性**：`https://api.github.com` addon 用 `font-mono text-sm leading-none`——与 path 输入框（Input 组件 `md:text-sm` 实际 14px）同字号、`items-center` 垂直居中（leading-none 防 line-height 撑高 InputGroup）
 - **布局与请求头统一**：ParamsTable 照搬 KeyValueTable（请求头）骨架——列结构（checkbox / key / value / 操作）、操作列图标（必填 Lock 占位、选填 X 删除 `Button size="icon" variant="ghost" h-6 w-6`）、添加行同为表格内 colSpan 行（靠左与 checkbox 槽对齐）；差异仅在 key 输入框用 `InputGroup` + `InputGroupAddon align="inline-end"` 内嵌类型胶囊（`path[n]` / `query`）
 - **复合占位段（单 path 段多参数）合并单行**：段模型 `DebugParam.segPos/segCount/segSeparators`（全可选向后兼容；单占位段恒 segCount=1）——① **识别**：`parsePathSeg`（lib/debug-params.ts 导出）统一解析段内占位符 + 字面分隔符（`{base}...{head}` → names=[base,head]、seps=["","...",""]；复杂段 `{aaa}...{bbb}---{ccc}` 自动适配），`endpointToRequest` / `extractPathParams` / `splitCompoundUrlSeg` 三处复用同一模型；② **列出**：ParamsTable 按 index 分组 path 行，`segCount>1` → **合并单行**——key 显示参数名+真实分隔符（`base...head`），value 每参数独立 Input + 中间真实分隔符文本（低对比非可编辑，title 提示「段内字面分隔符」）；③ **设定**：每 input 更新对应参数行（模型仍每参数一行），分次编辑天然正确，复杂段自动扩展 N input + N-1 分隔符；④ **扁平标签**：胶囊仍 `path[n]`（不引入 `·1/2` 层级后缀）；⑤ **排序**：path 按 index 升序 + 同 index 次级 segPos 升序（base 恒在 head 前）
@@ -295,7 +298,7 @@ web/src/pages/debug/
 - **前端消费结构契约**：`debug-openapi.ts`（OpenApiDoc 类型）随产物结构调整同步更新；schema-loader 是唯一 fetch 入口，页面组件不直接 fetch public 文件
 - **临时产物即用即删**：测试脚本用后删除，不留垃圾
 - **质量门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `format:check`（oxfmt 一致）+ `pnpm typecheck`（tsc -b，含测试）+ `pnpm --filter web build` 通过
-- **测试质量门（新增）**：`pnpm test`（vitest，node 环境）——① `web/test/debug-params.spec.ts`（parseQuery/parsePathSeg/buildUrlFromParams/syncParamsFromUrl 单元）；② `web/test/debug-openapi.spec.ts`（buildGroupFromTag/endpointToRequest/matchEndpoint/endpointStillMatches 单元）；③ `web/test/schema-integration.spec.ts` **全量真实产物验证**——读 `web/public/debug/rest/` 全部 44 tag × req.json、遍历 **1108 个端点**逐一断言 7 项规则（path↔模板占位双向一致 / endpointToRequest 提取正确含段模型 + **required query 行** / matchEndpoint round-trip 命中自身 / 填值 round-trip / endpointStillMatches 固化 / buildUrlFromParams 正向不改 URL / syncParamsFromUrl 反向骨架稳定含段模型一致 + required query 集 + **required 与 type 一致性**），任何解析/填充/匹配/排序改动必须全绿（当前 7809 测试）
+- **测试质量门（新增）**：`pnpm test`（vitest，node 环境）——**REST 侧三文件**：① `web/test/debug-params.spec.ts`（parseQuery/parsePathSeg/buildUrlFromParams/syncParamsFromUrl 单元）；② `web/test/debug-openapi.spec.ts`（buildGroupFromTag/endpointToRequest/matchEndpoint/endpointStillMatches 单元）；③ `web/test/schema-integration.spec.ts` **全量真实产物验证**——读 `web/public/debug/rest/` 全部 44 tag × req.json、遍历 **1108 个端点**逐一断言 7 项规则（path↔模板占位双向一致 / endpointToRequest 提取正确含段模型 + **required query 行** / matchEndpoint round-trip 命中自身 / 填值 round-trip / endpointStillMatches 固化 / buildUrlFromParams 正向不改 URL / syncParamsFromUrl 反向骨架稳定含段模型一致 + required query 集 + **required 与 type 一致性**）。**GraphQL 侧独立文件**：④ `web/test/debug-graphql.spec.ts`（buildGqlFieldTree 树构建 / 勾选状态机 toggle×2+buildSelectionsFromParsed+gqlRootCheckState / gqlSelectionsToQuery+gqlMapToQuery 构造 / parseQueryFieldSelections 解析 / **不变量 5 正反向收敛**——mini schema 夹具覆盖 object/interface/union/enum/scalar/list/non-null/input/deprecated，54 用例）。REST 与 GraphQL 分工独立、互不依赖；任何解析/填充/匹配/排序改动必须全绿（当前 **7863** 测试：REST 7809 + GraphQL 54）
 
 ## 15. 关键文件索引
 
@@ -314,5 +317,5 @@ web/src/pages/debug/
 | `web/src/lib/debug-params.ts` | REST Params 双向联动（全量实时解析 + explicit 语义） |
 | `web/src/pages/debug/ParamsTable.tsx` | Params 表格（path[n] 徽章 + query 增删 + 文档 badge + **复合段合并单行**） |
 | `web/src/lib/codemirror.ts` | CM6 编辑器工厂（graphql 语言 + json 补全挂载 + tooltip 挂 body） |
-| `web/test/` | vitest 质量门测试（debug-params / debug-openapi 单元 + schema-integration 全量产物验证） |
+| `web/test/` | vitest 质量门测试（REST：debug-params / debug-openapi 单元 + schema-integration 全量产物；GraphQL：debug-graphql 全逻辑） |
 | `web/vitest.config.mts` / `tsconfig.test.json` | 测试环境（node + `@` alias；独立 tsc 引用，纳入 typecheck） |

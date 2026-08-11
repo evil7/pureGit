@@ -40,7 +40,6 @@ import { LeftPanel } from "./LeftPanel";
 import { RequestEditor } from "./RequestEditor";
 import { ResponsePanel } from "./ResponsePanel";
 import { EndpointDocDrawer } from "./EndpointDocDrawer";
-import { gqlFieldToQuery, gqlChildToQuery, type GqlFieldNode } from "@/lib/debug-graphql";
 import type { GraphQLSchema } from "graphql";
 
 type ViewMode = "pretty" | "raw";
@@ -211,33 +210,22 @@ export default function DebugPage() {
     );
     setEndpoint(ep);
   };
-  /** GraphQL 字段点按 → 生成即用查询（清空 REST 端点文档） */
-  const pickGqlField = (field: GqlFieldNode, opType: "query" | "mutation") => {
-    setEndpoint(null);
-    setReq(
-      ensureAuthRow({
-        ...EMPTY_REQUEST,
-        protocol: "graphql",
-        method: opType,
-        query: gqlFieldToQuery(field, opType),
-      }),
-    );
-  };
-  const pickGqlChild = (root: GqlFieldNode, child: GqlFieldNode, opType: "query" | "mutation") => {
-    setEndpoint(null);
-    setReq(
-      ensureAuthRow({
-        ...EMPTY_REQUEST,
-        protocol: "graphql",
-        method: opType,
-        query: gqlChildToQuery(root, child, opType),
-      }),
-    );
-  };
   /** GraphQL 模板点按 → 填充请求（清空 REST 端点文档） */
   const pickGqlTemplate = (query: string, method: "query" | "mutation") => {
     setEndpoint(null);
     setReq(ensureAuthRow({ ...EMPTY_REQUEST, protocol: "graphql", method, query }));
+  };
+  /** GraphQL 勾选合并 → 同操作类型多字段拼接为单个查询（query 空字符串 = 清空） */
+  const pickGqlMulti = (opType: "query" | "mutation", query: string) => {
+    setEndpoint(null);
+    setReq(
+      ensureAuthRow({
+        ...EMPTY_REQUEST,
+        protocol: "graphql",
+        method: opType,
+        query: query || "",
+      }),
+    );
   };
 
   // ── URL + 方法 → 匹配端点文档（文档权威：端点确定后 URL 微编辑固化，结构变化才重匹配） ──
@@ -332,8 +320,8 @@ export default function DebugPage() {
               setHistory([]);
             }}
             onPickEndpoint={pickEndpoint}
-            onPickGqlField={pickGqlField}
-            onPickGqlChild={pickGqlChild}
+            onPickGqlMulti={pickGqlMulti}
+            gqlEditorQuery={req.query}
             gqlSchema={gqlSchema}
             gqlLoading={gqlLoading}
             gqlError={gqlError}
