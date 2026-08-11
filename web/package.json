@@ -52,6 +52,7 @@
     "@shikijs/langs": "^4.4.1",
     "@tailwindcss/typography": "^0.5.20",
     "@tailwindcss/vite": "^4.3.3",
+    "@tanstack/react-virtual": "^3.14.9",
     "@uiw/react-markdown-preview": "^5.2.1",
     "animejs": "^4.5.0",
     "class-variance-authority": "^0.7.1",
