@@ -12,9 +12,9 @@
  *   （无「填充选中」按钮）；**点击字段名仅展开/收起**返回类型子字段
  * - **任意深度递归**：FieldRow 递归组件，路径化展开态（path.join(".") 作 key）；
  *   connection 字段可继续展开 nodes/edges（惰性 fieldsOf，深度上限防循环）
- * - **勾选父级 → 默认字段集注入**（fillLeafs：id + 前 3 标量；connection 自动
- *   totalCount+nodes）；父级三态（checked/indeterminate/unchecked）按子树递归；
- *   取消最后一个子项 → 级联移除父
+ * - **勾选父级 → 默认字段集注入**（fillLeafs：首个无必填参数标量；connection
+ *   同样取字符序首标量 totalCount；全可展开 → 沿第一项递归找叶子）；
+ *   父级三态（checked/indeterminate/unchecked）按子树递归；取消最后一个子项 → 级联移除父
  * - **只有被勾选才写入**：生成 query 严格 = 勾选内容（gqlMapToQuery）
  * - **必填参数 → $var 提取**：勾选带必填参数字段自动生成变量引用（variables 面板
  *   由 M4 接入，此处只保证 query 合法）

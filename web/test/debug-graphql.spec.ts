@@ -16,7 +16,7 @@
  * 1. **只有被勾选才写入**：生成 query 严格 = 勾选内容，无隐式默认字段/主键；
  *    对象字段默认集仅在「初次勾选该对象字段」时注入一次（fillLeafs 思想）
  * 2. **点击树项仅展开**：勾选（checkbox）= 唯一选中动作（组件层行为，本文件测状态机）
- * 3. **不主键区分**：排序普通字符序（id 无特殊地位，仅在默认集里恒选）
+ * 3. **不主键区分**：排序普通字符序（id 无特殊地位；默认集 = 首个无必填标量）
  * 4. **参数模式**：必填参数 → `$var` 变量引用（非内联字面量——非法 GraphQL 根治）；
  *    可选参数用户手填字面量原样输出
  * 5. 状态不变量（toggle/normalize/parse 全程维持）：
@@ -41,8 +41,8 @@
  * │    - deprecated 标记 / args required / returnLabel   │ 无 childFields 残留    │
  * ├────────────────────────────────────────────────────────────────────────────┤
  * │ 2. toggleRootSelection：                             │ 勾选对象 → 默认子树    │
- * │    - 勾选对象 root → 注入默认子树（id+前 3 标量）      │ 标量 root 叶           │
- * │    - connection root → totalCount(+nodes) + 必填 $var│ connection 默认子树    │
+ * │    - 勾选对象 root → 注入默认子树（首个无必填标量）   │ 标量 root 叶           │
+ * │    - connection root → totalCount（字符序首标量）    │ connection 默认子树    │
  * │    - 勾选标量 root → 叶（args 必填 → $var）           │ 取消 → 移除 entry      │
  * │    - 再勾选 = 取消 → 移除 entry                       │ 纯函数不修改原 map     │
  * ├────────────────────────────────────────────────────────────────────────────┤
@@ -491,14 +491,10 @@ describe("toggleRootSelection：父级勾选（默认字段集注入）", () => 
   const viewer = findRoot(tree, "viewer");
   const scalarField = findRoot(tree, "scalarField");
 
-  it("勾选对象 root → 注入默认子树（id + 前 3 无必填标量）", () => {
+  it("勾选对象 root → 注入默认子树（第一个不可展开标量，字符序）", () => {
     const next = toggleRootSelection(c, {}, "query", viewer);
-    expect(Object.keys(next["query:viewer"].children ?? {})).toEqual([
-      "id",
-      "avatarUrl",
-      "email",
-      "login",
-    ]);
+    // User 字符序：avatarUrl < email < id < login < name < repositories → 首个无必填标量 avatarUrl
+    expect(Object.keys(next["query:viewer"].children ?? {})).toEqual(["avatarUrl"]);
   });
 
   it("connection root → totalCount + 必填参数 $var（query/type）；nodes 不存在则不注入", () => {
@@ -578,8 +574,9 @@ describe("toggleFieldSelection：子字段勾选（任意深度）", () => {
     const next = toggleFieldSelection(c, {}, "query", viewer, path);
     const entry = next["query:viewer"];
     // viewer 隐式建（无默认集）；repositories/edges 隐式建空节点；node 目标注入默认子树
+    // Repository 字符序：description < id < name → 首个无必填标量 description
     const node = entry.children!["repositories"].children!["edges"].children!["node"];
-    expect(Object.keys(node.children ?? {})).toEqual(["id", "description", "name"]);
+    expect(Object.keys(node.children ?? {})).toEqual(["description"]);
   });
 
   it("取消深层子项 → 级联删除父链直至顶层 entry（不变量 1）", () => {
@@ -768,11 +765,9 @@ describe("gqlMapToQuery / gqlMapToQueryDetailed：勾选 → 查询构造", () =
     expect(gqlMapToQuery(c, map, "query")).toBe("query {\n  viewer {\n    login\n  }\n}");
   });
 
-  it("勾选对象 root → 默认子树完整输出", () => {
+  it("勾选对象 root → 默认子树完整输出（首个无必填标量）", () => {
     const map = toggleRootSelection(c, {}, "query", viewer);
-    expect(gqlMapToQuery(c, map, "query")).toBe(
-      "query {\n  viewer {\n    id\n    avatarUrl\n    email\n    login\n  }\n}",
-    );
+    expect(gqlMapToQuery(c, map, "query")).toBe("query {\n  viewer {\n    avatarUrl\n  }\n}");
   });
 
   it("同操作类型多字段拼接为单个 selection set（AST 式构造）", () => {
@@ -818,7 +813,7 @@ describe("gqlMapToQuery / gqlMapToQueryDetailed：勾选 → 查询构造", () =
   it("深层递归嵌套（viewer.repositories.edges.node）", () => {
     const map = toggleFieldSelection(c, {}, "query", viewer, ["repositories", "edges", "node"]);
     expect(gqlMapToQuery(c, map, "query")).toBe(
-      "query {\n  viewer {\n    repositories {\n      edges {\n        node {\n          id\n          description\n          name\n        }\n      }\n    }\n  }\n}",
+      "query {\n  viewer {\n    repositories {\n      edges {\n        node {\n          description\n        }\n      }\n    }\n  }\n}",
     );
   });
 

@@ -555,16 +555,39 @@ function requiredArgVars(field: GqlFieldNode): Record<string, string> {
   return args;
 }
 
-/** 默认字段集（fillLeafs 思想）：对象类型默认集 = id + 前 N 个无必填参数的标量字段 */
-const DEFAULT_SCALAR_MAX = 3;
-/** connection 元素递归默认集深度上限（防元素类型循环展开） */
+/** 默认字段集（fillLeafs 思想）：勾选对象 → 只填充「第一个不可展开标量」——
+ * 统一数量（恒 1 个）、统一内容（首个无必填参数标量，按字符序）；
+ * 全可展开 → 沿第一项递归深入直至找到叶子（防类型环深度上限）。
+ * 无叶子对象（纯聚合/Query 根）→ children 空（nodeToQueryText 输出裸字段，极端边界） */
 const DEFAULT_DEPTH_MAX = 4;
 
+/** 在类型字段层找「第一个不可展开标量」（字符序，无必填参数）；全可展开 → 递归第一项 */
+function firstLeafField(
+  ctx: GqlSchemaContext,
+  typeName: string,
+  depth: number,
+): GqlFieldNode | null {
+  if (depth > DEFAULT_DEPTH_MAX) return null;
+  const fields = ctx.fieldsOf(typeName) ?? [];
+  // 第一遍：第一个无必填参数的标量（不可展开 = 叶子）
+  for (const f of fields) {
+    if (f.scalar && !f.args.some((a) => a.required)) return f;
+  }
+  // 全部可展开（或标量均带必填参数）→ 沿第一个可展开字段递归深入
+  for (const f of fields) {
+    if (!f.scalar) {
+      const leaf = firstLeafField(ctx, f.ofTypeName, depth + 1);
+      if (leaf) return leaf;
+    }
+  }
+  return null;
+}
+
 /**
- * 勾选对象字段 → 构建默认子树（fillLeafs 思路，克制规模避免查询爆炸）：
- * - connection 返回 → totalCount + nodes（nodes 递归元素类型默认集）
- * - 普通对象 → id + 前 3 个无必填参数的标量字段
- * - args = 必填参数 → `$var` 引用
+ * 勾选对象字段 → 构建默认子树：只填充「第一个不可展开标量」——
+ * - 普通对象 / connection 统一规则（connection 的 totalCount 恰好是字符序首标量）
+ * - args = 必填参数 → `$var` 引用（顶层如 codeOfConduct(key: $key)）
+ * - 全可展开 → firstLeafField 递归深入
  */
 function buildDefaultSubtree(
   ctx: GqlSchemaContext,
@@ -572,23 +595,8 @@ function buildDefaultSubtree(
   depth = 0,
 ): GqlSelectionNode {
   const children: Record<string, GqlSelectionNode> = {};
-  const fields = depth < DEFAULT_DEPTH_MAX ? (ctx.fieldsOf(field.ofTypeName) ?? []) : [];
-  if (field.isConnection) {
-    // connection：totalCount + nodes（nodes → 元素类型默认集）
-    const nodesField = fields.find((f) => f.name === "nodes");
-    children.totalCount = { args: {} };
-    if (nodesField) children.nodes = buildDefaultSubtree(ctx, nodesField, depth + 1);
-  } else {
-    const id = fields.find((f) => f.name === "id");
-    if (id && !id.args.some((a) => a.required)) children.id = { args: {} };
-    let n = 0;
-    for (const f of fields) {
-      if (n >= DEFAULT_SCALAR_MAX) break;
-      if (f.name === "id" || !f.scalar || f.args.some((a) => a.required)) continue;
-      children[f.name] = { args: {} };
-      n++;
-    }
-  }
+  const leaf = firstLeafField(ctx, field.ofTypeName, depth);
+  if (leaf) children[leaf.name] = { args: requiredArgVars(leaf) };
   return { args: requiredArgVars(field), children };
 }
 
