@@ -227,8 +227,10 @@ const router = createBrowserRouter([
       { path: "/gist/:id/edit", element: <GistEditPage /> },
       { path: "/gist/:id", element: <GistDetailPage /> },
       { path: "/notifications", element: <NotificationsPage /> },
-      /* API 调试工具（系统级，worker 白名单闸门；放 /:login 之前防抢占） */
+      /* API 调试工具（系统级，worker 白名单闸门；放 /:login 之前防抢占）
+         子路径 /rest 与 /graph 驱动协议切换（URL 与左栏/方法下拉双向绑定） */
       { path: "/$debug", element: <DebugPage /> },
+      { path: "/$debug/:proto", element: <DebugPage /> },
       /* 用户主页（官方 github.com/username；自动检测用户/组织） */
       { path: "/:login", element: <UserProfilePage /> },
       /* 组织主页：/orgs/:org 302 → /:org（官方行为） */

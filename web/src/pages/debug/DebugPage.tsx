@@ -16,10 +16,11 @@
  * 页面空闲后台预热全部 tag（左栏底部缓存进度条视觉感知）。
  */
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
 import { EMPTY_REQUEST, executeDebug } from "@/lib/debug-api";
-import type { DebugRequest, DebugResult, HeaderRow } from "@/lib/debug-api";
+import type { DebugProtocol, DebugRequest, DebugResult, HeaderRow } from "@/lib/debug-api";
 import { loadHistory, addHistoryItem, clearHistory, type HistoryItem } from "@/lib/debug-store";
 import {
   endpointToRequest,
@@ -43,6 +44,7 @@ import { LeftPanel } from "./LeftPanel";
 import { RequestEditor } from "./RequestEditor";
 import { ResponsePanel } from "./ResponsePanel";
 import { EndpointDocDrawer } from "./EndpointDocDrawer";
+import { HistoryDrawer } from "./HistoryDrawer";
 import type { GraphQLSchema } from "graphql";
 
 type ViewMode = "pretty" | "raw";
@@ -56,14 +58,53 @@ export default function DebugPage() {
   // ── 响应区折叠状态：默认折叠（未发送时只留头部一行，请求区全高编辑）；
   //    发送响应数据后自动展开（run() 内 setRespCollapsed(false)） ──
   const [respCollapsed, setRespCollapsed] = useState(true);
-  // ── 端点文档抽屉（URL 框 book icon 触发） ──
+  // ── 端点文档抽屉（右栏端点行 book icon 触发） ──
   const [docOpen, setDocOpen] = useState(false);
+  // ── 执行历史抽屉（请求区常驻 icon 按钮触发） ──
+  const [historyOpen, setHistoryOpen] = useState(false);
 
   // ── 请求模型 ──
   const [req, setReq] = useState<DebugRequest>(EMPTY_REQUEST);
   /** patch 或全量 updater（RequestEditor 方法切换需要读取当前值） */
   const set = (update: Partial<DebugRequest> | ((r: DebugRequest) => DebugRequest)) =>
     setReq((r) => (typeof update === "function" ? update(r) : { ...r, ...update }));
+
+  // ── URL 子路径驱动协议（/$debug/rest | /$debug/graph，与点击切换双向绑定）──
+  // 子路径是路由权威：/graph → graphql、/rest → rest；协议变化（方法下拉/端点选择）
+  // 反向写回 URL。首次访问 /$debug 或非法子路径 → 归一化补全为 /$debug/rest。
+  const { proto } = useParams<{ proto?: string }>();
+  const navigate = useNavigate();
+  /** 程序化协议变化标记：URL→协议 同步时置位，跳过 协议→URL 反向回写（防双向循环） */
+  const programmaticProtoRef = useRef(false);
+
+  // URL 子路径 → 协议：仅在 proto 变化时快照判断（依赖不含 req.protocol——
+  // 若响应式依赖会在协议变化时被反向触发，与「协议→URL」effect 互相冲突回写）
+  useEffect(() => {
+    if (proto === "graph") {
+      if (req.protocol !== "graphql") {
+        programmaticProtoRef.current = true;
+        setReq((r) => ({ ...r, protocol: "graphql", method: "query" }));
+      }
+    } else if (proto === "rest") {
+      if (req.protocol !== "rest") {
+        programmaticProtoRef.current = true;
+        setReq((r) => ({ ...r, protocol: "rest", method: "GET" }));
+      }
+    } else {
+      // 无子路径（/$debug）或非法值 → 补全为当前协议的规范路径
+      navigate(`/$debug/${req.protocol === "graphql" ? "graph" : "rest"}`, { replace: true });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [proto, navigate]);
+
+  // 协议 → URL 子路径：点击方法下拉等协议变化 → 写回 URL（程序化变化跳过）
+  useEffect(() => {
+    if (programmaticProtoRef.current) {
+      programmaticProtoRef.current = false;
+      return;
+    }
+    navigate(`/$debug/${req.protocol === "graphql" ? "graph" : "rest"}`, { replace: true });
+  }, [req.protocol, navigate]);
 
   // ── 响应 ──
   const [result, setResult] = useState<DebugResult | null>(null);
@@ -82,7 +123,6 @@ export default function DebugPage() {
 
   // ── History ──
   const [history, setHistory] = useState<HistoryItem[]>(() => loadHistory());
-  const [autoSave, setAutoSave] = useState(true);
 
   // ── GraphQL Schema（完整本地产物；供 GqlTree 与编辑器补全共用）──
   const [gqlSchema, setGqlSchema] = useState<GraphQLSchema | null>(() => getCachedGqlSchema());
@@ -213,10 +253,9 @@ export default function DebugPage() {
       setRespCollapsed(false);
       // 请求后优先显示响应数据；无数据内容（Length 0）→ 显示响应头
       setRespTab(r.bodyText.length > 0 ? "body" : "headers");
-      if (autoSave) {
-        addHistoryItem(req, r, identityLabel);
-        setHistory(loadHistory());
-      }
+      // 自动保存为唯一默认行为（无开关）：每次执行都写入历史
+      addHistoryItem(req, r, identityLabel);
+      setHistory(loadHistory());
     } finally {
       setRunning(false);
     }
@@ -227,18 +266,21 @@ export default function DebugPage() {
     setReq(ensureAuthRow(item.request));
   };
 
-  /** 手动保存当前请求到历史（autoSave 关闭时的兜底入口）；需已有响应结果 */
-  const saveHistory = () => {
-    if (!result) return;
-    addHistoryItem(req, result, identityLabel);
-    setHistory(loadHistory());
-  };
-
   // ── 左栏 API 点按 → 填充请求 ──
   /** 当前 REST 端点的 requestBody schema（json content-type；Body 编辑器字段级补全数据源） */
   const [bodySchema, setBodySchema] = useState<Record<string, unknown> | null>(null);
   /** 当前选中 REST 端点（未发送时响应面板空状态展示端点文档；GraphQL 操作清空） */
   const [endpoint, setEndpoint] = useState<OpenApiEndpoint | null>(null);
+  /** 端点文档抽屉开关（稳定引用——RestTree 行组件 memo 依赖） */
+  const toggleDoc = useCallback(() => setDocOpen((v) => !v), []);
+  /** 历史抽屉开关（稳定引用） */
+  const toggleHistory = useCallback(() => setHistoryOpen((v) => !v), []);
+  /** 左栏 tab 协议切换（REST/Graph）——方法一并切换（GET/query），URL 子路径 effect 反向写回 */
+  const switchProtocol = (p: DebugProtocol) => {
+    setReq((r) =>
+      r.protocol === p ? r : { ...r, protocol: p, method: p === "graphql" ? "query" : "GET" },
+    );
+  };
   /** REST 端点点按 → 填充请求（并同步协议；缺 Authorization 行则补；同步 body schema 供补全） */
   const pickEndpoint = (ep: OpenApiEndpoint) => {
     setReq(ensureAuthRow(endpointToRequest(ep)));
@@ -348,15 +390,11 @@ export default function DebugPage() {
           <LeftPanel
             t={t}
             protocol={req.protocol}
-            history={history}
-            autoSave={autoSave}
-            setAutoSave={setAutoSave}
-            onReplay={replay}
-            onClearHistory={() => {
-              clearHistory();
-              setHistory([]);
-            }}
+            onProtocolChange={switchProtocol}
             onPickEndpoint={pickEndpoint}
+            activeEndpoint={endpoint}
+            docOpen={docOpen}
+            onToggleDoc={toggleDoc}
             onPickGqlMulti={pickGqlMulti}
             gqlEditorQuery={req.query}
             gqlSchema={gqlSchema}
@@ -382,14 +420,10 @@ export default function DebugPage() {
             gqlSchema={gqlSchema}
             bodySchema={bodySchema}
             endpoint={endpoint}
-            docOpen={docOpen}
-            onToggleDoc={() => setDocOpen((v) => !v)}
             setFormFile={setFormFile}
             running={running}
             onRun={() => void run()}
-            onSaveHistory={saveHistory}
-            canSaveHistory={!!result}
-            autoSave={autoSave}
+            onOpenHistory={toggleHistory}
             leftHidden={leftHidden}
             onToggleLeft={() => setLeftHidden((v) => !v)}
           />
@@ -411,6 +445,18 @@ export default function DebugPage() {
 
       {/* 端点文档抽屉（右侧；当前匹配端点时展示完整文档） */}
       <EndpointDocDrawer t={t} endpoint={endpoint} open={docOpen} onOpenChange={setDocOpen} />
+      {/* 执行历史抽屉（右侧；历史请求记录列表） */}
+      <HistoryDrawer
+        t={t}
+        open={historyOpen}
+        onOpenChange={setHistoryOpen}
+        history={history}
+        onReplay={replay}
+        onClearHistory={() => {
+          clearHistory();
+          setHistory([]);
+        }}
+      />
     </div>
   );
 }

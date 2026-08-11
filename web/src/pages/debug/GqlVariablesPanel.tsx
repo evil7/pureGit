@@ -22,7 +22,7 @@
  * - 反向：variables 变化 → effect——若为自身写入（isSelf）只同步声明结构（增删行，值不动）；
  *   外部变化（历史重放等）全量重建行值（结构化行 jsonToStructuredRows 反向重建）
  */
-import { useEffect, useMemo, useRef, useState } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState } from "react";
 import { ChevronRight, Lock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
@@ -390,133 +390,27 @@ export function GqlVariablesPanel({
             <col className="w-7" />
           </colgroup>
           <tbody>
-            {/* 必填声明行（锁定：checkbox 恒开、name 只读、操作列 Lock） */}
+            {/* 必填声明行（锁定：checkbox 恒开、name 只读、操作列 Lock）——
+                展开子表格紧跟对应行正下方（多变量时一一对应不串位） */}
             {rows
               .filter((r) => r.declared && r.required)
-              .map((r, ri) => {
-                const opts = selectOptions(r);
-                return (
-                  <tr key={`req-${r.name}`} className="border-b bg-muted/30 last:border-b-0">
-                    <td className="py-1 pl-3 pr-2">
-                      <div className="flex h-6 w-6 items-center justify-center">
-                        <Checkbox
-                          checked
-                          disabled
-                          className="size-3.5"
-                          title={t("headers.enabled")}
-                        />
-                      </div>
-                    </td>
-                    <td className="py-1 pr-1.5">
-                      <InputGroup>
-                        <InputGroupInput
-                          value={`$${r.name}`}
-                          readOnly
-                          className="h-7 w-full font-mono text-xs"
-                        />
-                        <InputGroupAddon align="inline-end">
-                          <span
-                            className="shrink-0 rounded bg-amber-500/10 px-1 font-mono text-[9px] leading-4 text-amber-600 dark:text-amber-400"
-                            title={t("variables.required")}
-                          >
-                            {r.typeLabel}
-                          </span>
-                        </InputGroupAddon>
-                      </InputGroup>
-                    </td>
-                    <td className="py-1 pr-1.5">
-                      {r.structure ? (
-                        /* M5.5：input/list 结构化变量——value 格为展开按钮（点击内嵌子表格） */
-                        <button
-                          type="button"
-                          className="flex h-7 w-full items-center gap-1 rounded border border-border/60 px-2 text-left font-mono text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
-                          onClick={() => toggleExpanded(r.name)}
-                          title={t("variables.structuredHint")}
-                        >
-                          <ChevronRight
-                            className={cn(
-                              "size-3 shrink-0 transition-transform",
-                              expandedVars.has(r.name) && "rotate-90",
-                            )}
-                          />
-                          {expandedVars.has(r.name)
-                            ? t("variables.structuredEditing")
-                            : t("variables.structuredExpand")}
-                        </button>
-                      ) : opts ? (
-                        <Select value={r.value} onValueChange={(v) => updateRow(ri, { value: v })}>
-                          <SelectTrigger className="h-7 w-full font-mono text-xs">
-                            <SelectValue placeholder="…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {opts.map((v) => (
-                              <SelectItem key={v} value={v} className="font-mono text-xs">
-                                {v}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Input
-                          value={r.value}
-                          onChange={(e) => updateRow(ri, { value: e.target.value })}
-                          placeholder={valuePlaceholder(r, t)}
-                          className={cn(
-                            "h-7 w-full font-mono text-xs",
-                            rowHasError(r) &&
-                              "border-destructive bg-destructive/5 focus-visible:ring-destructive/40",
-                          )}
-                        />
-                      )}
-                    </td>
-                    <td className="py-1 pr-3">
-                      <div
-                        className="flex h-6 w-6 items-center justify-center text-muted-foreground"
-                        title={t("variables.required")}
-                      >
-                        <Lock className="size-3.5" />
-                      </div>
-                    </td>
-                  </tr>
-                );
-              })}
-            {/* M5.5：结构化的必填变量展开行（值格内嵌子表格；colSpan 4） */}
-            {rows
-              .filter((r) => r.declared && r.required && r.structure && expandedVars.has(r.name))
-              .map((r) => (
-                <tr key={`req-exp-${r.name}`} className="border-b bg-background/40 last:border-b-0">
-                  <td colSpan={4} className="px-2 py-1.5">
-                    <StructuredTable
-                      t={t}
-                      row={r.structure!}
-                      onChange={(next) => {
-                        const i = rows.indexOf(r);
-                        updateRow(i, { structure: next });
-                      }}
-                    />
-                  </td>
-                </tr>
-              ))}
-            {/* 用户行（可选声明行 / 自定义行）：checkbox 可开关、X 可删 */}
-            {rows
-              .filter((r) => !(r.declared && r.required))
               .map((r) => {
-                const i = rows.indexOf(r);
+                const i = rows.indexOf(r); // 全量 rows 索引（勿用过滤索引——可选/自定义行在前会错行）
                 const opts = selectOptions(r);
                 return (
-                  <tr key={`${r.name}:${i}`} className="border-b last:border-b-0">
-                    <td className="py-1 pl-3 pr-2">
-                      <div className="flex h-6 w-6 items-center justify-center">
-                        <Checkbox
-                          checked={r.enabled !== false}
-                          onCheckedChange={(c) => updateRow(i, { enabled: c === true })}
-                          className="size-3.5"
-                          title={t("headers.enabled")}
-                        />
-                      </div>
-                    </td>
-                    <td className="py-1 pr-1.5">
-                      {r.declared ? (
+                  <Fragment key={`req-${r.name}`}>
+                    <tr className="border-b bg-muted/30 last:border-b-0">
+                      <td className="py-1 pl-3 pr-2">
+                        <div className="flex h-6 w-6 items-center justify-center">
+                          <Checkbox
+                            checked
+                            disabled
+                            className="size-3.5"
+                            title={t("headers.enabled")}
+                          />
+                        </div>
+                      </td>
+                      <td className="py-1 pr-1.5">
                         <InputGroup>
                           <InputGroupInput
                             value={`$${r.name}`}
@@ -524,110 +418,210 @@ export function GqlVariablesPanel({
                             className="h-7 w-full font-mono text-xs"
                           />
                           <InputGroupAddon align="inline-end">
-                            <span className="shrink-0 rounded bg-muted px-1 font-mono text-[9px] leading-4 text-muted-foreground">
+                            <span
+                              className="shrink-0 rounded bg-amber-500/10 px-1 font-mono text-[9px] leading-4 text-amber-600 dark:text-amber-400"
+                              title={t("variables.required")}
+                            >
                               {r.typeLabel}
                             </span>
                           </InputGroupAddon>
                         </InputGroup>
-                      ) : (
-                        <>
-                          <Input
-                            value={r.name}
-                            onChange={(e) => updateRow(i, { name: e.target.value })}
-                            placeholder="$var"
-                            // F10：query 声明的变量名补全（datalist）——自定义行输入时提示可补 key
-                            list="gql-var-names"
-                            className="h-7 w-full font-mono text-xs"
-                          />
-                          <datalist id="gql-var-names">
-                            {(defs ?? [])
-                              .filter((d) => !rows.some((x) => x.name === d.name))
-                              .map((d) => (
-                                <option key={d.name} value={d.name} />
+                      </td>
+                      <td className="py-1 pr-1.5">
+                        {r.structure ? (
+                          /* M5.5：input/list 结构化变量——value 格为展开按钮（点击内嵌子表格） */
+                          <button
+                            type="button"
+                            className="flex h-7 w-full items-center gap-1 rounded border border-border/60 px-2 text-left font-mono text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
+                            onClick={() => toggleExpanded(r.name)}
+                            title={t("variables.structuredHint")}
+                          >
+                            <ChevronRight
+                              className={cn(
+                                "size-3 shrink-0 transition-transform",
+                                expandedVars.has(r.name) && "rotate-90",
+                              )}
+                            />
+                            {expandedVars.has(r.name)
+                              ? t("variables.structuredEditing")
+                              : t("variables.structuredExpand")}
+                          </button>
+                        ) : opts ? (
+                          <Select value={r.value} onValueChange={(v) => updateRow(i, { value: v })}>
+                            <SelectTrigger className="h-7 w-full font-mono text-xs">
+                              <SelectValue placeholder="…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {opts.map((v) => (
+                                <SelectItem key={v} value={v} className="font-mono text-xs">
+                                  {v}
+                                </SelectItem>
                               ))}
-                          </datalist>
-                        </>
-                      )}
-                    </td>
-                    <td className="py-1 pr-1.5">
-                      {r.structure ? (
-                        /* M5.5：input/list 结构化变量——value 格为展开按钮（点击内嵌子表格） */
-                        <button
-                          type="button"
-                          className="flex h-7 w-full items-center gap-1 rounded border border-border/60 px-2 text-left font-mono text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
-                          onClick={() => toggleExpanded(r.name)}
-                          title={t("variables.structuredHint")}
-                        >
-                          <ChevronRight
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            value={r.value}
+                            onChange={(e) => updateRow(i, { value: e.target.value })}
+                            placeholder={valuePlaceholder(r, t)}
                             className={cn(
-                              "size-3 shrink-0 transition-transform",
-                              expandedVars.has(r.name) && "rotate-90",
+                              "h-7 w-full font-mono text-xs",
+                              rowHasError(r) &&
+                                "border-destructive bg-destructive/5 focus-visible:ring-destructive/40",
                             )}
                           />
-                          {expandedVars.has(r.name)
-                            ? t("variables.structuredEditing")
-                            : t("variables.structuredExpand")}
-                        </button>
-                      ) : opts ? (
-                        <Select value={r.value} onValueChange={(v) => updateRow(i, { value: v })}>
-                          <SelectTrigger className="h-7 w-full font-mono text-xs">
-                            <SelectValue placeholder="…" />
-                          </SelectTrigger>
-                          <SelectContent>
-                            {opts.map((v) => (
-                              <SelectItem key={v} value={v} className="font-mono text-xs">
-                                {v}
-                              </SelectItem>
-                            ))}
-                          </SelectContent>
-                        </Select>
-                      ) : (
-                        <Input
-                          value={r.value}
-                          onChange={(e) => updateRow(i, { value: e.target.value })}
-                          placeholder={valuePlaceholder(r, t)}
-                          className={cn(
-                            "h-7 w-full font-mono text-xs",
-                            rowHasError(r) &&
-                              "border-destructive bg-destructive/5 focus-visible:ring-destructive/40",
-                          )}
-                        />
-                      )}
-                    </td>
-                    <td className="py-1 pr-3">
-                      <Button
-                        size="icon"
-                        variant="ghost"
-                        className="h-6 w-6 px-0 text-muted-foreground hover:text-destructive"
-                        onClick={() => commit(rows.filter((_, xi) => xi !== i))}
-                        title={t("history.delete")}
-                      >
-                        <X className="size-3.5" />
-                      </Button>
-                    </td>
-                  </tr>
+                        )}
+                      </td>
+                      <td className="py-1 pr-3">
+                        <div
+                          className="flex h-6 w-6 items-center justify-center text-muted-foreground"
+                          title={t("variables.required")}
+                        >
+                          <Lock className="size-3.5" />
+                        </div>
+                      </td>
+                    </tr>
+                    {/* M5.5：结构化的必填变量展开行（值格内嵌子表格；紧跟对应行正下方） */}
+                    {r.structure && expandedVars.has(r.name) && (
+                      <tr className="border-b bg-background/40 last:border-b-0">
+                        <td colSpan={4} className="px-2 py-1.5">
+                          <StructuredTable
+                            t={t}
+                            row={r.structure!}
+                            onChange={(next) => updateRow(i, { structure: next })}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
                 );
               })}
-            {/* M5.5：结构化的用户变量展开行（值格内嵌子表格；colSpan 4） */}
+            {/* 用户行（可选声明行 / 自定义行）：checkbox 可开关、X 可删——
+                展开子表格紧跟对应行正下方 */}
             {rows
-              .filter((r) => !(r.declared && r.required) && r.structure && expandedVars.has(r.name))
-              .map((r) => (
-                <tr
-                  key={`user-exp-${r.name}`}
-                  className="border-b bg-background/40 last:border-b-0"
-                >
-                  <td colSpan={4} className="px-2 py-1.5">
-                    <StructuredTable
-                      t={t}
-                      row={r.structure!}
-                      onChange={(next) => {
-                        const i = rows.indexOf(r);
-                        updateRow(i, { structure: next });
-                      }}
-                    />
-                  </td>
-                </tr>
-              ))}
+              .filter((r) => !(r.declared && r.required))
+              .map((r) => {
+                const i = rows.indexOf(r);
+                const opts = selectOptions(r);
+                return (
+                  <Fragment key={`${r.name}:${i}`}>
+                    <tr className="border-b last:border-b-0">
+                      <td className="py-1 pl-3 pr-2">
+                        <div className="flex h-6 w-6 items-center justify-center">
+                          <Checkbox
+                            checked={r.enabled !== false}
+                            onCheckedChange={(c) => updateRow(i, { enabled: c === true })}
+                            className="size-3.5"
+                            title={t("headers.enabled")}
+                          />
+                        </div>
+                      </td>
+                      <td className="py-1 pr-1.5">
+                        {r.declared ? (
+                          <InputGroup>
+                            <InputGroupInput
+                              value={`$${r.name}`}
+                              readOnly
+                              className="h-7 w-full font-mono text-xs"
+                            />
+                            <InputGroupAddon align="inline-end">
+                              <span className="shrink-0 rounded bg-muted px-1 font-mono text-[9px] leading-4 text-muted-foreground">
+                                {r.typeLabel}
+                              </span>
+                            </InputGroupAddon>
+                          </InputGroup>
+                        ) : (
+                          <>
+                            <Input
+                              value={r.name}
+                              onChange={(e) => updateRow(i, { name: e.target.value })}
+                              placeholder="$var"
+                              // F10：query 声明的变量名补全（datalist）——自定义行输入时提示可补 key
+                              list="gql-var-names"
+                              className="h-7 w-full font-mono text-xs"
+                            />
+                            <datalist id="gql-var-names">
+                              {(defs ?? [])
+                                .filter((d) => !rows.some((x) => x.name === d.name))
+                                .map((d) => (
+                                  <option key={d.name} value={d.name} />
+                                ))}
+                            </datalist>
+                          </>
+                        )}
+                      </td>
+                      <td className="py-1 pr-1.5">
+                        {r.structure ? (
+                          /* M5.5：input/list 结构化变量——value 格为展开按钮（点击内嵌子表格） */
+                          <button
+                            type="button"
+                            className="flex h-7 w-full items-center gap-1 rounded border border-border/60 px-2 text-left font-mono text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
+                            onClick={() => toggleExpanded(r.name)}
+                            title={t("variables.structuredHint")}
+                          >
+                            <ChevronRight
+                              className={cn(
+                                "size-3 shrink-0 transition-transform",
+                                expandedVars.has(r.name) && "rotate-90",
+                              )}
+                            />
+                            {expandedVars.has(r.name)
+                              ? t("variables.structuredEditing")
+                              : t("variables.structuredExpand")}
+                          </button>
+                        ) : opts ? (
+                          <Select value={r.value} onValueChange={(v) => updateRow(i, { value: v })}>
+                            <SelectTrigger className="h-7 w-full font-mono text-xs">
+                              <SelectValue placeholder="…" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {opts.map((v) => (
+                                <SelectItem key={v} value={v} className="font-mono text-xs">
+                                  {v}
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+                        ) : (
+                          <Input
+                            value={r.value}
+                            onChange={(e) => updateRow(i, { value: e.target.value })}
+                            placeholder={valuePlaceholder(r, t)}
+                            className={cn(
+                              "h-7 w-full font-mono text-xs",
+                              rowHasError(r) &&
+                                "border-destructive bg-destructive/5 focus-visible:ring-destructive/40",
+                            )}
+                          />
+                        )}
+                      </td>
+                      <td className="py-1 pr-3">
+                        <Button
+                          size="icon"
+                          variant="ghost"
+                          className="h-6 w-6 px-0 text-muted-foreground hover:text-destructive"
+                          onClick={() => commit(rows.filter((_, xi) => xi !== i))}
+                          title={t("history.delete")}
+                        >
+                          <X className="size-3.5" />
+                        </Button>
+                      </td>
+                    </tr>
+                    {/* M5.5：结构化的用户变量展开行（值格内嵌子表格；紧跟对应行正下方） */}
+                    {r.structure && expandedVars.has(r.name) && (
+                      <tr className="border-b bg-background/40 last:border-b-0">
+                        <td colSpan={4} className="px-2 py-1.5">
+                          <StructuredTable
+                            t={t}
+                            row={r.structure!}
+                            onChange={(next) => updateRow(i, { structure: next })}
+                          />
+                        </td>
+                      </tr>
+                    )}
+                  </Fragment>
+                );
+              })}
             {/* 可选声明变量待选行：结构化表 schema 驱动——无「添加自定义行」按钮，
                 仅声明驱动的可选变量 badge 补行（json 模式可自由编辑任意 JSON） */}
             <tr>

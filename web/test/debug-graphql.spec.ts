@@ -285,6 +285,16 @@ function miniIntrospection(): unknown {
               ],
               type: { kind: "OBJECT", name: "AddReactionPayload" },
             },
+            {
+              name: "createDiscussion",
+              args: [
+                {
+                  name: "input",
+                  type: NN({ kind: "INPUT_OBJECT", name: "CreateDiscussionInput" }),
+                },
+              ],
+              type: { kind: "OBJECT", name: "CreateDiscussionPayload" },
+            },
           ],
           interfaces: [],
         },
@@ -304,6 +314,32 @@ function miniIntrospection(): unknown {
             { name: "reaction", args: [], type: { kind: "OBJECT", name: "Reaction" } },
           ],
           interfaces: [],
+        },
+        {
+          kind: "INPUT_OBJECT",
+          name: "CreateDiscussionInput",
+          inputFields: [
+            { name: "repositoryId", type: NN(S("ID")) },
+            { name: "title", type: NN(S("String")) },
+          ],
+        },
+        {
+          kind: "OBJECT",
+          name: "CreateDiscussionPayload",
+          fields: [
+            { name: "clientMutationId", args: [], type: S("String") },
+            { name: "discussion", args: [], type: { kind: "OBJECT", name: "Discussion" } },
+          ],
+          interfaces: [],
+        },
+        {
+          kind: "OBJECT",
+          name: "Discussion",
+          fields: [
+            { name: "id", args: [], type: NN(S("ID")) },
+            { name: "title", args: [], type: NN(S("String")) },
+          ],
+          interfaces: [{ kind: "INTERFACE", name: "Node" }],
         },
         {
           kind: "OBJECT",
@@ -387,9 +423,9 @@ describe("buildGqlFieldTree：Schema 树构建", () => {
     expect(tree.query.map((f) => f.name)).not.toContain("resource");
   });
 
-  it("mutation 顶层字段存在（addReaction）", () => {
+  it("mutation 顶层字段存在（addReaction / createDiscussion）", () => {
     const tree = buildGqlFieldTree(miniSchema());
-    expect(tree.mutation.map((f) => f.name)).toEqual(["addReaction"]);
+    expect(tree.mutation.map((f) => f.name)).toEqual(["addReaction", "createDiscussion"]);
   });
 
   it("对象返回 → typeFields 一层子字段，按字符序（id 不再恒最前）", () => {
@@ -805,6 +841,21 @@ describe("gqlMapToQuery / gqlMapToQueryDetailed：勾选 → 查询构造", () =
     );
     expect(varDefs).toEqual(["input: AddReactionInput!"]);
     expect(varJson).toEqual({ input: "" });
+  });
+
+  it("多 mutation input 变量冲突消解：数字递增命名（input1/input2…，列表显示类型即可区分）", () => {
+    const createDiscussion = findRoot(tree, "createDiscussion");
+    let map = toggleRootSelection(c, {}, "mutation", addReaction);
+    map = toggleRootSelection(c, map, "mutation", createDiscussion);
+    const { query, varDefs, varJson } = gqlMapToQueryDetailed(c, map, "mutation");
+    expect(query).toBe(
+      "mutation($input1: AddReactionInput!, $input2: CreateDiscussionInput!) {\n" +
+        "  addReaction(input: $input1) {\n    clientMutationId\n  }\n" +
+        "  createDiscussion(input: $input2) {\n    clientMutationId\n  }\n" +
+        "}",
+    );
+    expect(varDefs).toEqual(["input1: AddReactionInput!", "input2: CreateDiscussionInput!"]);
+    expect(varJson).toEqual({ input1: "", input2: "" });
   });
 
   it("字面量参数原样输出（用户手填可选参数）", () => {

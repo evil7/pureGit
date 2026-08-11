@@ -9,7 +9,7 @@
  * 刷新进行中标题行下显示进度条 + 状态文字（N/M + label）——替代左栏底部全局进度条，
  * 进度感知归位到数据源所在组件。
  */
-import { ArrowUp, RefreshCw } from "lucide-react";
+import { RefreshCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
@@ -29,10 +29,6 @@ interface SchemaHeaderProps {
   versionDesc?: string;
   /** 搜索命中计数徽章（搜索模式显示；null 隐藏） */
   countBadge?: string;
-  /** 有新版本可用（最前方红色向上箭头预警；hover 说明） */
-  updateAvailable?: boolean;
-  /** 更新预警 hover 文案（调用方传 t 结果） */
-  updateTitle?: string;
   /** 刷新进行中（按钮 spin + 状态文字） */
   loading?: boolean;
   onRefresh?: () => void;
@@ -48,8 +44,6 @@ export function SchemaHeader({
   version,
   versionDesc,
   countBadge,
-  updateAvailable,
-  updateTitle,
   loading,
   onRefresh,
   refreshTitle,
@@ -59,15 +53,6 @@ export function SchemaHeader({
   return (
     <div className="flex shrink-0 flex-col gap-1 px-3 pb-1 pt-1.5">
       <div className="flex items-center gap-1">
-        {/* 版本更新预警（最前方；确认有新版时红色向上箭头，替代协议图标） */}
-        {updateAvailable && (
-          <span
-            className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-destructive/10 text-destructive"
-            title={updateTitle}
-          >
-            <ArrowUp className="size-3" />
-          </span>
-        )}
         <span
           title={versionDesc}
           className="truncate rounded bg-muted px-1.5 py-px font-mono text-[10px] text-muted-foreground"

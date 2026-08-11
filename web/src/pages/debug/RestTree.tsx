@@ -12,7 +12,7 @@
  */
 import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronDown } from "lucide-react";
+import { BookOpen, ChevronDown } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import { REST_METHOD_COLOR } from "./rest-meta";
@@ -27,7 +27,6 @@ import {
 import type { LoadResult, PreloadProgress } from "./schema-loader";
 import { filterRestEndpoints } from "@/lib/debug-openapi";
 import type { OpenApiEndpoint, OpenApiGroup, RestTagInfo } from "@/lib/debug-openapi";
-import { usePkgUpdateAvailable } from "@/lib/debug-version-check";
 import { TreeSearchInput } from "./TreeSearchInput";
 import { SchemaHeader } from "./SchemaHeader";
 import { TreeListSkeleton } from "./TreeListSkeleton";
@@ -35,6 +34,17 @@ import { TreeListSkeleton } from "./TreeListSkeleton";
 interface RestTreeProps {
   t: (k: string, vars?: Record<string, unknown>) => string;
   onPickEndpoint: (ep: OpenApiEndpoint) => void;
+  /** 当前匹配的 REST 端点（URL+method 匹配或点选）——对应端点行 hover 显示文档按钮 */
+  activeEndpoint: OpenApiEndpoint | null;
+  /** 端点文档抽屉是否打开（行内按钮高亮态） */
+  docOpen: boolean;
+  /** 端点文档抽屉开关（对应端点行 hover 右侧 book icon 触发） */
+  onToggleDoc: () => void;
+}
+
+/** 当前匹配端点判定（URL+method 一致）——对应行 hover 显示文档按钮 */
+function isActiveEp(active: OpenApiEndpoint | null, ep: OpenApiEndpoint): boolean {
+  return !!active && active.method === ep.method && active.path === ep.path;
 }
 
 /** 虚拟列表行高估算（px）——tag/端点/骨架/错误行统一紧凑行高 */
@@ -116,16 +126,30 @@ const TagRow = memo(function TagRow({
 /** 端点行（memo：ep 引用稳定 + onPickEndpoint 稳定） */
 const EndpointRow = memo(function EndpointRow({
   row,
+  isActive,
+  docOpen,
+  docTitle,
   onPickEndpoint,
+  onToggleDoc,
 }: {
   row: Extract<RestRow, { kind: "endpoint" }>;
+  /** 当前匹配端点（URL+method 一致）——hover 行右侧显示文档按钮 */
+  isActive: boolean;
+  /** 文档抽屉打开态（按钮高亮） */
+  docOpen: boolean;
+  /** 文档按钮 title/aria-label（父组件 t 结果——字符串稳定不破坏 memo） */
+  docTitle: string;
   onPickEndpoint: (ep: OpenApiEndpoint) => void;
+  onToggleDoc: () => void;
 }) {
   const { ep } = row;
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-1.5 rounded py-0.5 pr-1 text-left hover:bg-accent"
+      className={cn(
+        "group flex w-full items-center gap-1.5 rounded py-0.5 pr-1 text-left hover:bg-accent",
+        isActive && "bg-accent/60",
+      )}
       style={{ paddingLeft: 6 + ROW_INDENT }}
       onClick={() => onPickEndpoint(ep)}
       title={`${ep.method.toUpperCase()} ${ep.path}\n${ep.op.desc ?? ep.op.summary ?? ""}`}
@@ -141,6 +165,26 @@ const EndpointRow = memo(function EndpointRow({
       <span className="min-w-0 flex-1 truncate font-mono text-[10px] text-muted-foreground">
         {ep.path}
       </span>
+      {/* 端点文档按钮：仅当前匹配端点行，hover 时右侧浮现（opacity 过渡占位稳定） */}
+      {isActive && (
+        <span
+          role="button"
+          tabIndex={-1}
+          aria-pressed={docOpen}
+          title={docTitle}
+          aria-label={docTitle}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleDoc();
+          }}
+          className={cn(
+            "ml-auto shrink-0 cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100",
+            docOpen && "bg-accent text-foreground opacity-100",
+          )}
+        >
+          <BookOpen className="size-3" />
+        </span>
+      )}
     </button>
   );
 });
@@ -148,16 +192,30 @@ const EndpointRow = memo(function EndpointRow({
 /** 搜索命中行（memo：ep 引用稳定 + onPickEndpoint 稳定）——平铺 + tag 徽章后缀 */
 const SearchHitRow = memo(function SearchHitRow({
   row,
+  isActive,
+  docOpen,
+  docTitle,
   onPickEndpoint,
+  onToggleDoc,
 }: {
   row: Extract<RestRow, { kind: "hit" }>;
+  /** 当前匹配端点（URL+method 一致）——hover 行右侧显示文档按钮 */
+  isActive: boolean;
+  /** 文档抽屉打开态（按钮高亮） */
+  docOpen: boolean;
+  /** 文档按钮 title/aria-label（父组件 t 结果——字符串稳定不破坏 memo） */
+  docTitle: string;
   onPickEndpoint: (ep: OpenApiEndpoint) => void;
+  onToggleDoc: () => void;
 }) {
   const { ep } = row;
   return (
     <button
       type="button"
-      className="flex w-full items-center gap-1.5 rounded py-0.5 pr-1 text-left hover:bg-accent"
+      className={cn(
+        "group flex w-full items-center gap-1.5 rounded py-0.5 pr-1 text-left hover:bg-accent",
+        isActive && "bg-accent/60",
+      )}
       style={{ paddingLeft: 6 + ROW_INDENT }}
       onClick={() => onPickEndpoint(ep)}
       title={`${ep.method.toUpperCase()} ${ep.path}\n${ep.op.desc ?? ep.op.summary ?? ""}`}
@@ -176,11 +234,37 @@ const SearchHitRow = memo(function SearchHitRow({
       <span className="shrink-0 rounded bg-muted px-1 py-px text-[9px] text-muted-foreground">
         {ep.tag}
       </span>
+      {/* 端点文档按钮：仅当前匹配端点行，hover 时右侧浮现（opacity 过渡占位稳定） */}
+      {isActive && (
+        <span
+          role="button"
+          tabIndex={-1}
+          aria-pressed={docOpen}
+          title={docTitle}
+          aria-label={docTitle}
+          onClick={(e) => {
+            e.stopPropagation();
+            onToggleDoc();
+          }}
+          className={cn(
+            "ml-auto shrink-0 cursor-pointer rounded p-0.5 text-muted-foreground opacity-0 transition-opacity hover:bg-accent hover:text-foreground group-hover:opacity-100",
+            docOpen && "bg-accent text-foreground opacity-100",
+          )}
+        >
+          <BookOpen className="size-3" />
+        </span>
+      )}
     </button>
   );
 });
 
-export function RestTree({ t, onPickEndpoint }: RestTreeProps) {
+export function RestTree({
+  t,
+  onPickEndpoint,
+  activeEndpoint,
+  docOpen,
+  onToggleDoc,
+}: RestTreeProps) {
   const [index, setIndex] = useState<
     | { status: "loading" }
     | { status: "ready"; tags: RestTagInfo[]; version: string }
@@ -232,9 +316,6 @@ export function RestTree({ t, onPickEndpoint }: RestTreeProps) {
     () => (index.status === "ready" ? index.version.replace("openapi@", "") : null),
     [index],
   );
-  /** 版本更新预警（npm latest > 本地产物版本 → 红色↑ 提示可刷新产物） */
-  const restUpdateAvailable = usePkgUpdateAvailable("@octokit/openapi", restVersion);
-
   /** R1：搜索模式触发全量索引加载（懒加载一次；预热后缓存命中零等待） */
   useEffect(() => {
     if (!searching || allEps) return;
@@ -342,13 +423,11 @@ export function RestTree({ t, onPickEndpoint }: RestTreeProps) {
           />
         </div>
       )}
-      {/* 第二行：版本徽章（纯数字版本，hover 完整数据源）+ 版本更新预警（红色↑）+ 搜索命中计数 + 刷新
+      {/* 第二行：版本徽章（纯数字版本，hover 完整数据源）+ 搜索命中计数 + 刷新
          刷新 = 清缓存全量重拉（preloadAll 带进度——本组件内进度条替代左栏底部） */}
       <SchemaHeader
         version={restVersion ?? t("left.openapi")}
         versionDesc={t("rest.schemaSource", { ver: restVersion ?? "" })}
-        updateAvailable={restUpdateAvailable}
-        updateTitle={t("rest.updateAvailable")}
         countBadge={
           searching && allEps
             ? t("rest.searchResult", { count: rows.filter((r) => r.kind === "hit").length })
@@ -406,9 +485,23 @@ export function RestTree({ t, onPickEndpoint }: RestTreeProps) {
                         onToggleTag={toggleTag}
                       />
                     ) : row.kind === "endpoint" ? (
-                      <EndpointRow row={row} onPickEndpoint={onPickEndpoint} />
+                      <EndpointRow
+                        row={row}
+                        isActive={isActiveEp(activeEndpoint, row.ep)}
+                        docOpen={docOpen}
+                        docTitle={t("doc.open")}
+                        onPickEndpoint={onPickEndpoint}
+                        onToggleDoc={onToggleDoc}
+                      />
                     ) : row.kind === "hit" ? (
-                      <SearchHitRow row={row} onPickEndpoint={onPickEndpoint} />
+                      <SearchHitRow
+                        row={row}
+                        isActive={isActiveEp(activeEndpoint, row.ep)}
+                        docOpen={docOpen}
+                        docTitle={t("doc.open")}
+                        onPickEndpoint={onPickEndpoint}
+                        onToggleDoc={onToggleDoc}
+                      />
                     ) : row.kind === "empty" ? (
                       <p className="py-4 text-center text-[11px] text-muted-foreground">
                         {t("rest.searchEmpty")}

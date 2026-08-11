@@ -2,9 +2,9 @@
  * GitHub GraphQL Schema 获取 + 查询模板生成（调试工具用）
  *
  * 数据源双通道（与 REST OpenAPI 同模式）：
- * - **本地 min.json**（主通道）：`/github-graphql.min.json`（scripts/build-graphql-schema.mjs
- *   从已入库的官方 SDL 快照 docs/github-schema.graphql 离线生成，1.5MB raw / 87KB gzip）——
- *   fetch 本地静态文件毫秒级、匿名可用、无网络 introspection 大请求
+ * - **本地产物**（主通道）：`/debug/gql/schema.json`（scripts/build-schemas-octokit.mjs
+ *   从 @octokit/graphql-schema 原数据转录，含 description）——fetch 本地静态文件毫秒级、
+ *   匿名可用、无网络 introspection 大请求
  * - **在线 introspection**（刷新通道）：带 token POST api.github.com/graphql 标准 introspection
  *   （官方 explorer 同款）→ 官方完整 schema（~4000 类型，含 preview 门控）——schema 快照
  *   版本落后时手动刷新，仅内存缓存
@@ -511,15 +511,22 @@ export interface GqlQueryResult {
 }
 
 /**
- * 收集字段参数文本并提取 $var 变量定义（递归遍历时共用 defs/json 累加器）。
+ * 收集字段参数文本并提取 $var 变量定义（递归遍历时共用 defs/json/usedVarNames/multiRefCounters 累加器）。
  * - 值为 `$name`（变量引用）→ 变量定义 `name: 参数类型` + JSON 骨架 `name: ""`
  * - 值为字面量 → 原样输出
+ * - **变量名冲突消解（多 mutation input）**：同名变量被多个字段引用（如 addReaction 与
+ *   createDiscussion 都有必填 `input`）→ **数字递增命名**（`$input1` / `$input2` / …，
+ *   列表会显示各自类型无需语义化名，更简化）；预扫描集合 multiRefVars（引用计数 >1 的
+ *   变量名）+ 计数器 map（multiRefCounters，按字段序递增）驱动。字段引用与定义同步改名。
  */
 function collectArgText(
   field: GqlFieldNode,
   args: Record<string, string>,
   defs: Set<string>,
   json: Record<string, string>,
+  usedVarNames: Set<string>,
+  multiRefVars: Set<string>,
+  multiRefCounters: Map<string, number>,
 ): string {
   const parts: string[] = [];
   for (const [name, value] of Object.entries(args)) {
@@ -527,6 +534,19 @@ function collectArgText(
       const varName = value.slice(1);
       const arg = field.args.find((a) => a.name === name);
       if (arg) {
+        // 同名变量被多字段引用（或已被占用）→ 数字递增新名；仍冲突 → 继续递增
+        if (usedVarNames.has(varName) || multiRefVars.has(varName)) {
+          let n = multiRefCounters.get(varName) ?? 1;
+          let final = `${varName}${n}`;
+          while (usedVarNames.has(final)) final = `${varName}${++n}`;
+          multiRefCounters.set(varName, n + 1);
+          usedVarNames.add(final);
+          defs.add(`${final}: ${arg.typeLabel}`);
+          json[final] = "";
+          parts.push(`${name}: $${final}`);
+          continue;
+        }
+        usedVarNames.add(varName);
         defs.add(`${varName}: ${arg.typeLabel}`);
         json[varName] = "";
       }
@@ -547,8 +567,19 @@ function nodeToQueryText(
   indent: number,
   defs: Set<string>,
   json: Record<string, string>,
+  usedVarNames: Set<string>,
+  multiRefVars: Set<string>,
+  multiRefCounters: Map<string, number>,
 ): string {
-  const argsStr = collectArgText(field, node.args, defs, json);
+  const argsStr = collectArgText(
+    field,
+    node.args,
+    defs,
+    json,
+    usedVarNames,
+    multiRefVars,
+    multiRefCounters,
+  );
   const children = node.children ?? {};
   const keys = Object.keys(children);
   let text = `${field.name}${argsStr ? `(${argsStr})` : ""}`;
@@ -558,7 +589,20 @@ function nodeToQueryText(
     for (const [childName, childNode] of Object.entries(children)) {
       const cf = childFields.find((f) => f.name === childName);
       if (!cf) continue; // 非 schema 字段（防御）
-      body.push("  ".repeat(indent) + nodeToQueryText(ctx, cf, childNode, indent + 1, defs, json));
+      body.push(
+        "  ".repeat(indent) +
+          nodeToQueryText(
+            ctx,
+            cf,
+            childNode,
+            indent + 1,
+            defs,
+            json,
+            usedVarNames,
+            multiRefVars,
+            multiRefCounters,
+          ),
+      );
     }
     text += ` {\n${body.join("\n")}\n${"  ".repeat(indent - 1)}}`;
   }
@@ -579,6 +623,22 @@ export function gqlMapToQueryDetailed(
 ): GqlQueryResult {
   const defs = new Set<string>();
   const json: Record<string, string> = {};
+  /** 已占用的变量名（冲突消解：同操作内同名变量 → 数字递增改名） */
+  const usedVarNames = new Set<string>();
+  /** 预扫描：被多个字段引用的变量名（多 mutation 的 input 参数）→ 全部数字递增命名 */
+  const multiRefVars = new Set<string>();
+  /** 冲突变量名 → 已分配的最大序号（按字段序遍历递增） */
+  const multiRefCounters = new Map<string, number>();
+  {
+    const refCounts = new Map<string, number>();
+    for (const [key, node] of Object.entries(map)) {
+      if (!key.startsWith(`${opType}:`)) continue;
+      countVarRefs(node, refCounts);
+    }
+    for (const [name, count] of refCounts) {
+      if (count > 1) multiRefVars.add(name);
+    }
+  }
   const rootTypeName = opType === "query" ? ctx.queryTypeName : ctx.mutationTypeName;
   const rootFields = ctx.fieldsOf(rootTypeName) ?? [];
   const blocks: string[] = [];
@@ -587,7 +647,20 @@ export function gqlMapToQueryDetailed(
     const rootName = key.slice(opType.length + 1);
     const root = rootFields.find((f) => f.name === rootName);
     if (!root) continue; // 非 schema 字段（防御）
-    blocks.push("  " + nodeToQueryText(ctx, root, node, 2, defs, json));
+    blocks.push(
+      "  " +
+        nodeToQueryText(
+          ctx,
+          root,
+          node,
+          2,
+          defs,
+          json,
+          usedVarNames,
+          multiRefVars,
+          multiRefCounters,
+        ),
+    );
   }
   const varDefStr = defs.size > 0 ? `(${[...defs].map((d) => `$${d}`).join(", ")})` : "";
   return {
@@ -595,6 +668,17 @@ export function gqlMapToQueryDetailed(
     varDefs: [...defs],
     varJson: json,
   };
+}
+
+/** 递归统计选择树中 `$var` 引用的次数（同一字段节点 args 内同名引用计 1 次） */
+function countVarRefs(node: GqlSelectionNode, counts: Map<string, number>): void {
+  for (const v of Object.values(node.args ?? {})) {
+    if (v.startsWith("$")) {
+      const name = v.slice(1);
+      counts.set(name, (counts.get(name) ?? 0) + 1);
+    }
+  }
+  for (const child of Object.values(node.children ?? {})) countVarRefs(child, counts);
 }
 
 /** 勾选集合 → 查询文本（空选择 → ""；严格「只有勾选才写入」） */

@@ -11,12 +11,11 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import {
-  BookOpen,
   Braces,
   ChevronDown,
   List,
   ListTree,
-  Save,
+  History,
   Send,
   TriangleAlert,
   Wand2,
@@ -25,7 +24,6 @@ import { Button } from "@/components/ui/button";
 import {
   InputGroup,
   InputGroupAddon,
-  InputGroupButton,
   InputGroupInput,
   InputGroupText,
 } from "@/components/ui/input-group";
@@ -70,16 +68,11 @@ interface RequestEditorProps {
   bodySchema: Record<string, unknown> | null;
   /** 当前匹配的 REST 端点（URL+method 匹配或点选；未匹配为 null）——参数表对照文档 */
   endpoint: OpenApiEndpoint | null;
-  /** 端点文档抽屉是否打开（book icon 按钮高亮态） */
-  docOpen: boolean;
-  /** 端点文档抽屉开关（URL 框右侧 book icon 触发；仅匹配到端点时可用） */
-  onToggleDoc: () => void;
   setFormFile: (i: number, file: File | null) => void;
   running: boolean;
   onRun: () => void;
-  onSaveHistory: () => void;
-  canSaveHistory: boolean;
-  autoSave: boolean;
+  /** 打开历史抽屉（请求区常驻 icon 按钮触发） */
+  onOpenHistory: () => void;
   leftHidden: boolean;
   onToggleLeft: () => void;
 }
@@ -93,14 +86,10 @@ export function RequestEditor({
   gqlSchema,
   bodySchema,
   endpoint,
-  docOpen,
-  onToggleDoc,
   setFormFile,
   running,
   onRun,
-  onSaveHistory,
-  canSaveHistory,
-  autoSave,
+  onOpenHistory,
   leftHidden,
   onToggleLeft,
 }: RequestEditorProps) {
@@ -408,25 +397,6 @@ export function RequestEditor({
               className="h-7 cursor-not-allowed font-mono text-xs"
             />
           )}
-          {/* 端点文档抽屉触发：仅匹配到正确路径（endpoint 非空）时显示在 URL 框右侧 */}
-          {endpoint && (
-            <InputGroupAddon align="inline-end">
-              <InputGroupButton
-                size="icon-xs"
-                variant="ghost"
-                aria-pressed={docOpen}
-                className={cn(
-                  "text-muted-foreground hover:text-foreground",
-                  docOpen && "bg-accent text-foreground",
-                )}
-                onClick={onToggleDoc}
-                title={t("doc.open")}
-                aria-label={t("doc.open")}
-              >
-                <BookOpen className="size-3.5" />
-              </InputGroupButton>
-            </InputGroupAddon>
-          )}
         </InputGroup>
         {/* Send（凭据已由 Headers 表格 Authorization 行控制，身份下拉已删） */}
         <Button
@@ -439,19 +409,16 @@ export function RequestEditor({
           <Send className="size-3.5" />
           {t("execute")}
         </Button>
-        {/* 手动保存历史：autoSave 关闭时显示（发送后保存当前请求+响应） */}
-        {!autoSave && (
-          <Button
-            size="icon"
-            variant="ghost"
-            className="h-8 w-8 shrink-0 px-0 text-muted-foreground hover:text-foreground"
-            onClick={onSaveHistory}
-            disabled={!canSaveHistory}
-            title={t("history.save")}
-          >
-            <Save className="size-3.5" />
-          </Button>
-        )}
+        {/* 打开历史抽屉（常驻；历史自动保存，无需手动保存按钮） */}
+        <Button
+          size="icon"
+          variant="ghost"
+          className="h-8 w-8 shrink-0 px-0 text-muted-foreground hover:text-foreground"
+          onClick={onOpenHistory}
+          title={t("history.open")}
+        >
+          <History className="size-3.5" />
+        </Button>
       </div>
 
       {/* ── 请求 Tabs（Postman 风格：REST Headers/Body；GraphQL Query/Variables/Headers） ── */}

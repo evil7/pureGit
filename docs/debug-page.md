@@ -22,7 +22,7 @@
 ┌─ 数据源（构建期，零下载）────────────────────────────┐
 │  @octokit/openapi（REST OpenAPI deref）              │
 │  @octokit/graphql-schema（GraphQL 原数据 schema.json）│
-│  scripts/build-schemas-octokit.mjs 转录拆分           │
+│  scripts/update-schemas.mjs 转录拆分（--upgrade 升级）│
 └──────────────┬───────────────────────────────────────┘
                ▼
 ┌─ 静态产物（web/public/debug/，随仓库发布）───────────┐
@@ -54,7 +54,7 @@
 
 > 注意：REST 必须用 **deref** 变体。非 deref 的 parameters 是 `$ref` 引用不展开，前端需要自写 `$ref` 解析器（复杂 + 出错面）。deref 的 4× 体积劣势被 brotli 压缩大幅抹平（见 §5 实测），故取 deref。
 
-转录脚本：`scripts/build-schemas-octokit.mjs`（`pnpm build:schemas`）；双模式封装 `scripts/update-schemas.mjs`（默认 octokit 转录 / `--download` 官方源）。
+转录脚本：`scripts/update-schemas.mjs`（单一入口——`pnpm update:schemas` 转录已安装 SDK / `--upgrade` 先升级 @octokit/openapi + @octokit/graphql-schema 到 npm 最新再转录；数据源已直接用 octokit，无 URL 下载模式；**转录前先清空 rest/gql 产物目录**，schema 更新后 tag/类型集合变化时不留冗余旧文件）。
 
 ## 4. 产物结构：req / res-min / res-full 三层
 
@@ -176,7 +176,7 @@ preloadAll(): Promise<void>   // 后台预热：遍历 index.json 全部 tag，�
 
 ### 8.2 左栏底部缓存进度条（后台任务视觉感知）
 
-- **位置**：左侧栏（History/API tab 区域）**底部**常驻一条迷你进度条
+- **位置**：左栏底部常驻一条迷你进度条
 - **语义**：后台预热 / 过期刷新进行中的**视觉反馈**——用户正常使用不受影响，但能感知「有后台任务在跑」
 - **展示**：`正在预载 schema 数据 23/43`（shadcn `progress` 组件，细高度、低对比色，不打扰）
 - **行为**：
@@ -223,29 +223,29 @@ DebugPage.tsx（当前 ~1600 行单文件）按目录拆分：
 ```
 web/src/pages/debug/
   index.tsx           # lazy 入口（App.tsx lazy 指向这里）
-  DebugPage.tsx       # 主布局 + 状态编排 + 骨架屏
+  DebugPage.tsx       # 主布局 + 状态编排 + 骨架屏 + URL 子路径驱动协议（/$debug/rest|graph 双向绑定）
   schema-loader.ts    # 智能请求器（缓存/TTL/SWR/预热/进度事件 + clearRestCache 刷新清缓存）
   rest-meta.ts        # 共享展示元数据（方法徽标色/状态码配色/URL 规整/CT 映射）
   KeyValueTable.tsx   # K/V 表格（请求头/form）+ 常用 header 预设 badge + HeaderValueCombobox 值下拉
   HeaderValueCombobox.tsx # shadcn Combobox（Popover+Command）请求头枚举值下拉（替代 datalist）
-  debug-version-check.ts # 版本更新检测 hook（npm registry latest 比较 + 内存缓存 + 失败静默）
   header-presets.ts   # 常用请求头预设（COMMON_HEADER_PRESETS：key + 值枚举）
-  LeftPanel.tsx       # History / API 两个 tab（进度条已迁移至 RestTree 内）
+  LeftPanel.tsx       # REST / Graph 两个 tab（协议切换，直观选择接口类型；历史已迁 HistoryDrawer）
+  HistoryDrawer.tsx   # 执行历史右侧 Drawer（请求区常驻 icon 触发；自动保存唯一行为 + 计数/清空）
   TreeSearchInput.tsx # 共享搜索框（第一行；/ 快捷键聚焦 + X 清除；GqlTree/RestTree 共用）
   TreeListSkeleton.tsx # 共享刷新/加载占位（GqlTree loading + RestTree 刷新/首载统一骨架）
-  SchemaHeader.tsx    # 共享协议标题栏（第二行：纯数字版本徽章 + 更新预警红色↑ + hover 数据源 + 刷新 + 进度条）
+  SchemaHeader.tsx    # 共享协议标题栏（第二行：纯数字版本徽章 + hover 数据源 + 刷新 + 进度条）
   RestTree.tsx        # REST 端点树（搜索第一行 + 版本行；tag 懒加载 + 刷新全量重拉带进度 + 刷新骨架占位）
   GqlTree.tsx         # GraphQL Schema 树（搜索第一行 + 版本行；索引搜索只搜顶层 + deferred）
   GqlVariablesPanel.tsx # GraphQL Variables tab（R2 双模式：json 默认 CodeEditor / structured KV 表格 + 结构化展开）
   StructuredTable.tsx   # M5.5 结构化递归表格（input 子表格 / list 数组编辑器；R2 起双协议共用）
   BodyStructuredPanel.tsx # R2 REST body 结构化列表视图（deref schema → StructuredField → 双向序列化）
-  RequestEditor.tsx   # 请求行 + Tabs + Body 编辑器（含补全挂载）+ URL 框 book icon 文档触发 + M6 GraphQL operation 下拉 + R2 格式化/切换工具栏
+  RequestEditor.tsx   # 请求行 + Tabs + Body 编辑器（含补全挂载）+ M6 GraphQL operation 下拉 + R2 格式化/切换工具栏
   ResponsePanel.tsx   # 响应状态条 + Body/Headers（空状态等待占位；文档已迁 Drawer）
   EndpointDocDrawer.tsx # 右侧文档 Drawer（完整端点文档：参数表/请求体/响应结构）
   GraphQLLogo.tsx     # GraphQL 官方 Logo（唯一使用处）
 ```
 
-依赖关系：`index.tsx → DebugPage → {schema-loader, LeftPanel, RequestEditor, ResponsePanel, EndpointDocDrawer}`；`LeftPanel → {RestTree, GqlTree}`；`RequestEditor → KeyValueTable + GqlVariablesPanel（GraphQL Variables tab）+ BodyStructuredPanel（REST body 结构化）`；`GqlVariablesPanel → StructuredTable`；`BodyStructuredPanel → StructuredTable`；`EndpointDocDrawer → schema-loader（loadResFull）`。schema-loader 独立于 UI（可单测）。
+依赖关系：`index.tsx → DebugPage → {schema-loader, LeftPanel, RequestEditor, ResponsePanel, EndpointDocDrawer, HistoryDrawer}`；`LeftPanel → {RestTree, GqlTree}`；`RequestEditor → KeyValueTable + GqlVariablesPanel（GraphQL Variables tab）+ BodyStructuredPanel（REST body 结构化）`；`GqlVariablesPanel → StructuredTable`；`BodyStructuredPanel → StructuredTable`；`EndpointDocDrawer → schema-loader（loadResFull）`。schema-loader 独立于 UI（可单测）。
 
 ## 12. 构建与分片（codeSplitting）
 
@@ -256,10 +256,10 @@ web/src/pages/debug/
 - `/$debug` 本身已是 `App.tsx` lazy 路由，独立 chunk（~46KB / gzip 13KB），不进首屏
 - 验证：`pnpm --filter web build` 后 debug chunk 保持小、graphql-vendor/codemirror-vendor 独立；>500kB 警告仅剩全站 MarkdownView（@uiw/react-markdown-preview，非 debug 范畴）
 
-## 13. 端点文档（右侧 Drawer，URL 框 book icon 触发）
+## 13. 端点文档（右侧 Drawer，左栏对应端点行 hover 触发）
 
 - **展示位置（2026-08-11 迁移）**：文档以**独立右侧 Drawer** 展示当前所指向接口的完整文档，**不再放进返回面板**（返回面板空状态恢复「点击发送」占位；文档查阅与响应结果彻底分离，阅读空间充足）
-- **触发方式**：URL 输入框右侧 `<InputGroupAddon align="inline-end">` 内 **book icon 按钮**——仅当**匹配到正确路径**（endpoint 非空）时显示；点击开/关 Drawer（打开态按钮高亮），未匹配路径自动隐藏并关闭
+- **触发方式（2026-08-12 迁移）**：左栏 REST 端点树中**当前匹配的端点行**（URL+method 匹配或点选，行背景高亮）——hover 该行时右侧浮现 **book icon 按钮**（opacity 过渡，打开态高亮）；点击开/关 Drawer。未匹配端点（自定义 URL）无任何行按钮，Drawer 自动关闭
 - **宽度**：`w-2/3! max-w-none!`（总宽度 2/3；vaul 默认 `w-3/4` + `sm:max-w-sm` 太窄，须同时清 max-width 否则 24rem 卡住）
 - **完整内容**：方法徽标（`text-xs font-bold px-2 py-1`，与 `text-sm` 路径垂直居中协调）+ 路径 + tag + summary/desc → **区段标题统一（`DocSectionTitle` 组件：`text-[11px] uppercase` 无图标 + 可选 hint 后缀）**——参数（含计数）/ 请求体结构（hint=content-type 列表）/ 响应三者结构一致 → **参数表（name/in/type/required/desc 完整五列）** → **requestBody 结构**（JSON-schema 树，`oneOf/anyOf` 分支逐层展开）→ **响应状态码列表**
 - **响应结构自动加载**：Drawer 打开即自动 `loadResFull`（IndexedDB 缓存秒开），**默认展开第一个 2xx**（通常 200）——首要呈现正常返回结构；其他状态码点开再展开
@@ -291,13 +291,14 @@ web/src/pages/debug/
 - **响应区默认 tab（2026-08-11 更新）**：初始「响应头」；**请求后按内容自动切换**——有响应数据（Length > 0）→ Body，无数据内容（Length 0，如 DELETE 204 等）→ Headers（REST 与 GraphQL 同规则；页面统一描述：请求头/请求数据/响应头/响应数据）
 - **事件驱动防循环**：参数编辑 onChange 重建 URL、URL 输入框 onChange 反向同步，不经 useEffect 无回写循环；端点匹配只补 path 行/文档，不改 URL
 - **默认请求**：进入页面默认 REST + GET（`EMPTY_REQUEST`，URL 直接 `/` 根路径、placeholder `/repos/{owner}/{repo}` 提示典型模板）；GraphQL 模板显式声明 protocol/method
+- **子路径驱动协议（/$debug/rest | /$debug/graph，2026-08-11）**：`App.tsx` 加 `/$debug/:proto` 路由——URL 子路径是协议权威，与点击切换（方法下拉/端点选择）**双向绑定**：① **URL → 协议**：直接访问 `/$debug/graph` → 协议切 GraphQL（query）、`/$debug/rest` → REST（GET）；无子路径/非法值 → `navigate replace` 归一化补全为 `/$debug/rest`；② **协议 → URL**：方法下拉切协议/端点选择 → `navigate replace` 写回对应子路径（程序化协议变化置 `programmaticProtoRef` 跳过反向回写防循环；URL→协议 effect 仅依赖 proto 快照判断，不响应 req.protocol 避免与反向 effect 冲突）——**URL 始终带子路径，可分享/刷新不丢类型**
 - **GraphQL 编辑框空 + placeholder**：切到 GraphQL（query/mutation）时 query 编辑框**默认空内容**，仅 placeholder 显示示例 `query { viewer { login } }` 提示（`EMPTY_REQUEST.query` 为空、方法下拉切 GraphQL 时 `query: ""` 清空）；左栏 Schema 树/勾选合并/内省分组点按仍主动生成查询填入（用户行为保留）
-- **GraphQL 勾选合并（勾选唯一选中 + 双向同步，2026-08-11 定稿）**：query/mutation 字段行（含展开的子字段）前有 checkbox——**勾选 = 唯一选中动作**（无独立按钮，**点击字段名仅展开/收起**返回类型子字段，不再生成单字段模板）。**勾选父级 → 子项全自动勾选**（对象 root 自动带全部可见子字段）；**只有被勾选才写入**——生成 query 严格 = 勾选内容（`gqlMapToQuery`，无隐式默认字段/主键）；父级三态（checked / indeterminate / unchecked，radix `CheckedState`），**取消最后一个子项 → 父级一并取消**；取消全部勾选 → 清空 query。**反向同步（手写 → 勾选）**：监听编辑器 query（`editorQuery` prop），无语法错误时 `parseQueryFieldSelections`（graphql.parse AST 提取顶层字段+子字段）→ `buildSelectionsFromParsed` 归一化（非 schema 字段/内省字段跳过、对象空 selection 跳过）→ 与当前勾选比较，不同才更新；语法错误/空 query → 不反向/清空勾选。**状态机纯函数**（`toggleRootSelection` / `toggleChildSelection` / `buildSelectionsFromParsed` / `gqlRootCheckState` / `gqlMapToQuery`，lib/debug-graphql.ts）——不变量：对象 root entry 存在 ⇔ children>0、标量 children 恒空、正反向收敛循环稳定（debug-graphql.spec.ts 全量覆盖）
+- **GraphQL 勾选合并（勾选唯一选中 + 双向同步，2026-08-11 定稿）**：query/mutation 字段行（含展开的子字段）前有 checkbox——**勾选 = 唯一选中动作**（无独立按钮，**点击字段名仅展开/收起**返回类型子字段，不再生成单字段模板）。**勾选父级 → 子项全自动勾选**（对象 root 自动带全部可见子字段）；**只有被勾选才写入**——生成 query 严格 = 勾选内容（`gqlMapToQuery`，无隐式默认字段/主键）；父级三态（checked / indeterminate / unchecked，radix `CheckedState`），**取消最后一个子项 → 父级一并取消**；取消全部勾选 → 清空 query。**反向同步（手写 → 勾选）**：监听编辑器 query（`editorQuery` prop），无语法错误时 `parseQueryFieldSelections`（graphql.parse AST 提取顶层字段+子字段）→ `buildSelectionsFromParsed` 归一化（非 schema 字段/内省字段跳过、对象空 selection 跳过）→ 与当前勾选比较，不同才更新；语法错误/空 query → 不反向/清空勾选。**状态机纯函数**（`toggleRootSelection` / `toggleChildSelection` / `buildSelectionsFromParsed` / `gqlRootCheckState` / `gqlMapToQuery`，lib/debug-graphql.ts）——不变量：对象 root entry 存在 ⇔ children>0、标量 children 恒空、正反向收敛循环稳定（debug-graphql.spec.ts 全量覆盖）。**多 mutation input 变量冲突消解（2026-08-11 数字递增定稿）**：多个 mutation 的必填 `input` 参数同名 `$input`（GraphQL 变量必须唯一）→ `gqlMapToQueryDetailed` 预扫描引用计数（`countVarRefs`，>1 即冲突）→ `collectArgText` 维护已占用变量名集合 + 冲突计数器 map，**全部字段数字递增命名 `参数名+序号`**（`$input` 冲突 → `$input1` / `$input2` / …，列表会显示各自类型无需语义化长名，更简化；单字段引用保持原名 `$input`），字段引用与变量定义同步改名——`mutation($input1: AddStarInput!, $input2: CreateDiscussionInput!) { addStar(input: $input1) {...} createDiscussion(input: $input2) {...} }`（debug-graphql.spec.ts 用例：fixture 加 createDiscussion 第二 mutation，多选冲突消解）
 - **GraphQL 列表排序与计数（2026-08-11）**：① **普通字符序**（`byName`，**不区分主键**——勾选合并无隐式默认字段，`id` 无特殊地位，不再恒最前）；② **父级后方数字 = 子条目数量**（对照 REST tag 的端点数语义）——字段行右侧徽章从 args 数改为可展开子字段数（`typeFields?.length`，union 用 possibleTypes），args 参数清单保留在 hover title（子字段 args 徽章一并移除）
 - **GraphQL connection 拆包（2026-08-11 解析层去除）**：`edges`/`nodes`/`node` 等 connection 语法节点是复合查询的语法结构而非「API 功能端点」，在**树形解析层（`buildGqlSchemaContext` 的 `fieldsOf`）刻意去除**，不按勾选决定（嵌套多处 `nodes[]` 噪音大、去留有歧义）——① **object 元素拆包**：`fieldsOf` 遇 `obj.name.endsWith("Connection")` 且 `connectionElement(obj)` 为 **object 类型** → 直接返回**元素类型字段**（跳过 edges/nodes/pageInfo 语法层，如 `assignableUsers` 展开直接见 User 字段）；② **union/interface 元素保持原样但过滤语法字段**（如 `SearchResultItemConnection`）：拆包无意义（无公共字段），保持原样展示但过滤 `edges/nodes/node/pageInfo/cursor` 语法字段，**业务聚合字段保留**（`codeCount`/`issueCount`/`totalCount` 等——totalCount 是 GitHub 连接计数，有业务价值不在过滤集）；③ **顶层 `node(id: ID!)`/`nodes(ids:)`/`relay`/`resource` 是 Relay 公共语法（跨站点通用内建，非业务端点），顶层列表整体屏蔽**（`GQL_TOP_SYNTAX_FIELDS`，query 30→26 字段）；④ 一次改动全链路生效（树/勾选/构造/反向同步自动受益，而非 UI 层过滤）；⑤ conn 徽章保留（hover 提示拆包语义）。测试覆盖：object 元素拆包 / union 元素过滤语法保留业务 / 顶层 node 屏蔽 / 屏蔽不入搜索索引 / 反向同步跳过屏蔽字段 / 非 connection 不误伤 / 生成 query 无 edges 包装 / 默认子树取元素字段 / 手写 edges 反向不勾选（debug-graphql.spec.ts）
 - **GraphQL 内省分组（替代自定义模板）**：GqlTree 底部（原模板位置）固定「内省」分组默认展开——`__schema`（queryType/mutationType/types）/ `__type(name: "…")` / `__typename`，点击填充内省查询（GraphQL spec 标准）；`PRESET_COLLECTION` GraphQL 预设渲染移除（数据保留供历史去重）
-- **Schema/端点搜索（F9 + R1，2026-08-11 定稿）**：**统一布局**——搜索框第一行（`TreeSearchInput` 共享组件：`/` 快捷键聚焦、X 清除），**第二行 `纯数字版本徽章 (刷新icon)`**（`SchemaHeader` 共享组件：无协议标题文字——版本徽章只显示数字版本 `22.0.0` / `15.26.1`（无包名前缀；hover 完整 `schema data by pkg@ver`）；**最前方更新预警（2026-08-11）**：启动后台查 npm registry latest 与产物版本比较（`usePkgUpdateAvailable`，`debug-version-check.ts`——semver 数组比较、Map 内存缓存防重复请求、失败静默无预警），确认有新版 → 红色圆形向上箭头（hover 提示「npm 有新版本可用，可更新产物」）；GraphQL 版本经转录脚本 `gql/index.json` + `getGqlVersion()`，与 REST index.json 对称）；**刷新时列表占位统一 `TreeListSkeleton` 共享组件**（GqlTree loading + RestTree 刷新/首载均显示同款骨架，视觉一致）；**只搜顶层（用户拍板）**——① GraphQL：`buildGqlSearchIndex`（`debug-graphql.ts`）只收集 query/mutation 顶层字段（屏蔽公共语法后 ~296 条，不递归子字段——搜索定位顶层后点开浏览子字段；命中精准不炸），`searchGqlIndex` O(顶层数) 极快 + `MAX_SEARCH_HITS=100` 截断 + `useDeferredValue`（输入即时、检索低优先级滞后不阻塞）；② REST：`filterRestEndpoints` 只匹配 tag/方法/路径/label（label 已含 summary，去掉 desc/summary 长文本噪音）
-- **GraphQL 结构化变量（M5.5，2026-08-11）**：input/list 变量行 value 格由「JSON 字面量手写」改为**结构化编辑器**——① **值格内嵌展开**：input/list 变量行 value 格为展开按钮（chevron，点击展开/收起），行下展开子表格（`StructuredTable` 组件）；② **input → 递归字段行**（checkbox + 必填琥珀标记/可选灰胶囊 + 值控件递归——枚举/布尔下拉、嵌套 input 再展开子表格）；③ **list → 数组编辑器**（[+ 添加] 项 + 每项删除；元素 input → 子表格、标量 → 输入框）；④ **双向序列化**：编辑 → `structuredRowToJson`（空 input/list → undefined 跳过、Int/Float 转 Number）写 `req.variables`（发送/历史零改动复用）；外部 JSON（历史重放）→ `jsonToStructuredRows` 反向重建（缺字段空骨架——**忠实还原**，默认值由 placeholder 承载，保证正反向收敛）；⑤ 纯函数 `lib/debug-gql-structured.ts`（`inputTypeToStructured` 递归模型 / `buildStructuredValue` 骨架 / 双向序列化）全量可测（debug-gql-structured.spec.ts 24 用例）。**三修正（用户拍板）**：必填排最上 / 星号红色 / 必填 checkbox 不可取消
+- **Schema/端点搜索（F9 + R1，2026-08-11 定稿）**：**统一布局**——搜索框第一行（`TreeSearchInput` 共享组件：`/` 快捷键聚焦、X 清除），**第二行 `纯数字版本徽章 (刷新icon)`**（`SchemaHeader` 共享组件：无协议标题文字——版本徽章只显示数字版本 `22.0.0` / `15.26.1`（无包名前缀；hover 完整 `schema data by pkg@ver`）；GraphQL 版本经转录脚本 `gql/index.json` + `getGqlVersion()`，与 REST index.json 对称）；**刷新时列表占位统一 `TreeListSkeleton` 共享组件**（GqlTree loading + RestTree 刷新/首载均显示同款骨架，视觉一致）；**只搜顶层（用户拍板）**——① GraphQL：`buildGqlSearchIndex`（`debug-graphql.ts`）只收集 query/mutation 顶层字段（屏蔽公共语法后 ~296 条，不递归子字段——搜索定位顶层后点开浏览子字段；命中精准不炸），`searchGqlIndex` O(顶层数) 极快 + `MAX_SEARCH_HITS=100` 截断 + `useDeferredValue`（输入即时、检索低优先级滞后不阻塞）；② REST：`filterRestEndpoints` 只匹配 tag/方法/路径/label（label 已含 summary，去掉 desc/summary 长文本噪音）
+- **GraphQL 结构化变量（M5.5，2026-08-11）**：input/list 变量行 value 格由「JSON 字面量手写」改为**结构化编辑器**——① **值格内嵌展开**：input/list 变量行 value 格为展开按钮（chevron，点击展开/收起），行下展开子表格（`StructuredTable` 组件）——**展开子表格紧跟对应变量行正下方**（同一行 map 内 Fragment 内联渲染，多变量时一一对应不串位；勿用独立 map 集中渲染组末尾）；② **input → 递归字段行**（checkbox + 必填琥珀标记/可选灰胶囊 + 值控件递归——枚举/布尔下拉、嵌套 input 再展开子表格）；③ **list → 数组编辑器**（[+ 添加] 项 + 每项删除；元素 input → 子表格、标量 → 输入框）；④ **双向序列化**：编辑 → `structuredRowToJson`（空 input/list → undefined 跳过、Int/Float 转 Number）写 `req.variables`（发送/历史零改动复用）；外部 JSON（历史重放）→ `jsonToStructuredRows` 反向重建（缺字段空骨架——**忠实还原**，默认值由 placeholder 承载，保证正反向收敛）；⑤ 纯函数 `lib/debug-gql-structured.ts`（`inputTypeToStructured` 递归模型 / `buildStructuredValue` 骨架 / 双向序列化）全量可测（debug-gql-structured.spec.ts 24 用例）。**三修正（用户拍板）**：必填排最上 / 星号红色 / 必填 checkbox 不可取消
 - **R2 body/variables 结构化 toggle（2026-08-11 统一双协议）**：**默认 JSON 编辑器 ↔ 可切换结构化列表视图**——① **toggle 按钮在 tab 右侧工具栏**（格式化按钮旁；结构化模式无格式化、JSON 模式有格式化）；② **REST Body**：`BodyStructuredPanel`——bodySchema（OpenAPI deref）→ `openApiSchemaToStructured`（`lib/debug-rest-structured.ts`，object/array/enum/boolean/Int/Float/oneOf/anyOf/allOf/隐含 object，必填排最上）→ StructuredTable 递归表单（object 字段行、array 数组编辑器、enum 下拉、必填锁定 + 星号、placeholder 承载默认值）；编辑 `structuredRowToJson` 写 `req.body`，切回 JSON 即时可见；无 bodySchema（未匹配端点）→ 切换按钮禁用；③ **GraphQL Variables**：`GqlVariablesPanel` 双模式（`viewMode`）——json 模式 CodeEditor 直编（校验 parseVariablesJson + validateVariables）、structured 模式现有 KV 表格（M4/M5.5 全保留，校验走表格序列化）；④ 格式化按 tab 分流（GraphQL Variables tab 格式化 variables / 其他格式化 query）；⑤ json-schema-completion 补全保留（JSON 模式）。**结构化表无添加按钮（2026-08-11 用户拍板）**：variables structured 模式去掉「添加自定义行」Plus 按钮——变量由 query 声明派生、schema 驱动，自定义添加无意义（发送 extra 校验提醒），仅保留**可选声明变量待选 badge**（`$name` 胶囊补行）；自定义变量需手写 JSON 模式（json 视图可自由编辑任意 JSON）
 - **请求头常用预设（2026-08-11）**：KeyValueTable 添加按钮右侧显示「常用:」预设 badge（`COMMON_HEADER_PRESETS`，`header-presets.ts`）——点击补行（key 预填 + value 取首个枚举值；已有同名头不重复补）；**枚举头 value 输入用 `HeaderValueCombobox`（shadcn Combobox：Popover+Command）下拉**（替代浏览器原生 datalist——datalist 无下拉指示器/原生样式不可控/交互不可预测；组合框输入框右侧 ChevronDown 箭头按钮，点击弹出命令面板预设值，点选填充，仍可自由输入任意值，如 Accept: application/vnd.github+json / application/json / text/plain）；预设含 Accept / Content-Type / X-GitHub-Api-Version / User-Agent / If-None-Match / If-Modified-Since / X-GitHub-Next-Global-ID（仅请求头 tab 启用，form 表格不显示）
 - **请求 Tabs 徽章与告警（2026-08-11）**：tab 右侧实时状态提示——① **REST 参数计数徽章**：匹配端点文档的需设定参数数（path+query，灰色小徽章）；② **REST Body JSON 错误**：json bodyType 且非空文本 JSON 解析失败 → 「请求数据」tab 右侧红色 `TriangleAlert`；③ **GraphQL query 语法错误**：query 非空且 parse 失败（`collectGqlOperations` 返回 null）→ 「查询」tab 右侧红色 `TriangleAlert`（修复即消失）；④ **GraphQL 变量错误计数**：「变量」tab 红色计数徽章（`validateVariablesText` 实时校验——query/变量输入即更新，**不依赖切换 Variables 面板**；面板挂载后其上抛的精细值覆盖实时值）
@@ -309,24 +310,23 @@ web/src/pages/debug/
 
 ## 14. 开发约定
 
-- **数据产物由脚本生成，不手改**：改 schema 结构只动 `scripts/build-schemas-octokit.mjs`，产物重新生成
+- **数据产物由脚本生成，不手改**：改 schema 结构只动 `scripts/update-schemas.mjs`，产物重新生成
 - **前端消费结构契约**：`debug-openapi.ts`（OpenApiDoc 类型）随产物结构调整同步更新；schema-loader 是唯一 fetch 入口，页面组件不直接 fetch public 文件
 - **临时产物即用即删**：测试脚本用后删除，不留垃圾
 - **质量门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `format:check`（oxfmt 一致）+ `pnpm typecheck`（tsc -b，含测试）+ `pnpm --filter web build` 通过
-- **测试质量门（新增）**：`pnpm test`（vitest，node 环境）——**REST 侧四文件**：① `web/test/debug-params.spec.ts`（parseQuery/parsePathSeg/buildUrlFromParams/syncParamsFromUrl 单元）；② `web/test/debug-openapi.spec.ts`（buildGroupFromTag/endpointToRequest/matchEndpoint/endpointStillMatches + **R1 filterRestEndpoints 搜索过滤（只搜顶层）** 单元）；③ `web/test/debug-rest-structured.spec.ts`（**R2 openApiSchemaToStructured 映射**：object/array/enum/boolean/Int/Float/oneOf/allOf/隐含 object + 端到端收敛）；④ `web/test/schema-integration.spec.ts` **全量真实产物验证**——读 `web/public/debug/rest/` 全部 44 tag × req.json、遍历 **1108 个端点**逐一断言 8 项规则（path↔模板占位双向一致 / endpointToRequest 提取正确含段模型 + **required query 行** / matchEndpoint round-trip 命中自身 / 填值 round-trip / endpointStillMatches 固化 / buildUrlFromParams 正向不改 URL / syncParamsFromUrl 反向骨架稳定含段模型一致 + required query 集 + **required 与 type 一致性** / **R2 body schema 可结构化转换**——303 个 JSON body 全部可转 + 必填排最上）。**GraphQL 侧独立文件**：⑤ `web/test/debug-graphql.spec.ts`（buildGqlFieldTree 树构建 / 勾选状态机 toggle×2+buildSelectionsFromParsed+gqlRootCheckState / gqlSelectionsToQuery+gqlMapToQuery 构造 / parseQueryFieldSelections 解析 / **不变量 5 正反向收敛** / **M6 collectGqlOperations 多 operation 提取** / **搜索索引只搜顶层** / **connection 拆包 + 公共语法屏蔽**——mini schema 夹具覆盖 object/interface/union/enum/scalar/list/non-null/input/deprecated，**89 用例**）；⑥ `web/test/debug-gql-variables.spec.ts`（collectVariables / buildVariablesJson 骨架 / validateVariables 校验矩阵，22 用例）；⑦ `web/test/debug-gql-structured.spec.ts`（**M5.5 结构化**：inputTypeToStructured 五分类递归 / buildStructuredValue 骨架 / structuredRowToJson+rowsToJson 序列化 / jsonToStructuredRows 反向 / **端到端收敛**，24 用例）。REST 与 GraphQL 分工独立、互不依赖；任何解析/填充/匹配/排序/序列化改动必须全绿（当前 **9070** 测试）。**GraphQL 强化与 REST 反哺对照见 `debug-rest-redesign.md`**
+- **测试质量门（新增）**：`pnpm test`（vitest，node 环境）——**REST 侧四文件**：① `web/test/debug-params.spec.ts`（parseQuery/parsePathSeg/buildUrlFromParams/syncParamsFromUrl 单元）；② `web/test/debug-openapi.spec.ts`（buildGroupFromTag/endpointToRequest/matchEndpoint/endpointStillMatches + **R1 filterRestEndpoints 搜索过滤（只搜顶层）** 单元）；③ `web/test/debug-rest-structured.spec.ts`（**R2 openApiSchemaToStructured 映射**：object/array/enum/boolean/Int/Float/oneOf/allOf/隐含 object + 端到端收敛）；④ `web/test/schema-integration.spec.ts` **全量真实产物验证**——读 `web/public/debug/rest/` 全部 44 tag × req.json、遍历 **1108 个端点**逐一断言 8 项规则（path↔模板占位双向一致 / endpointToRequest 提取正确含段模型 + **required query 行** / matchEndpoint round-trip 命中自身 / 填值 round-trip / endpointStillMatches 固化 / buildUrlFromParams 正向不改 URL / syncParamsFromUrl 反向骨架稳定含段模型一致 + required query 集 + **required 与 type 一致性** / **R2 body schema 可结构化转换**——303 个 JSON body 全部可转 + 必填排最上）。**GraphQL 侧独立文件**：⑤ `web/test/debug-graphql.spec.ts`（buildGqlFieldTree 树构建 / 勾选状态机 toggle×2+buildSelectionsFromParsed+gqlRootCheckState / gqlSelectionsToQuery+gqlMapToQuery 构造 / parseQueryFieldSelections 解析 / **不变量 5 正反向收敛** / **M6 collectGqlOperations 多 operation 提取** / **搜索索引只搜顶层** / **connection 拆包 + 公共语法屏蔽**——mini schema 夹具覆盖 object/interface/union/enum/scalar/list/non-null/input/deprecated，**90 用例**（含多 mutation input 冲突消解））；⑥ `web/test/debug-gql-variables.spec.ts`（collectVariables / buildVariablesJson 骨架 / validateVariables 校验矩阵，22 用例）；⑦ `web/test/debug-gql-structured.spec.ts`（**M5.5 结构化**：inputTypeToStructured 五分类递归 / buildStructuredValue 骨架 / structuredRowToJson+rowsToJson 序列化 / jsonToStructuredRows 反向 / **端到端收敛**，24 用例）。REST 与 GraphQL 分工独立、互不依赖；任何解析/填充/匹配/排序/序列化改动必须全绿（当前 **9077** 测试）。**GraphQL 强化与 REST 反哺对照见 `debug-rest-redesign.md`**
 
 ## 15. 关键文件索引
 
 | 文件 | 作用 |
 |---|---|
-| `scripts/build-schemas-octokit.mjs` | 转录 + 三层拆分产物生成 |
+| `scripts/update-schemas.mjs` | 单一入口：octokit 转录三层拆分 + `--upgrade` 升级包后转录 |
 | `scripts/update-schemas.mjs` | 双模式封装（octokit 转录 / 官方下载） |
 | `web/src/pages/debug/schema-loader.ts` | 智能请求器（缓存/TTL/SWR/预热/进度）+ getAllEndpoints 全量索引 + clearRestCache 刷新清缓存 + getGqlVersion 版本读取 |
 | `web/src/pages/debug/rest-meta.ts` | 共享展示元数据（方法色/状态码配色/URL 规整） |
 | `web/src/pages/debug/TreeSearchInput.tsx` | 共享搜索框（第一行；`/` 快捷键 + X 清除；GqlTree/RestTree 共用） |
-| `web/src/pages/debug/SchemaHeader.tsx` | 共享协议标题栏（第二行：纯数字版本徽章 + 更新预警红色↑ + hover `schema data by` + 刷新 + 进度条/状态） |
+| `web/src/pages/debug/SchemaHeader.tsx` | 共享协议标题栏（第二行：纯数字版本徽章 + hover `schema data by` + 刷新 + 进度条/状态） |
 | `web/src/pages/debug/HeaderValueCombobox.tsx` | 请求头枚举值下拉（shadcn Combobox：Popover+Command；替代 datalist） |
-| `web/src/lib/debug-version-check.ts` | 版本更新检测 hook（npm registry latest 比较 + 内存缓存 + 失败静默） |
 | `web/src/pages/debug/TreeListSkeleton.tsx` | 共享刷新/加载占位（GqlTree loading + RestTree 刷新/首载统一骨架） |
 | `web/src/pages/debug/header-presets.ts` | 常用请求头预设（COMMON_HEADER_PRESETS：key + 值枚举） |
 | `web/src/pages/debug/` | 页面全部组件（见 §11） |

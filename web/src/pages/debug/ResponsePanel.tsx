@@ -5,7 +5,7 @@
  * - 响应体：pretty 态用只读 CodeEditor（已格式化）+ 编辑器内右上角复制按钮；raw 态原样 pre
  * - 响应头：K/V 列表
  * - GitHub App 专属端点 401（需 App JWT）顶部提示条
- * - 端点文档已迁移至右侧 EndpointDocDrawer（URL 框 book icon 触发），本面板不再承载
+ * - 端点文档已迁移至右侧 EndpointDocDrawer（左栏对应端点行 hover 触发），本面板不再承载
  */
 import { ChevronDown, ChevronUp, Copy, Braces } from "lucide-react";
 import { Button } from "@/components/ui/button";
