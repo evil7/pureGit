@@ -44,6 +44,14 @@ export interface DebugParam {
   enabled?: boolean;
   /** path 参数在 URL 模板中的段位置（split('/') 索引，静态来自端点模板；`path[n]` 徽章显示） */
   index?: number;
+  /** 段内占位序号（0 起；单占位段恒 0；复合段如 `{base}...{head}` → base=0、head=1）。
+   *  与 `index` 共同唯一定位参数在 URL 模板中的位置 */
+  segPos?: number;
+  /** 所在段占位符总数（单占位段恒 1；复合段 = 段内占位符个数） */
+  segCount?: number;
+  /** 段内字面分隔符数组（含前导/后缀；`{base}...{head}` → ["","...",""]；
+   *  `{aaa}...{bbb}---{ccc}` → ["","...","---",""]）。复合段渲染时展示中间分隔符 */
+  segSeparators?: string[];
   /** query 行「显式存在」标记：true = 已在 URL 中显式出现（反向解析写入/同步），
    *  空值也输出裸名 `name`（`?aa&bb` 保持不丢）；URL 移除该 key → 本行从表格移除
    *  （文档参数自动转为待选 badge）。false = 编辑中行（端点文档填充 / 手动添加），

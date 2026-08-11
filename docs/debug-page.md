@@ -264,7 +264,9 @@ web/src/pages/debug/
 - **反向（URL → 参数）**：`syncParamsFromUrl`——URL 出现的 query key → 行显式同步（value/enabled/explicit）；显式行被 URL 移除 → 表格移除（文档参数自动转 badge）；disabled 行保留；编辑中行（explicit=false）——**提供 doc 时若不在文档 query 参数集则移除**（切换端点清残留，旧端点文档行不属于新端点）、在文档集内保留待填；URL 新 key 补显式行（**重复 key `?a=1&a=2` 只补首个**，表格单 key 模型）。path 按 index 同步段值；提供 doc 模板时 path 行集合完全对齐模板（补缺失/移多余，path 行只能来自端点）；**复合占位段（共享 index）按模板段字面分隔符切分各自子串**（`{base}...{head}` + `main...dev` → base 行 "main"、head 行 "dev"）
 - **表格展示排序**（`syncParamsFromUrl` 返回前统一重排）：path 恒在前按段位置 index 升序（模板顺序）；query 按 URL 出现顺序（parseQuery 保序）——URL 中无此行（disabled 保留 / 文档待填）保持相对顺序排末尾。排序不影响语义（path 按 index、query 按 enabled+value），正向构建 `buildUrlFromParams` 按数组序输出 → 表格序 = URL 序 → 双向循环稳定
 - **必填 path 删空自动补回占位符**：value 输入框删空（trim 后为空）→ 自动补回 `{name}`，URL 对应段同步回到占位状态（方便重填；query 选填行不受影响）
-- **文档可选参数待选 badge**：ParamsTable 接收 docQueryNames（当前匹配端点 query 参数名），badges = 文档参数 − 表格已有，显示在添加按钮右侧（虚线胶囊）；点击 → 补行（空值，填值后输出 URL）→ badge 消失。手动删除的文档 query 行同样转为 badge
+- **文档可选参数待选 badge**：ParamsTable 接收 docQueryNames（当前匹配端点 query 参数名），badges = 文档参数 − 表格已有，显示在**添加按钮（纯 icon，与其他 table 一致无文字）右侧**（虚线胶囊）；点击 → 补行（**explicit=true 显式行：空值即输出裸名 `?aaa`**，满足「只 key 无值」双态）→ badge 消失。手动删除的文档 query 行同样转为 badge
+- **query 来源基线**：**非必填 query 不自动列出**——端点匹配（点选）只自动填充 **required query** 行（explicit=false 编辑中，空值不输出 URL、填值后输出）；非必填全部以 badge 呈现由用户自行决定添加。手写 URL 匹配场景下 query（含 required）也以 badge 呈现（URL 是权威源，用户自拼）
+- **query 只 key 无值 / 有值双态**：explicit=true 行空值 → 裸名 `name`（URL `?aaa`）；填值 → `name=value`（URL `?aaa=bbb`）；反向手写 `?aaa` → 显式空值行，正向裸名保持不丢
 - **URL+方法匹配端点 → 自动加载文档（文档权威 + 端点固化）**：DebugPage 防抖 250ms 用 `matchEndpoint`（debug-openapi.ts 段级模板匹配：段数相同、`{name}` 通配、**评分制**——① 静态段数优先（`rule-suites` 不被 `{ruleset_id}` 抢）；② 同静态段数时占位段**字面结构分**（模板自身最高分，其次段内字面片段如 `...` 出现在 URL 段 → `{base}...{head}` 不被排序在前的 `{basehead}` 抢，**不依赖数组顺序**）；空 URL 守卫用 `url.trim()===""`，**根路径 `/`（段数 0）仍可匹配**）匹配 `getAllEndpoints()`（schema-loader 全量索引），**仅当无端点或当前端点与 URL 结构不再匹配时触发**：
   - 命中 → 加载端点文档（响应面板空状态）+ bodySchema（补全）+ 骨架对齐（path 行对齐模板、query 按文档全集）
   - 未命中 → 清空文档（转显式行模式）
@@ -273,6 +275,8 @@ web/src/pages/debug/
 - **事件驱动防循环**：参数编辑 onChange 重建 URL、URL 输入框 onChange 反向同步，不经 useEffect 无回写循环；端点匹配只补 path 行/文档，不改 URL
 - **默认请求**：进入页面默认 REST + GET（`EMPTY_REQUEST`，URL 空、placeholder `/repos/{owner}/{repo}`）；GraphQL 模板显式声明 protocol/method
 - **布局与请求头统一**：ParamsTable 照搬 KeyValueTable（请求头）骨架——列结构（checkbox / key / value / 操作）、操作列图标（必填 Lock 占位、选填 X 删除 `Button size="icon" variant="ghost" h-6 w-6`）、添加行同为表格内 colSpan 行（靠左与 checkbox 槽对齐）；差异仅在 key 输入框用 `InputGroup` + `InputGroupAddon align="inline-end"` 内嵌类型胶囊（`path[n]` / `query`）
+- **复合占位段（单 path 段多参数）合并单行**：段模型 `DebugParam.segPos/segCount/segSeparators`（全可选向后兼容；单占位段恒 segCount=1）——① **识别**：`parsePathSeg`（lib/debug-params.ts 导出）统一解析段内占位符 + 字面分隔符（`{base}...{head}` → names=[base,head]、seps=["","...",""]；复杂段 `{aaa}...{bbb}---{ccc}` 自动适配），`endpointToRequest` / `extractPathParams` / `splitCompoundUrlSeg` 三处复用同一模型；② **列出**：ParamsTable 按 index 分组 path 行，`segCount>1` → **合并单行**——key 显示参数名+真实分隔符（`base...head`），value 每参数独立 Input + 中间真实分隔符文本（低对比非可编辑，title 提示「段内字面分隔符」）；③ **设定**：每 input 更新对应参数行（模型仍每参数一行），分次编辑天然正确，复杂段自动扩展 N input + N-1 分隔符；④ **扁平标签**：胶囊仍 `path[n]`（不引入 `·1/2` 层级后缀）；⑤ **排序**：path 按 index 升序 + 同 index 次级 segPos 升序（base 恒在 head 前）
+- **历史 bug（复合段合并依赖段模型）**：`syncParamsFromUrl` 补齐 path 行曾只带 name/index（无段模型）→ 端点匹配后合并失效——补齐/同步分支都须带 segPos/segCount/segSeparators（schema-integration 断言覆盖）
 
 ## 14. 开发约定
 
@@ -280,7 +284,7 @@ web/src/pages/debug/
 - **前端消费结构契约**：`debug-openapi.ts`（OpenApiDoc 类型）随产物结构调整同步更新；schema-loader 是唯一 fetch 入口，页面组件不直接 fetch public 文件
 - **临时产物即用即删**：测试脚本用后删除，不留垃圾
 - **质量门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `format:check`（oxfmt 一致）+ `pnpm typecheck`（tsc -b，含测试）+ `pnpm --filter web build` 通过
-- **测试质量门（新增）**：`pnpm test`（vitest，node 环境）——① `web/test/debug-params.spec.ts`（parseQuery/buildUrlFromParams/syncParamsFromUrl 单元）；② `web/test/debug-openapi.spec.ts`（buildGroupFromTag/endpointToRequest/matchEndpoint/endpointStillMatches 单元）；③ `web/test/schema-integration.spec.ts` **全量真实产物验证**——读 `web/public/debug/rest/` 全部 44 tag × req.json、遍历 **1108 个端点**逐一断言 6 项规则（path↔模板占位双向一致 / endpointToRequest 提取正确 / matchEndpoint round-trip 命中自身 / endpointStillMatches 固化 / buildUrlFromParams 正向不改 URL / syncParamsFromUrl 反向骨架稳定），任何解析/填充/匹配/排序改动必须全绿
+- **测试质量门（新增）**：`pnpm test`（vitest，node 环境）——① `web/test/debug-params.spec.ts`（parseQuery/parsePathSeg/buildUrlFromParams/syncParamsFromUrl 单元）；② `web/test/debug-openapi.spec.ts`（buildGroupFromTag/endpointToRequest/matchEndpoint/endpointStillMatches 单元）；③ `web/test/schema-integration.spec.ts` **全量真实产物验证**——读 `web/public/debug/rest/` 全部 44 tag × req.json、遍历 **1108 个端点**逐一断言 7 项规则（path↔模板占位双向一致 / endpointToRequest 提取正确含段模型 + **required query 行** / matchEndpoint round-trip 命中自身 / 填值 round-trip / endpointStillMatches 固化 / buildUrlFromParams 正向不改 URL / syncParamsFromUrl 反向骨架稳定含段模型一致 + required query 集），任何解析/填充/匹配/排序改动必须全绿（当前 7808 测试）
 
 ## 15. 关键文件索引
 
@@ -297,7 +301,7 @@ web/src/pages/debug/
 | `web/src/lib/debug-store.ts` | Collection/History 持久化 |
 | `web/src/lib/json-schema-completion.ts` | REST body JSON-schema 字段级补全（CM6 override 源） |
 | `web/src/lib/debug-params.ts` | REST Params 双向联动（全量实时解析 + explicit 语义） |
-| `web/src/pages/debug/ParamsTable.tsx` | Params 表格（path[n] 徽章 + query 增删 + 文档 badge） |
+| `web/src/pages/debug/ParamsTable.tsx` | Params 表格（path[n] 徽章 + query 增删 + 文档 badge + **复合段合并单行**） |
 | `web/src/lib/codemirror.ts` | CM6 编辑器工厂（graphql 语言 + json 补全挂载 + tooltip 挂 body） |
 | `web/test/` | vitest 质量门测试（debug-params / debug-openapi 单元 + schema-integration 全量产物验证） |
 | `web/vitest.config.mts` / `tsconfig.test.json` | 测试环境（node + `@` alias；独立 tsc 引用，纳入 typecheck） |

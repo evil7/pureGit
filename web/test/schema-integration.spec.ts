@@ -60,7 +60,12 @@ import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import type { OpenApiEndpoint, RestReqFile } from "@/lib/debug-openapi";
 import { endpointToRequest, matchEndpoint, endpointStillMatches } from "@/lib/debug-openapi";
-import { buildUrlFromParams, syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
+import {
+  buildUrlFromParams,
+  syncParamsFromUrl,
+  type DocParams,
+  parsePathSeg,
+} from "@/lib/debug-params";
 
 const REST_DIR = fileURLToPath(new URL("../public/debug/rest/", import.meta.url));
 
@@ -159,8 +164,19 @@ describe(`全量产物（${tags.length} tag / ${endpoints.length} 端点）`, ()
           expect(t, `path 行 ${p.name} 无模板占位`).toBeDefined();
           expect(p.index).toBe(t!.index);
         }
-        // query 行数 == 文档 query 数；皆 explicit=false 空值
-        expect(r.params.filter((x) => x.in === "query")).toHaveLength(queryParams.length);
+        // 段内模型：segPos 段内序号递增（0..segCount-1）、segSeparators 与模板段一致
+        for (const p of r.params.filter((x) => x.in === "path")) {
+          const seg = e.path.split("/")[p.index ?? -1];
+          const { names, seps } = parsePathSeg(seg);
+          const pos = names.indexOf(p.name);
+          expect(p.segPos, `${id} ${p.name} segPos`).toBe(pos);
+          expect(p.segCount, `${id} ${p.name} segCount`).toBe(names.length);
+          expect(p.segSeparators, `${id} ${p.name} seps`).toEqual(seps);
+        }
+        // query 行数 == 文档 **required** query 数（非必填不自动填行，badge 呈现）；
+        // 皆 explicit=false 空值
+        const reqQueries = queryParams.filter((q) => q.required);
+        expect(r.params.filter((x) => x.in === "query")).toHaveLength(reqQueries.length);
         for (const q of r.params.filter((x) => x.in === "query")) {
           expect(q).toMatchObject({ value: "", explicit: false });
         }
@@ -206,9 +222,20 @@ describe(`全量产物（${tags.length} tag / ${endpoints.length} 端点）`, ()
         // path 行集合 == 模板占位集
         const outPaths = out.filter((p) => p.in === "path");
         expect(outPaths.map((p) => p.name).sort()).toEqual(tpl.map((t) => t.name).sort());
-        // query 行集合 == 文档 query 集（编辑中行保留）
+        // path 行段模型一致（补缺失/同步分支都带 segPos/segCount/segSeparators——
+        // 复合段合并渲染依赖；历史 bug：补齐行只带 name/index 导致合并失效）
+        for (const p of outPaths) {
+          const seg = e.path.split("/")[p.index ?? -1];
+          const { names, seps } = parsePathSeg(seg);
+          const pos = names.indexOf(p.name);
+          expect(p.segPos, `${id} ${p.name} segPos`).toBe(pos);
+          expect(p.segCount, `${id} ${p.name} segCount`).toBe(names.length);
+          expect(p.segSeparators, `${id} ${p.name} seps`).toEqual(seps);
+        }
+        // query 行集合 == 文档 **required** query 集（编辑中行保留；非必填由 badge 呈现）
         const outQueries = out.filter((p) => p.in === "query");
-        expect(outQueries.map((p) => p.name).sort()).toEqual(queryParams.map((p) => p.name).sort());
+        const reqQueries = queryParams.filter((q) => q.required);
+        expect(outQueries.map((p) => p.name).sort()).toEqual(reqQueries.map((q) => q.name).sort());
       });
     });
   }

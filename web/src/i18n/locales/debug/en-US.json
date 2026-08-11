@@ -66,5 +66,6 @@
   "params.namePlaceholder": "Name",
   "params.valuePlaceholder": "Value",
   "params.addQuery": "Add query param",
-  "params.pickDocQuery": "Add doc param {{name}}"
+  "params.pickDocQuery": "Add doc param {{name}}",
+  "params.sepHint": "Literal separator in the path segment (shared by params above)"
 }

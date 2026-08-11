@@ -108,7 +108,7 @@ describe("buildGroupFromTag", () => {
 });
 
 describe("endpointToRequest", () => {
-  it("path 参数 → 行带 index（模板 split('/') 位置）；query → 行 explicit=false 空值", () => {
+  it("path 参数 → 行带 index；非必填 query 不自动填行（badge 由 ParamsTable 呈现）", () => {
     const e = ep("get", "/orgs/{org}/repos", [
       { name: "org", in: "path", required: true, type: "string" },
       { name: "type", in: "query", type: "string" },
@@ -119,10 +119,31 @@ describe("endpointToRequest", () => {
     expect(r.protocol).toBe("rest");
     expect(r.url).toBe("/orgs/{org}/repos");
     expect(r.bodyType).toBe("none"); // GET
+    // 全非必填 query → 无 query 行（仅 path 锁定行）
     expect(r.params).toEqual([
-      { name: "org", in: "path", value: "{org}", enabled: true, index: 2 },
-      { name: "type", in: "query", value: "", enabled: true, explicit: false },
-      { name: "per_page", in: "query", value: "", enabled: true, explicit: false },
+      {
+        name: "org",
+        in: "path",
+        value: "{org}",
+        enabled: true,
+        index: 2,
+        segPos: 0,
+        segCount: 1,
+        segSeparators: ["", ""],
+      },
+    ]);
+  });
+  it("required query 自动填行（explicit=false 空值待填）；非必填不填", () => {
+    const e = ep("get", "/search/repositories", [
+      { name: "q", in: "query", required: true, type: "string" },
+      { name: "sort", in: "query", type: "string" },
+      { name: "order", in: "query", type: "string" },
+    ]);
+    const r = endpointToRequest(e);
+    expect(r.url).toBe("/search/repositories");
+    // 仅 required q 填行；sort/order 非必填不出现（badge）
+    expect(r.params).toEqual([
+      { name: "q", in: "query", value: "", enabled: true, explicit: false },
     ]);
   });
   it("POST → bodyType json；常用 owner/repo 占位保持", () => {
@@ -136,7 +157,7 @@ describe("endpointToRequest", () => {
     expect(r.params[0]).toMatchObject({ name: "owner", value: "{owner}", index: 2 });
     expect(r.params[1]).toMatchObject({ name: "repo", value: "{repo}", index: 3 });
   });
-  it("compare 复合占位 `{base}...{head}`：两参数共享段 index（历史 bug：正则提取失败 index=-1）", () => {
+  it("compare 复合占位 `{base}...{head}`：两参数共享段 index + 段内模型（历史 bug：正则提取失败 index=-1）", () => {
     const e = ep("get", "/repos/{owner}/{repo}/compare/{base}...{head}", [
       { name: "owner", in: "path", required: true },
       { name: "repo", in: "path", required: true },
@@ -149,6 +170,9 @@ describe("endpointToRequest", () => {
     // split('/')：owner=2、repo=3、compare=4、`{base}...{head}`=5 → base/head 共享 index 5
     expect(byName.base).toMatchObject({ value: "{base}", index: 5 });
     expect(byName.head).toMatchObject({ value: "{head}", index: 5 });
+    // 段内模型：base=segPos 0、head=segPos 1（同段 segCount=2、分隔符 ["","...",""]）
+    expect(byName.base).toMatchObject({ segPos: 0, segCount: 2, segSeparators: ["", "...", ""] });
+    expect(byName.head).toMatchObject({ segPos: 1, segCount: 2, segSeparators: ["", "...", ""] });
   });
   it("无参数端点（根路径 /）→ params 空 + URL / + GET bodyType none", () => {
     const r = endpointToRequest(ep("get", "/"));

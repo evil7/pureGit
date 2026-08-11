@@ -13,6 +13,7 @@
  * OpenApiGroup/OpenApiEndpoint 是集合树 UI 的消费类型（method/path/op/label + resMin）。
  */
 import type { DebugParam, DebugRequest } from "./debug-api";
+import { parsePathSeg } from "./debug-params";
 
 /** OpenAPI parameter 精简（name/in/required/type/desc） */
 export interface OpenApiParam {
@@ -145,17 +146,32 @@ export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
   // Params 表：path 行带模板段位置 index（path[n] 徽章显示，误删占位可定位）；
   // 值默认占位符 `{name}`（或常用占位）→ buildUrlFromParams 替换。
   // index 取「段包含 `{name}`」的位置——兼容 compare 类 `{base}...{head}` 复合占位
-  // （两个 path 参数共享同一段 index）
+  // （两个 path 参数共享同一段 index）；同时填段内模型（segPos/segCount/segSeparators）
+  // ——复合段识别与渲染（单行合并多 input + 真实分隔符）的权威来源
   const params: DebugParam[] = pathParams.map((p) => {
     const name = p.name;
     const segments = ep.path.split("/");
     const idx = segments.findIndex((seg) => seg.includes(`{${name}}`));
     const placeholder = defaults[name] ?? `{${name}}`;
     url = url.replace(`{${name}}`, placeholder);
-    return { name, in: "path" as const, value: placeholder, enabled: true, index: idx };
+    const { names, seps } = parsePathSeg(segments[idx]);
+    const pos = names.indexOf(name);
+    return {
+      name,
+      in: "path" as const,
+      value: placeholder,
+      enabled: true,
+      index: idx,
+      segPos: pos,
+      segCount: names.length,
+      segSeparators: seps,
+    };
   });
   for (const p of queryParams) {
-    // explicit=false：编辑中行——空值不输出 URL，反向解析保留（文档参数未填值时不消失）
+    // 仅 **required query** 自动填充行（必填必须设定）——explicit=false：编辑中行，
+    // 空值不输出 URL，反向解析保留；**非必填 query 不自动列出**（由 ParamsTable
+    // docQueryNames badge 呈现，用户点击添加）
+    if (!p.required) continue;
     params.push({ name: p.name, in: "query" as const, value: "", enabled: true, explicit: false });
   }
   const method = ep.method.toUpperCase() as DebugRequest["method"];

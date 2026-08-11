@@ -66,5 +66,6 @@
   "params.namePlaceholder": "参数名",
   "params.valuePlaceholder": "值",
   "params.addQuery": "添加 query 参数",
-  "params.pickDocQuery": "添加文档参数 {{name}}"
+  "params.pickDocQuery": "添加文档参数 {{name}}",
+  "params.sepHint": "path 段内字面分隔符（上方参数共用该段）"
 }

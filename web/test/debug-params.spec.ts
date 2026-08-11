@@ -47,10 +47,18 @@
  * │      分隔符切分各自子串（main...dev →            │                           │
  * │      base="main"/head="dev"）                    │                           │
  * ├────────────────────────────────────────────────────────────────────────────┤
+ * │ 3b. **query 来源基线**：非必填 query 不自动列出    │ （组件层 badge，见           │
+ * │     （端点匹配只填 required query 行）；用户点击   │  ParamsTable；本文件聚焦     │
+ * │     badge 添加 → explicit=true 空值即输出裸名     │  syncParamsFromUrl 处理）    │
+ * ├────────────────────────────────────────────────────────────────────────────┤
  * │ 4. 展示排序：path 恒在前按 index 升序；query 按   │ 表格展示排序               │
  * │    URL 出现顺序；不在 URL 的行排末尾              │                           │
  * ├────────────────────────────────────────────────────────────────────────────┤
  * │ 5. 循环稳定：正向构建输出顺序 = 表格序 = URL 序    │ 循环稳定（双向不抖动）      │
+ * ├────────────────────────────────────────────────────────────────────────────┤
+ * │ 6. 段模型 parsePathSeg：统一解析 path 段（占位符  │ parsePathSeg 段模型        │
+ * │    + 字面分隔符）；单占位段恒 segCount=1；复合段   │ （单/复合/复杂分隔符）      │
+ * │    names>1 时中间分隔符即 URL 真实字面             │                           │
  * └────────────────────────────────────────────────────────────────────────────┘
  *
  * 【历史 bug 回归（勿删对应用例）】
@@ -60,9 +68,10 @@
  * - 反向复合占位整段赋值：syncParamsFromUrl 对共享 index 行赋整段（main...dev）而非子串
  *   → 按模板段字面分隔符切分
  * - 重复 key 补行重复：`?a=1&a=2` 补两个 a 行 → 补行循环按 key 去重
+ * - 复合段分次编辑毁段：填 base 后段变 `main...{head}` 再填 head 整体覆盖 → doc 模板段重建
  *
  * 【修改本文件的注意事项】
- * 1. 任何修改不得削弱上述 5 组基线的断言（尤其复合占位/显式语义/循环稳定）
+ * 1. 任何修改不得削弱上述 6 组基线的断言（尤其复合占位/显式语义/循环稳定/段模型）
  * 2. 新增行为先补用例再改业务代码（TDD），用例须能证明「改前失败、改后通过」
  * 3. 修改前先读 debug-params.ts 顶部权威原则注释，理解 explicit 语义
  * 4. 涉及端点匹配/提取的用例在 debug-openapi.spec.ts；全量产物验证在
@@ -71,6 +80,7 @@
 import { describe, it, expect } from "vitest";
 import {
   parseQuery,
+  parsePathSeg,
   buildUrlFromParams,
   syncParamsFromUrl,
   type DocParams,
@@ -82,7 +92,13 @@ const ORGS_REPOS_DOC: DocParams = {
   queryNames: ["type", "sort", "direction", "per_page", "page"],
 };
 
-/** 端点模板填充的初始参数（endpointToRequest 产物语义） */
+/**
+ * 编辑中行通用夹具（query explicit=false）：
+ * 业务上端点匹配只自动填充 **required query**（非必填由 ParamsTable badge 呈现、用户
+ * 点击添加——添加时 explicit=true 空值即输出裸名）；本夹具的 query 编辑中行代表
+ * 「required 自动行 / 历史手动添加」两类来源，测试 syncParamsFromUrl 对它们的处理
+ * （显式同步 / doc 外移除 / doc 内保留待填）——行为与端点匹配产物一致。
+ */
 function docRows(): DebugParam[] {
   return [
     { name: "org", in: "path", value: "{org}", enabled: true, index: 2 },
@@ -110,6 +126,27 @@ describe("parseQuery", () => {
       ["q", "react native"],
       ["lang", "TypeScript"],
     ]);
+  });
+});
+
+describe("parsePathSeg（统一段模型：占位符 + 字面分隔符）", () => {
+  it("单占位段 {org} → 1 参数 2 分隔符（前导/后缀）", () => {
+    expect(parsePathSeg("{org}")).toEqual({ names: ["org"], seps: ["", ""] });
+  });
+  it("复合段 {base}...{head} → 2 参数，中间分隔符 ...", () => {
+    expect(parsePathSeg("{base}...{head}")).toEqual({
+      names: ["base", "head"],
+      seps: ["", "...", ""],
+    });
+  });
+  it("复杂复合段 {aaa}...{bbb}---{ccc} → 3 参数 2 种分隔符", () => {
+    expect(parsePathSeg("{aaa}...{bbb}---{ccc}")).toEqual({
+      names: ["aaa", "bbb", "ccc"],
+      seps: ["", "...", "---", ""],
+    });
+  });
+  it("无占位段（静态段）→ 空 names", () => {
+    expect(parsePathSeg("compare")).toEqual({ names: [], seps: ["compare"] });
   });
 });
 

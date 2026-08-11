@@ -114,15 +114,45 @@ export interface DocParams {
   queryNames: string[];
 }
 
-/** 从端点模板路径提取 path 参数（name + split('/') 段索引；兼容 `{base}...{head}` 复合占位） */
-function extractPathParams(tplPath: string): { name: string; index: number }[] {
-  const out: { name: string; index: number }[] = [];
+/**
+ * 解析 path 段：占位符名 + 字面分隔符
+ * - `{base}...{head}` → { names:["base","head"], seps:["","...",""] }
+ * - `{aaa}...{bbb}---{ccc}` → { names:["aaa","bbb","ccc"], seps:["","...","---",""] }
+ * - `{org}` → { names:["org"], seps:["",""] }
+ * 统一段模型：seps 长度 = names 长度 + 1（前导 / 中间 / 后缀）；复合段（names>1）
+ * 的中间分隔符即 URL 段内真实字面（`...`、`---`），渲染与切分共用。
+ */
+export function parsePathSeg(seg: string): { names: string[]; seps: string[] } {
+  const names: string[] = [];
+  const seps: string[] = [];
+  let last = 0;
+  const re = /\{([^}]+)\}/g;
+  let m: RegExpExecArray | null;
+  while ((m = re.exec(seg)) !== null) {
+    seps.push(seg.slice(last, m.index));
+    names.push(m[1]);
+    last = m.index + m[0].length;
+  }
+  seps.push(seg.slice(last));
+  return { names, seps };
+}
+
+/** 从端点模板路径提取 path 参数（name + 段 index + 段内模型；兼容 `{base}...{head}` 复合占位） */
+function extractPathParams(
+  tplPath: string,
+): { name: string; index: number; segPos: number; segCount: number; segSeparators: string[] }[] {
+  const out: {
+    name: string;
+    index: number;
+    segPos: number;
+    segCount: number;
+    segSeparators: string[];
+  }[] = [];
   tplPath.split("/").forEach((seg, i) => {
-    const re = /\{([^}]+)\}/g;
-    let m: RegExpExecArray | null;
-    while ((m = re.exec(seg)) !== null) {
-      out.push({ name: m[1], index: i });
-    }
+    const { names, seps } = parsePathSeg(seg);
+    names.forEach((name, pos) => {
+      out.push({ name, index: i, segPos: pos, segCount: names.length, segSeparators: seps });
+    });
   });
   return out;
 }
@@ -134,22 +164,12 @@ function extractPathParams(tplPath: string): { name: string; index: number }[] {
  * - 切分失败（URL 段不含分隔符）→ null（调用方回退整段）
  */
 function splitCompoundUrlSeg(tplSeg: string, urlSeg: string): Record<string, string> | null {
-  const names: string[] = [];
-  const separators: string[] = [];
-  let m: RegExpExecArray | null;
-  const re = /\{([^}]+)\}/g;
-  let last = 0;
-  while ((m = re.exec(tplSeg)) !== null) {
-    separators.push(tplSeg.slice(last, m.index));
-    names.push(m[1]);
-    last = m.index + m[0].length;
-  }
-  separators.push(tplSeg.slice(last));
+  const { names, seps } = parsePathSeg(tplSeg);
   const out: Record<string, string> = {};
   let rest = urlSeg;
   for (let i = 0; i < names.length; i++) {
-    const pre = separators[i];
-    const post = separators[i + 1] ?? "";
+    const pre = seps[i];
+    const post = seps[i + 1] ?? "";
     if (pre) {
       if (!rest.startsWith(pre)) return null;
       rest = rest.slice(pre.length);
@@ -261,6 +281,9 @@ export function syncParamsFromUrl(
       value,
       enabled: true,
       index: d.index,
+      segPos: d.segPos,
+      segCount: d.segCount,
+      segSeparators: d.segSeparators,
     });
   }
 
@@ -279,17 +302,19 @@ export function syncParamsFromUrl(
 
 /**
  * 表格展示排序（path 优先 → query 按 URL 顺序）：
- * - path 行：恒在前，按段位置 index 升序（模板顺序）
+ * - path 行：恒在前，按段位置 index 升序（模板顺序）；**同 index（复合占位共享段）按
+ *   段内 segPos 升序**——`{base}...{head}` → base 恒在 head 前（消除补行顺序不稳定）
  * - query 行：URL 中出现的 key 按 URL 出现顺序（parseQuery 保序）；不在 URL 的行
  *   （disabled 保留 / 文档待填）保持相对顺序排在末尾
  * - 排序只影响展示顺序与正向构建输出顺序（buildUrlFromParams 按数组序输出 →
- *   表格序 = URL 序 → 循环稳定），不改变任何语义（path 按 index、query 按 enabled+value）
+ *   表格序 = URL 序 → 循环稳定），不改变任何语义（path 按 index+segPos、query 按
+ *   enabled+value）
  */
 function sortParamsForDisplay(params: DebugParam[], entries: [string, string][]): DebugParam[] {
   const urlOrder = new Map(entries.map(([k], i) => [k, i]));
   const paths = params
     .filter((p) => p.in === "path")
-    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0));
+    .sort((a, b) => (a.index ?? 0) - (b.index ?? 0) || (a.segPos ?? 0) - (b.segPos ?? 0));
   const queries = params.filter((p) => p.in === "query");
   const inUrl = queries
     .filter((q) => urlOrder.has(q.name))
