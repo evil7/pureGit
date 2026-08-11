@@ -1,6 +1,6 @@
 {
   "left.history": "History",
-  "left.openapi": "REST API collection (GitHub OpenAPI)",
+  "left.openapi": "GitHub OpenAPI",
   "history.empty": "No execution history",
   "history.clear": "Clear",
   "history.fill": "Fill into editor",

@@ -278,8 +278,8 @@ web/src/pages/debug/
   - 命中 → 加载端点文档（右侧 Drawer 内容）+ bodySchema（补全）+ 骨架对齐（path 行对齐模板、query 按文档全集）
   - 未命中 → 清空文档（转显式行模式）
   - **端点固化**：端点确定后 URL 微编辑（填值/改值，静态段与段数不变）不触发重新匹配——`endpointStillMatches`（方法一致 + 段数相同 + 静态段位置值相等）判定通过即跳过，表格值由 RequestEditor URL onChange（传 doc）即时同步；URL 结构变化（静态段/段数改变）或方法切换 → 判定失败 → 重新匹配换端点/清空。杜绝微编辑端点跳变与匹配失败丢文档
-- **响应区默认折叠 + 发送自动展开（2026-08-11）**：未发送数据时响应区**默认折叠**（`respCollapsed` 初始 true，只留头部一行，请求区全高编辑）；发送返回数据后 **`run()` 内自动 `setRespCollapsed(false)` 展开**（结果到达即展示）
-- **响应区默认 tab**：默认选中第一个 tab「返回头」（与请求区默认「请求头」对称，DebugPage respTab 初始 "headers"）
+- **响应区默认折叠 + 发送自动展开（2026-08-11）**：未发送数据时响应区**默认折叠**（`respCollapsed` 初始 true，只留头部一行，请求区全高编辑）；发送响应数据后 **`run()` 内自动 `setRespCollapsed(false)` 展开**（结果到达即展示）
+- **响应区默认 tab（2026-08-11 更新）**：初始「响应头」；**请求后按内容自动切换**——有响应数据（Length > 0）→ Body，无数据内容（Length 0，如 DELETE 204 等）→ Headers（REST 与 GraphQL 同规则；页面统一描述：请求头/请求数据/响应头/响应数据）
 - **事件驱动防循环**：参数编辑 onChange 重建 URL、URL 输入框 onChange 反向同步，不经 useEffect 无回写循环；端点匹配只补 path 行/文档，不改 URL
 - **默认请求**：进入页面默认 REST + GET（`EMPTY_REQUEST`，URL 直接 `/` 根路径、placeholder `/repos/{owner}/{repo}` 提示典型模板）；GraphQL 模板显式声明 protocol/method
 - **GraphQL 编辑框空 + placeholder**：切到 GraphQL（query/mutation）时 query 编辑框**默认空内容**，仅 placeholder 显示示例 `query { viewer { login } }` 提示（`EMPTY_REQUEST.query` 为空、方法下拉切 GraphQL 时 `query: ""` 清空）；左栏 Schema 树/勾选合并/内省分组点按仍主动生成查询填入（用户行为保留）

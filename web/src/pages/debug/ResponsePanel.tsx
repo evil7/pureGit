@@ -1,9 +1,9 @@
 /**
  * 响应面板（下部：响应状态条 + Body/Headers，固定高度常驻可视）
  *
- * - 响应头部一行：开合按钮 + 返回头/返回体 tabs + 右侧 statusCode/耗时/大小/美化
- * - 返回体：pretty 态用只读 CodeEditor（已格式化）+ 编辑器内右上角复制按钮；raw 态原样 pre
- * - 返回头：K/V 列表
+ * - 响应头部一行：开合按钮 + 响应头/响应体 tabs + 右侧 statusCode/耗时/大小/美化
+ * - 响应体：pretty 态用只读 CodeEditor（已格式化）+ 编辑器内右上角复制按钮；raw 态原样 pre
+ * - 响应头：K/V 列表
  * - GitHub App 专属端点 401（需 App JWT）顶部提示条
  * - 端点文档已迁移至右侧 EndpointDocDrawer（URL 框 book icon 触发），本面板不再承载
  */
@@ -55,7 +55,7 @@ export function ResponsePanel({
         respCollapsed ? "flex" : "flex h-[42%] min-h-60",
       )}
     >
-      {/* 响应头部一行：开合按钮 + 返回头/返回体 tabs（返回头在前，默认仍选中返回体）
+      {/* 响应头部一行：开合按钮 + 响应头/响应体 tabs（响应头在前，默认仍选中响应体）
             + 右侧 statusCode/耗时/大小/视图 */}
       <div className="flex items-center gap-0.5 border-b px-1.5 py-1">
         {/* 响应区开合按钮：展开态 ChevronDown（点击向下关闭），折叠态 ChevronUp */}

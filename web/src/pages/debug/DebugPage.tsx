@@ -51,7 +51,7 @@ export default function DebugPage() {
   // ── 左栏折叠状态 ──
   const [leftHidden, setLeftHidden] = useState(false);
   // ── 响应区折叠状态：默认折叠（未发送时只留头部一行，请求区全高编辑）；
-  //    发送返回数据后自动展开（run() 内 setRespCollapsed(false)） ──
+  //    发送响应数据后自动展开（run() 内 setRespCollapsed(false)） ──
   const [respCollapsed, setRespCollapsed] = useState(true);
   // ── 端点文档抽屉（URL 框 book icon 触发） ──
   const [docOpen, setDocOpen] = useState(false);
@@ -66,7 +66,8 @@ export default function DebugPage() {
   const [result, setResult] = useState<DebugResult | null>(null);
   const [running, setRunning] = useState(false);
   const [viewMode, setViewMode] = useState<ViewMode>("pretty");
-  /** 响应 Tab（Body/Headers）——默认第一个 tab「返回头」（与请求区默认「请求头」对称） */
+  /** 响应 Tab（Body/Headers）——初始「响应头」；请求后按内容自动切换：
+   * 有响应数据 → Body，无数据内容（Length 0）→ Headers */
   const [respTab, setRespTab] = useState<"body" | "headers">("headers");
   /** GitHub App 专属端点 401（需 App JWT，OAuth/PAT 无法访问） */
   const appJwt401 =
@@ -174,8 +175,10 @@ export default function DebugPage() {
     try {
       const r = await executeDebug(req, effectiveToken, formFiles);
       setResult(r);
-      // 返回数据到达 → 自动展开响应区（初始折叠态在发送后收起）
+      // 响应数据到达 → 自动展开响应区（初始折叠态在发送后收起）
       setRespCollapsed(false);
+      // 请求后优先显示响应数据；无数据内容（Length 0）→ 显示响应头
+      setRespTab(r.bodyText.length > 0 ? "body" : "headers");
       if (autoSave) {
         addHistoryItem(req, r, identityLabel);
         setHistory(loadHistory());

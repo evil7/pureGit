@@ -112,7 +112,7 @@ export interface DebugResult {
   durationMs: number;
   bodyText: string;
   contentType: string;
-  /** 响应头（返回头区块；key 全小写，fetch Headers 规范化） */
+  /** 响应头（响应头区块；key 全小写，fetch Headers 规范化） */
   responseHeaders: Record<string, string>;
   /** 网络层失败详情（fetch 抛错） */
   networkError?: string;

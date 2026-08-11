@@ -1,6 +1,6 @@
 {
   "left.history": "历史",
-  "left.openapi": "REST API 集合（GitHub OpenAPI）",
+  "left.openapi": "GitHub OpenAPI",
   "history.empty": "暂无执行历史",
   "history.clear": "清空",
   "history.fill": "填充到编辑器",
@@ -26,8 +26,8 @@
   "body.fileHint": "点击上传图标选文件，或直接输入文本",
   "bodyPlaceholder": "{ \"title\": \"...\" }",
   "execute": "发送",
-  "response.headers": "返回头",
-  "response.body": "返回数据",
+  "response.headers": "响应头",
+  "response.body": "响应数据",
   "response.collapse": "折叠响应区",
   "response.expand": "展开响应区",
   "response.waiting": "点击「发送」发起请求",
