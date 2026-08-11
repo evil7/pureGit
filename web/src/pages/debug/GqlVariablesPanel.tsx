@@ -23,8 +23,9 @@
  *   外部变化（历史重放等）全量重建行值（结构化行 jsonToStructuredRows 反向重建）
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ChevronRight, Lock, Plus, X } from "lucide-react";
+import { ChevronRight, Lock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import {
@@ -304,25 +305,10 @@ export function GqlVariablesPanel({
     commit(rows.map((r, xi) => (xi === i ? { ...r, ...patch } : r)));
   };
 
-  /** 待选 badge：可选声明变量 − 表格已有 */
+  /** 待选 badge：可选声明变量 − 表格已有（声明驱动的补行；结构化表无「添加自定义行」——
+   *  自定义变量需手写 JSON 模式，发送时 extra 校验提醒） */
   const optionalBadges =
     defs?.filter((d) => !d.required && !rows.some((r) => r.name === d.name)) ?? [];
-  /** 添加自定义行（未声明变量；发送时 extra 校验提醒） */
-  const addCustom = () => {
-    commit([
-      ...rows,
-      {
-        name: "",
-        typeLabel: "",
-        type: null,
-        required: false,
-        declared: false,
-        value: "",
-        enabled: true,
-        structure: null,
-      },
-    ]);
-  };
   /** M5.5：结构化的 input/list 变量展开态（Set<变量名>——value 格点击展开子表格） */
   const [expandedVars, setExpandedVars] = useState<Set<string>>(new Set());
   const toggleExpanded = (name: string) => {
@@ -413,8 +399,7 @@ export function GqlVariablesPanel({
                   <tr key={`req-${r.name}`} className="border-b bg-muted/30 last:border-b-0">
                     <td className="py-1 pl-3 pr-2">
                       <div className="flex h-6 w-6 items-center justify-center">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked
                           disabled
                           className="size-3.5"
@@ -522,10 +507,9 @@ export function GqlVariablesPanel({
                   <tr key={`${r.name}:${i}`} className="border-b last:border-b-0">
                     <td className="py-1 pl-3 pr-2">
                       <div className="flex h-6 w-6 items-center justify-center">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={r.enabled !== false}
-                          onChange={(e) => updateRow(i, { enabled: e.target.checked })}
+                          onCheckedChange={(c) => updateRow(i, { enabled: c === true })}
                           className="size-3.5"
                           title={t("headers.enabled")}
                         />
@@ -644,54 +628,44 @@ export function GqlVariablesPanel({
                   </td>
                 </tr>
               ))}
-            {/* 添加按钮行：Plus 靠左（与 checkbox 槽对齐）+ 可选变量待选 badge 靠左显示 */}
+            {/* 可选声明变量待选行：结构化表 schema 驱动——无「添加自定义行」按钮，
+                仅声明驱动的可选变量 badge 补行（json 模式可自由编辑任意 JSON） */}
             <tr>
               <td colSpan={4} className="py-1 pl-3 pr-3">
-                <div className="flex flex-wrap items-center gap-1">
-                  <Button
-                    size="icon"
-                    variant="ghost"
-                    className="h-6 w-6 px-0 text-muted-foreground hover:text-foreground"
-                    onClick={addCustom}
-                    title={t("variables.add")}
-                  >
-                    <Plus className="size-3.5" />
-                  </Button>
-                  {optionalBadges.length > 0 && (
-                    <span className="flex flex-wrap items-center gap-1">
-                      <span className="text-[10px] text-muted-foreground">
-                        {t("variables.optional")}:
-                      </span>
-                      {optionalBadges.map((d) => (
-                        <button
-                          key={d.name}
-                          type="button"
-                          className="rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-px font-mono text-[10px] text-muted-foreground hover:border-foreground hover:text-foreground"
-                          title={t("variables.addOptional")}
-                          onClick={() =>
-                            commit([
-                              ...rows,
-                              {
-                                name: d.name,
-                                typeLabel: d.typeLabel,
-                                type: d.type,
-                                required: false,
-                                declared: true,
-                                value: "",
-                                structure: isStructuredType(d.type)
-                                  ? jsonToStructuredRows(inputTypeToStructured(d.type), undefined)
-                                  : null,
-                                enabled: true,
-                              },
-                            ])
-                          }
-                        >
-                          ${d.name}
-                        </button>
-                      ))}
+                {optionalBadges.length > 0 && (
+                  <div className="flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground">
+                      {t("variables.optional")}:
                     </span>
-                  )}
-                </div>
+                    {optionalBadges.map((d) => (
+                      <button
+                        key={d.name}
+                        type="button"
+                        className="rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-px font-mono text-[10px] text-muted-foreground hover:border-foreground hover:text-foreground"
+                        title={t("variables.addOptional")}
+                        onClick={() =>
+                          commit([
+                            ...rows,
+                            {
+                              name: d.name,
+                              typeLabel: d.typeLabel,
+                              type: d.type,
+                              required: false,
+                              declared: true,
+                              value: "",
+                              structure: isStructuredType(d.type)
+                                ? jsonToStructuredRows(inputTypeToStructured(d.type), undefined)
+                                : null,
+                              enabled: true,
+                            },
+                          ])
+                        }
+                      >
+                        ${d.name}
+                      </button>
+                    ))}
+                  </div>
+                )}
               </td>
             </tr>
           </tbody>

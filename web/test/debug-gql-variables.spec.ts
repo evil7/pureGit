@@ -51,6 +51,7 @@ import {
   buildVariablesJson,
   parseVariablesJson,
   validateVariables,
+  validateVariablesText,
 } from "@/lib/debug-gql-variables";
 
 /* ── mini schema 夹具（标量 + 枚举 + input 嵌套） ── */
@@ -390,5 +391,50 @@ describe("validateVariables：双向校验", () => {
   it("无变量（defs 空）→ 任意 JSON 视为多余全部报错", () => {
     const errors = validateVariables([], { a: 1 });
     expect(errors).toEqual([{ key: "a", kind: "extra", message: "变量 $a 未在查询中声明" }]);
+  });
+});
+
+/* ═══ 5. validateVariablesText：文本级实时校验（tab 徽标数据源） ═══ */
+
+describe("validateVariablesText：query+variables 文本 → 错误列表（tab 徽标实时计算）", () => {
+  const queryStr =
+    "query($query: String!, $type: SearchType!, $input: AddReactionInput!) { search(query: $query, type: $type) { totalCount } }";
+
+  it("schema 未就绪 → null（不报数）", () => {
+    expect(validateVariablesText(queryStr, "{}", null)).toBeNull();
+  });
+
+  it("query 语法错误 → null（不报数，UI 提示语法错误）", () => {
+    expect(validateVariablesText("query { viewer {", "{}", schema())).toBeNull();
+  });
+
+  it("变量 JSON 语法错误 → 1 条错误（JSON 语法）", () => {
+    const errors = validateVariablesText(queryStr, '{ "query": ', schema());
+    expect(errors).toHaveLength(1);
+    expect(errors![0].kind).toBe("type-mismatch");
+  });
+
+  it("缺必填变量 → 报 missing（与 validateVariables 同源）", () => {
+    const errors = validateVariablesText(queryStr, "{}", schema());
+    expect(errors?.map((e) => e.kind)).toContain("missing");
+    expect(errors!.length).toBeGreaterThan(0);
+  });
+
+  it("全通过（含 input 结构完整）→ []", () => {
+    const errors = validateVariablesText(
+      queryStr,
+      JSON.stringify({
+        query: "react",
+        type: "REPOSITORY",
+        input: { subjectId: "x", content: "THUMBS_UP" },
+      }),
+      schema(),
+    );
+    expect(errors).toEqual([]);
+  });
+
+  it("空 variables 文本 → 按空对象校验（缺必填报错）", () => {
+    const errors = validateVariablesText(queryStr, "", schema());
+    expect(errors?.some((e) => e.kind === "missing")).toBe(true);
   });
 });

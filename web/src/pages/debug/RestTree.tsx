@@ -27,6 +27,7 @@ import {
 import type { LoadResult, PreloadProgress } from "./schema-loader";
 import { filterRestEndpoints } from "@/lib/debug-openapi";
 import type { OpenApiEndpoint, OpenApiGroup, RestTagInfo } from "@/lib/debug-openapi";
+import { usePkgUpdateAvailable } from "@/lib/debug-version-check";
 import { TreeSearchInput } from "./TreeSearchInput";
 import { SchemaHeader } from "./SchemaHeader";
 import { TreeListSkeleton } from "./TreeListSkeleton";
@@ -226,6 +227,14 @@ export function RestTree({ t, onPickEndpoint }: RestTreeProps) {
     };
   }, [reloadTick]);
 
+  /** REST 数据源当前版本号（`22.0.0`；index ready 后取，null = 未就绪） */
+  const restVersion = useMemo(
+    () => (index.status === "ready" ? index.version.replace("openapi@", "") : null),
+    [index],
+  );
+  /** 版本更新预警（npm latest > 本地产物版本 → 红色↑ 提示可刷新产物） */
+  const restUpdateAvailable = usePkgUpdateAvailable("@octokit/openapi", restVersion);
+
   /** R1：搜索模式触发全量索引加载（懒加载一次；预热后缓存命中零等待） */
   useEffect(() => {
     if (!searching || allEps) return;
@@ -333,14 +342,13 @@ export function RestTree({ t, onPickEndpoint }: RestTreeProps) {
           />
         </div>
       )}
-      {/* 第二行：协议标题 + 版本徽章（hover 数据源描述）+ 搜索命中计数 + 刷新
+      {/* 第二行：版本徽章（纯数字版本，hover 完整数据源）+ 版本更新预警（红色↑）+ 搜索命中计数 + 刷新
          刷新 = 清缓存全量重拉（preloadAll 带进度——本组件内进度条替代左栏底部） */}
       <SchemaHeader
-        title={t("left.openapi")}
-        version={index.status === "ready" ? index.version.replace("openapi@", "") : undefined}
-        versionDesc={t("rest.schemaSource", {
-          ver: index.status === "ready" ? index.version.replace("openapi@", "") : "",
-        })}
+        version={restVersion ?? t("left.openapi")}
+        versionDesc={t("rest.schemaSource", { ver: restVersion ?? "" })}
+        updateAvailable={restUpdateAvailable}
+        updateTitle={t("rest.updateAvailable")}
         countBadge={
           searching && allEps
             ? t("rest.searchResult", { count: rows.filter((r) => r.kind === "hit").length })
@@ -359,7 +367,8 @@ export function RestTree({ t, onPickEndpoint }: RestTreeProps) {
         }
         loadingText={progressLabel}
       />
-      {index.status === "loading" ? (
+      {refreshing || index.status === "loading" ? (
+        /* 刷新/首载：统一占位组件（与 GqlTree loading 视觉一致——需求 3） */
         <TreeListSkeleton />
       ) : index.status === "error" ? (
         <p className="px-1 py-4 text-center text-xs text-muted-foreground">

@@ -35,6 +35,7 @@
  */
 import { Lock, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
@@ -154,7 +155,7 @@ export function ParamsTable({ t, rows, onChange, docQueryNames }: ParamsTablePro
               >
                 <td className="py-1 pl-3 pr-2">
                   <div className="flex h-6 w-6 items-center justify-center">
-                    <input type="checkbox" checked disabled className="size-3.5" />
+                    <Checkbox checked disabled className="size-3.5" title={t("headers.enabled")} />
                   </div>
                 </td>
                 <td className="py-1 pr-1.5">
@@ -227,11 +228,10 @@ export function ParamsTable({ t, rows, onChange, docQueryNames }: ParamsTablePro
                     {/* enabled：必填恒开不可编辑；选填可开关 */}
                     <td className="py-1 pl-3 pr-2">
                       <div className="flex h-6 w-6 items-center justify-center">
-                        <input
-                          type="checkbox"
+                        <Checkbox
                           checked={locked ? true : p.enabled !== false}
                           disabled={locked}
-                          onChange={(e) => update(item.idx, { enabled: e.target.checked })}
+                          onCheckedChange={(c) => update(item.idx, { enabled: c === true })}
                           className="size-3.5"
                           title={t("headers.enabled")}
                         />

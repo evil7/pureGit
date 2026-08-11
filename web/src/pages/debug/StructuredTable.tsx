@@ -15,6 +15,7 @@
  */
 import { Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import {
   Select,
@@ -197,11 +198,10 @@ function RowEditor({ row, onChange, t, depth }: StructuredTableProps) {
             {row.children.map((child, i) => (
               <tr key={`${child.field.name}:${i}`} className="border-b last:border-b-0">
                 <td className="py-0.5 pl-2 pr-1">
-                  <input
-                    type="checkbox"
+                  <Checkbox
                     checked={child.enabled !== false || child.field.required}
                     disabled={child.field.required}
-                    onChange={(e) => updateChild(i, { ...child, enabled: e.target.checked })}
+                    onCheckedChange={(c) => updateChild(i, { ...child, enabled: c === true })}
                     className="size-3.5"
                     title={child.field.required ? t("variables.required") : t("headers.enabled")}
                   />

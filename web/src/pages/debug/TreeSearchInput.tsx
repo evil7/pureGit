@@ -8,6 +8,7 @@
  */
 import { useEffect, useRef } from "react";
 import { X } from "lucide-react";
+import { Input } from "@/components/ui/input";
 
 interface TreeSearchInputProps {
   value: string;
@@ -47,12 +48,12 @@ export function TreeSearchInput({
 
   return (
     <div className="relative">
-      <input
+      <Input
         ref={searchRef}
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={`${placeholder}  /`}
-        className="h-6 w-full rounded-md border border-border/60 bg-background/60 px-2 pr-6 font-mono text-[11px] outline-none placeholder:text-muted-foreground focus:border-foreground/50 focus:ring-1 focus:ring-foreground/20"
+        className="h-6 w-full rounded-md border-border/60 bg-background/60 px-2 pr-6 font-mono text-[11px] focus:border-foreground/50 focus:ring-1 focus:ring-foreground/20"
       />
       {value && (
         <button

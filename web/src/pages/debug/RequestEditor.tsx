@@ -10,7 +10,17 @@
  * - Body：json/text 用 CodeEditor；form 用 KeyValueTable；none 提示
  */
 import { useEffect, useMemo, useState } from "react";
-import { BookOpen, Braces, ChevronDown, List, ListTree, Save, Send, Wand2 } from "lucide-react";
+import {
+  BookOpen,
+  Braces,
+  ChevronDown,
+  List,
+  ListTree,
+  Save,
+  Send,
+  TriangleAlert,
+  Wand2,
+} from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
@@ -36,8 +46,10 @@ import { ParamsTable } from "./ParamsTable";
 import { GqlVariablesPanel } from "./GqlVariablesPanel";
 import { BodyStructuredPanel } from "./BodyStructuredPanel";
 import { GraphQLLogo } from "./GraphQLLogo";
+import { COMMON_HEADER_PRESETS, type HeaderPreset } from "./header-presets";
 import { buildUrlFromParams, syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
 import { collectGqlOperations, type GqlOperationInfo } from "@/lib/debug-graphql";
+import { validateVariablesText } from "@/lib/debug-gql-variables";
 import { METHOD_COLOR, REST_API_BASE, normalizeRestUrl, CT_BY_BODY } from "./rest-meta";
 import type { DebugRequest, BodyType, HeaderRow } from "@/lib/debug-api";
 import type { OpenApiEndpoint } from "@/lib/debug-openapi";
@@ -95,8 +107,22 @@ export function RequestEditor({
   // ── 请求 Tab（Postman 风格：REST Params/Headers/Body；GraphQL Query/Variables/Headers） ──
   type ReqTab = "params" | "headers" | "body" | "query" | "variables";
   const [reqTab, setReqTab] = useState<ReqTab>(req.protocol === "graphql" ? "query" : "headers");
-  /** GraphQL 变量校验错误总数（GqlVariablesPanel 上抛；驱动 Variables tab 红色徽标） */
+  /** GraphQL 变量校验错误总数（驱动 Variables tab 红色徽标）：
+   *  **实时值兜底**——query/variables 输入即更新（validateVariablesText，不依赖切
+   *   Variables 面板）；面板挂载后其上抛的精细值（含结构化行转换错误）覆盖实时值 */
   const [varsError, setVarsError] = useState(0);
+  const varsErrorLive = useMemo(
+    () =>
+      req.protocol === "graphql"
+        ? (validateVariablesText(req.query, req.variables, gqlSchema)?.length ?? 0)
+        : 0,
+    [req.protocol, req.query, req.variables, gqlSchema],
+  );
+  /** query/变量变化 → 实时值同步（仅面板未挂载时——挂载后以上抛精细值为准） */
+  useEffect(() => {
+    if (reqTab !== "variables") setVarsError(varsErrorLive);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [varsErrorLive, reqTab]);
   /** M6：query 内 operation 列表（语法错误 → 空数组；空/单 operation → 不显示下拉） */
   const gqlOps = useMemo<GqlOperationInfo[]>(
     () => (req.protocol === "graphql" ? (collectGqlOperations(req.query) ?? []) : []),
@@ -130,6 +156,28 @@ export function RequestEditor({
   const noBodyMethod =
     req.protocol === "rest" &&
     (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS");
+  /** 参数 tab 计数：匹配端点文档的参数数（path + query；对照表格行数） */
+  const docParamCount =
+    endpoint?.op.params?.filter((p) => p.in === "path" || p.in === "query").length ?? 0;
+  /** Body JSON 语法错误（json bodyType 且非空文本 JSON 解析失败 → body tab 警告图标） */
+  const bodyJsonInvalid =
+    req.protocol === "rest" &&
+    req.bodyType === "json" &&
+    req.body.trim().length > 0 &&
+    (() => {
+      try {
+        JSON.parse(req.body);
+        return false;
+      } catch {
+        return true;
+      }
+    })();
+  /** GraphQL query 语法错误（query 非空且 parse 失败 → 查询 tab 警告图标；
+   *  collectGqlOperations 空文本返回 [] 非 null，故需非空前置） */
+  const querySyntaxError =
+    req.protocol === "graphql" &&
+    req.query.trim().length > 0 &&
+    collectGqlOperations(req.query) === null;
 
   // ── R2 双模式视图（默认 JSON 编辑器 ↔ 结构化列表视图；toggle 在 tab 右侧工具栏） ──
   /** REST Body 视图模式（仅 json bodyType 可用；结构化需 bodySchema 文档） */
@@ -148,6 +196,14 @@ export function RequestEditor({
   const addHeaderRow = () =>
     set({ headers: [...req.headers, { key: "", value: "", enabled: true }] });
   const deleteHeaderRow = (i: number) => set({ headers: req.headers.filter((_, xi) => xi !== i) });
+  /** 预设 badge 点击 → 补行（key 预填；value 空待填或取首个枚举） */
+  const addHeaderPreset = (p: HeaderPreset) => {
+    // 已存在同名头（忽略大小写）→ 不重复补行（用户可直接编辑现有行）
+    if (req.headers.some((h) => h.key.trim().toLowerCase() === p.key.toLowerCase())) return;
+    set({
+      headers: [...req.headers, { key: p.key, value: p.values?.[0] ?? "", enabled: true }],
+    });
+  };
 
   /** 点选请求数据类型：设 bodyType + 自动写/更新 Content-Type 请求头（用户可改可删） */
   const applyBodyType = (v: BodyType) => {
@@ -441,6 +497,20 @@ export function RequestEditor({
             )}
           >
             {tab.label}
+            {/* 参数 tab 计数：匹配端点文档的需设定参数数（path+query） */}
+            {tab.value === "params" && req.protocol === "rest" && docParamCount > 0 && (
+              <span className="ml-1 inline-flex min-w-3.5 items-center justify-center rounded-full bg-muted px-1 text-[9px] font-semibold leading-4 text-muted-foreground">
+                {docParamCount}
+              </span>
+            )}
+            {/* Body tab JSON 语法错误警告（json bodyType 且解析失败） */}
+            {tab.value === "body" && req.protocol === "rest" && bodyJsonInvalid && (
+              <TriangleAlert className="ml-1 inline-block size-3 shrink-0 text-destructive" />
+            )}
+            {/* 查询 tab 语法错误警告（query 非空且语法错误 → 查询 tab 警告图标） */}
+            {tab.value === "query" && req.protocol === "graphql" && querySyntaxError && (
+              <TriangleAlert className="ml-1 inline-block size-3 shrink-0 text-destructive" />
+            )}
             {/* GraphQL 变量校验错误徽标（>0 时红色计数，任何 tab 下可见） */}
             {tab.value === "variables" && req.protocol === "graphql" && varsError > 0 && (
               <span className="ml-1 inline-flex min-w-3.5 items-center justify-center rounded-full bg-destructive/10 px-1 text-[9px] font-semibold leading-4 text-destructive">
@@ -559,7 +629,8 @@ export function RequestEditor({
           </div>
         )}
         {reqTab === "headers" && (
-          /* Headers：必填锁定行（Lock 占位）+ token 行（Authorization）+ 用户行 */
+          /* Headers：必填锁定行（Lock 占位）+ token 行（Authorization）+ 用户行 +
+             常用 header 预设 badge（点击补行） */
           <div className="p-2">
             <KeyValueTable
               rows={req.headers}
@@ -576,6 +647,9 @@ export function RequestEditor({
               tokenValue={tokenPlaceholder}
               fillTokenTitle={t("headers.fillToken")}
               clearTokenTitle={t("headers.clearToken")}
+              presets={COMMON_HEADER_PRESETS}
+              presetTitle={t("headers.common")}
+              onAddPreset={addHeaderPreset}
             />
           </div>
         )}

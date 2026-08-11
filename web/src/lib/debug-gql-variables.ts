@@ -256,3 +256,30 @@ export function validateVariables(defs: GqlVariableDef[], json: unknown): GqlVar
   }
   return errors;
 }
+
+/**
+ * 文本级变量校验（query + variables 文本 + schema → 错误列表，纯函数）：
+ * 供 RequestEditor **tab 徽标实时计算**（无需切换/挂载 Variables 面板）——
+ * query 输入时立即反映变量缺失/多余/类型错误计数，与 GqlVariablesPanel 内部
+ * 校验结果同源（均为 collectVariables + parseVariablesJson + validateVariables）。
+ * - query 语法错误 / schema 未就绪 → null（无法提取变量定义，不报数）
+ * - variables JSON 语法错误 → 计入错误（1 条语法错误）
+ */
+export function validateVariablesText(
+  query: string,
+  variables: string,
+  schema: GraphQLSchema | null,
+): GqlVariableError[] | null {
+  if (!schema) return null;
+  const defs = collectVariables(query, schema);
+  if (defs === null) return null; // query 语法错误 → 不报数
+  const parsed = parseVariablesJson(variables);
+  if (!parsed.ok) {
+    return [{ key: "(json)", kind: "type-mismatch", message: parsed.error }];
+  }
+  const json =
+    typeof parsed.value === "object" && parsed.value !== null && !Array.isArray(parsed.value)
+      ? (parsed.value as Record<string, unknown>)
+      : {};
+  return validateVariables(defs, json);
+}

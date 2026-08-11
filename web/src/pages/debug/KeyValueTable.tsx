@@ -8,13 +8,21 @@
  * - fileMode（form-data）：Value 单元格内 Upload 前缀 icon（视觉一致）——
  *   可正常输入文本，也可点 icon 上传文件（选文件后 value 显示文件名并记录 File）
  * - + 添加按钮位于表格最底部一行、**靠左**；删除经 onDeleteRow 回调（文件索引同步）
+ * - 枚举值输入：匹配预设（HeaderValueCombobox）→ 下拉箭头弹出常见取值（可选可自定义）
  */
 import { useRef } from "react";
 import { KeyRound, Lock, Plus, Trash2, Upload, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
 import type { HeaderRow } from "@/lib/debug-api";
+import type { HeaderPreset } from "./header-presets";
+import { HeaderValueCombobox } from "./HeaderValueCombobox";
+
+/** 请求头名 → 预设（枚举值查找；HeaderValueCombobox 下拉项） */
+const presetByKey = (presets: HeaderPreset[], key: string): HeaderPreset | undefined =>
+  presets.find((p) => p.key.toLowerCase() === key.trim().toLowerCase());
 
 export function KeyValueTable({
   rows,
@@ -35,6 +43,9 @@ export function KeyValueTable({
   tokenValue,
   fillTokenTitle,
   clearTokenTitle,
+  presets,
+  presetTitle,
+  onAddPreset,
 }: {
   rows: HeaderRow[];
   onChange: (rows: HeaderRow[]) => void;
@@ -55,6 +66,12 @@ export function KeyValueTable({
   tokenValue?: string;
   fillTokenTitle?: string;
   clearTokenTitle?: string;
+  /** 常用请求头预设（添加按钮旁 badge；值枚举 → HeaderValueCombobox 下拉） */
+  presets?: HeaderPreset[];
+  /** 预设 badge 标题（hover） */
+  presetTitle?: string;
+  /** 点击预设 badge → 补行（key 预填，value 空待填） */
+  onAddPreset?: (preset: HeaderPreset) => void;
 }) {
   // 隐藏文件输入 ref（按行索引；点 Upload icon 触发）
   const fileRefs = useRef<(HTMLInputElement | null)[]>([]);
@@ -77,13 +94,7 @@ export function KeyValueTable({
                 <td className="py-1 pl-3 pr-2">
                   {/* 24px 槽居中：与底部添加按钮（同宽同起点）中心对齐 */}
                   <div className="flex h-6 w-6 items-center justify-center">
-                    <input
-                      type="checkbox"
-                      checked
-                      disabled
-                      className="size-3.5"
-                      title={enabledTitle}
-                    />
+                    <Checkbox checked disabled className="size-3.5" title={enabledTitle} />
                   </div>
                 </td>
                 <td className="py-1 pr-1.5">
@@ -109,12 +120,11 @@ export function KeyValueTable({
                 <td className="py-1 pl-3 pr-2">
                   {/* 24px 槽居中：与底部添加按钮（同宽同起点）中心对齐 */}
                   <div className="flex h-6 w-6 items-center justify-center">
-                    <input
-                      type="checkbox"
+                    <Checkbox
                       checked={h.enabled !== false}
-                      onChange={(e) =>
+                      onCheckedChange={(c) =>
                         onChange(
-                          rows.map((x, xi) => (xi === i ? { ...x, enabled: e.target.checked } : x)),
+                          rows.map((x, xi) => (xi === i ? { ...x, enabled: c === true } : x)),
                         )
                       }
                       className="size-3.5"
@@ -212,15 +222,14 @@ export function KeyValueTable({
                       />
                     </div>
                   ) : (
-                    <Input
+                    /* 普通输入：匹配预设且有枚举值 → HeaderValueCombobox 下拉选择（可选也可自定义） */
+                    <HeaderValueCombobox
                       value={h.value}
-                      onChange={(e) =>
-                        onChange(
-                          rows.map((x, xi) => (xi === i ? { ...x, value: e.target.value } : x)),
-                        )
+                      onChange={(v) =>
+                        onChange(rows.map((x, xi) => (xi === i ? { ...x, value: v } : x)))
                       }
                       placeholder={valuePlaceholder}
-                      className="h-7 w-full font-mono text-xs"
+                      values={presetByKey(presets ?? [], h.key)?.values}
                     />
                   )}
                 </td>
@@ -237,18 +246,37 @@ export function KeyValueTable({
                 </td>
               </tr>
             ))}
-          {/* 添加按钮行：横跨全宽、按钮靠左（与 checkbox 槽同起点同宽 → 中心对齐） */}
+          {/* 添加按钮行：横跨全宽、按钮靠左（与 checkbox 槽同起点同宽 → 中心对齐）；
+              右侧显示常用 header 预设 badge（点击快速补行，key 预填） */}
           <tr>
             <td colSpan={4} className="py-1 pl-3 pr-3">
-              <Button
-                size="icon"
-                variant="ghost"
-                className="h-6 w-6 px-0 text-muted-foreground hover:text-foreground"
-                onClick={onAddRow}
-                title={addTitle}
-              >
-                <Plus className="size-3.5" />
-              </Button>
+              <div className="flex flex-wrap items-center gap-1">
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  className="h-6 w-6 px-0 text-muted-foreground hover:text-foreground"
+                  onClick={onAddRow}
+                  title={addTitle}
+                >
+                  <Plus className="size-3.5" />
+                </Button>
+                {presets && (
+                  <span className="flex flex-wrap items-center gap-1">
+                    <span className="text-[10px] text-muted-foreground">{presetTitle}</span>
+                    {presets.map((p) => (
+                      <button
+                        key={p.key}
+                        type="button"
+                        className="rounded-full border border-dashed border-muted-foreground/40 px-1.5 py-px font-mono text-[10px] text-muted-foreground hover:border-foreground hover:text-foreground"
+                        title={p.values?.length ? p.values.join(", ") : p.key}
+                        onClick={() => onAddPreset?.(p)}
+                      >
+                        {p.key}
+                      </button>
+                    ))}
+                  </span>
+                )}
+              </div>
             </td>
           </tr>
         </tbody>

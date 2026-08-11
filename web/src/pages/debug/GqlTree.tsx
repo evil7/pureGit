@@ -57,7 +57,7 @@ import {
 } from "@/lib/debug-graphql";
 import type { GraphQLSchema } from "graphql";
 import { getGqlVersion } from "./schema-loader";
-import { GraphQLLogo } from "./GraphQLLogo";
+import { usePkgUpdateAvailable } from "@/lib/debug-version-check";
 import { TreeSearchInput } from "./TreeSearchInput";
 import { SchemaHeader } from "./SchemaHeader";
 import { TreeListSkeleton } from "./TreeListSkeleton";
@@ -412,6 +412,8 @@ export function GqlTree({
       cancelled = true;
     };
   }, []);
+  /** 版本更新预警（npm latest > 本地产物版本 → 红色↑ 提示可刷新产物） */
+  const gqlUpdateAvailable = usePkgUpdateAvailable("@octokit/graphql-schema", gqlVersion);
   /** F9：Schema 搜索过滤文本（空 = 正常浏览；非空 = 索引检索，只匹配字段名） */
   const [searchQuery, setSearchQuery] = useState("");
   /** 搜索输入延迟值（F9 性能：输入即时响应，索引检索低优先级滞后执行——不阻塞输入） */
@@ -516,12 +518,12 @@ export function GqlTree({
           />
         </div>
       )}
-      {/* 第二行：Schema 标题 + 版本号（hover 数据源 `schema data by pkg@ver`）+ 刷新；加载中状态文字 */}
+      {/* 第二行：数据源版本徽章（纯数字版本，hover 完整数据源）+ 版本更新预警（红色↑）+ 刷新 */}
       <SchemaHeader
-        title={t("gql.schema")}
-        icon={<GraphQLLogo className="size-3 text-violet-600 dark:text-violet-400" />}
-        version={gqlVersion ?? undefined}
+        version={gqlVersion ?? t("gql.schema")}
         versionDesc={gqlVersion ? t("gql.schemaSource", { ver: gqlVersion }) : undefined}
+        updateAvailable={gqlUpdateAvailable}
+        updateTitle={t("gql.updateAvailable")}
         loading={loading}
         onRefresh={onReload}
         refreshTitle={fieldTree ? t("gql.refresh") : t("gql.load")}
