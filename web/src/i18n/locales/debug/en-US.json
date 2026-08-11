@@ -47,6 +47,7 @@
   "gql.mutationRoot": "mutation",
   "gql.introspection": "Introspection",
   "gql.selectField": "Select field",
+  "gql.depthLimit": "Max nesting depth reached",
   "option.saveHistory": "Auto-save history",
   "unit.ms": "ms",
   "cache.preloading": "Preloading schema data {{label}}…",

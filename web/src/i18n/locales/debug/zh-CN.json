@@ -47,6 +47,7 @@
   "gql.mutationRoot": "mutation",
   "gql.introspection": "内省",
   "gql.selectField": "勾选字段",
+  "gql.depthLimit": "已达最大嵌套深度",
   "option.saveHistory": "自动保存历史",
   "unit.ms": "ms",
   "cache.preloading": "正在预载 schema 数据 {{label}}…",

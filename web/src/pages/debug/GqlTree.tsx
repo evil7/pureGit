@@ -4,21 +4,26 @@
  * 受控组件：schema/loading/error 由 DebugPage 统一持有（schema 同时供请求编辑器
  * cm6-graphql 补全），onReload 触发重新加载（清缓存重拉本地完整 schema）。
  * 数据：完整 introspection 原数据（含 description）→ buildGqlFieldTree 顶层字段树
- * （query/mutation 分组手风琴默认展开）→ 字段可展开返回类型的子字段（从外向内浏览）；
- * union 返回显示 possibleTypes。点按字段 → 生成「即用」查询模板（仅必填参数示例值）。
+ * （query/mutation 分组手风琴默认展开）+ GqlSchemaContext 惰性字段层解析（展开时才
+ * 构建该类型字段层，任意深度零网络）。
  *
- * 2026-08-11 勾选合并 + 双向同步（状态机纯函数在 lib/debug-graphql.ts，全量测试覆盖）：
- * - **勾选 = 唯一选中动作**：字段行（含展开的子字段）前 checkbox，勾选/取消立即重建
- *   查询填充编辑器（无「填充选中」按钮）；**点击字段名仅展开/收起**返回类型子字段
- * - **勾选父级 → 子项全自动勾选**（对象 root 自动带全部可见子字段，无隐式默认主键）：
- *   父级三态（checked/indeterminate/unchecked）；取消最后一个子项 → 父级一并取消
- * - **只有被勾选才写入**：生成 query 严格 = 勾选内容（gqlMapToQuery，无默认字段/主键）
+ * 2026-08-11 勾选合并 + 双向同步 + 任意深度（状态机纯函数在 lib/debug-graphql.ts）：
+ * - **勾选 = 唯一选中动作**：字段行前 checkbox，勾选/取消立即重建查询填充编辑器
+ *   （无「填充选中」按钮）；**点击字段名仅展开/收起**返回类型子字段
+ * - **任意深度递归**：FieldRow 递归组件，路径化展开态（path.join(".") 作 key）；
+ *   connection 字段可继续展开 nodes/edges（惰性 fieldsOf，深度上限防循环）
+ * - **勾选父级 → 默认字段集注入**（fillLeafs：id + 前 3 标量；connection 自动
+ *   totalCount+nodes）；父级三态（checked/indeterminate/unchecked）按子树递归；
+ *   取消最后一个子项 → 级联移除父
+ * - **只有被勾选才写入**：生成 query 严格 = 勾选内容（gqlMapToQuery）
+ * - **必填参数 → $var 提取**：勾选带必填参数字段自动生成变量引用（variables 面板
+ *   由 M4 接入，此处只保证 query 合法）
  * - **反向同步（手写 → 勾选）**：监听编辑器 query（editorQuery prop），无语法错误时
- *   解析 AST（parseQueryFieldSelections）→ buildSelectionsFromParsed 归一化
- *   （对象空 selection / 非 schema 字段 / 内省字段不产生勾选）→ 与当前勾选比较，不同才更新
- * - **内省分组**：底部固定 query/__schema、__type、__typename 三项（替代原自定义模板），
- *   默认展开，点击填充内省查询
- * - **hover 详情**：字段行 title 含返回类型 + 参数清单（name: Type!）+ description 全文
+ *   解析 AST（parseQueryFieldSelections 递归）→ buildSelectionsFromParsed 归一化
+ *   → 与当前勾选深比较，不同才更新（不变量 5 收敛稳定）
+ * - **内省分组**：底部固定 query/__schema、__type、__typename 三项，默认展开，
+ *   点击填充内省查询
+ * - **hover 详情**：字段行 title 含返回类型 + 参数清单（name: Type!）+ description
  */
 import { useEffect, useMemo, useState } from "react";
 import { ChevronDown, RefreshCw } from "lucide-react";
@@ -28,12 +33,11 @@ import { cn } from "@/lib/utils";
 import {
   buildGqlFieldTree,
   buildSelectionsFromParsed,
+  gqlFieldCheckState,
   gqlMapToQuery,
   gqlMapsEqual,
-  gqlRootCheckState,
   parseQueryFieldSelections,
   toggleFieldSelection,
-  toggleRootSelection,
   type GqlFieldNode,
   type GqlSchemaContext,
   type GqlSchemaTree,
@@ -58,6 +62,164 @@ const INTROSPECTION_PRESETS = [
     query: "query { __typename }",
   },
 ] as const;
+
+/** 递归展开深度上限（防类型环无限展开；connection 典型场景 3 级足够） */
+const MAX_DEPTH = 5;
+
+interface FieldRowProps {
+  t: (k: string, vars?: Record<string, unknown>) => string;
+  ctx: GqlSchemaContext;
+  opType: "query" | "mutation";
+  /** 顶层字段（GqlSelectionMap 的 key root；所有深度共享） */
+  root: GqlFieldNode;
+  /** 当前行字段 */
+  field: GqlFieldNode;
+  /** 当前字段路径（[] = root 自身；子字段 = [..., name]） */
+  path: string[];
+  /** 当前深度 */
+  depth: number;
+  selected: GqlSelectionMap;
+  /** 路径化展开态（path.join(".") → boolean） */
+  expandedPaths: Record<string, boolean>;
+  onToggleExpand: (pathKey: string) => void;
+  /** 勾选/取消（路径化） */
+  onToggle: (path: string[]) => void;
+}
+
+/** 字段行 title（hover 详情：返回类型 + 参数清单 + desc） */
+function fieldTitle(f: GqlFieldNode): string {
+  const parts = [`${f.name}: ${f.returnLabel}`];
+  if (f.args.length > 0) {
+    parts.push(
+      `args: ${f.args.map((a) => `${a.name}: ${a.typeLabel}${a.required ? "!" : ""}`).join(", ")}`,
+    );
+  }
+  if (f.desc) parts.push(f.desc);
+  return parts.join("\n");
+}
+
+/** 单行字段（递归组件）：checkbox 勾选 + 字段名点击展开 + 子字段递归 */
+function FieldRow({
+  t,
+  ctx,
+  opType,
+  root,
+  field,
+  path,
+  depth,
+  selected,
+  expandedPaths,
+  onToggleExpand,
+  onToggle,
+}: FieldRowProps) {
+  const pathKey = path.join(".");
+  const expanded = !!expandedPaths[pathKey];
+  // 可展开：非标量且深度未超上限（子字段层或 union possibleTypes）
+  const childFields =
+    !field.scalar && depth < MAX_DEPTH ? (ctx.fieldsOf(field.ofTypeName) ?? []) : [];
+  const expandable = childFields.length > 0 || !!field.possibleTypes;
+  const checkState = gqlFieldCheckState(ctx, selected, opType, root, path);
+  return (
+    <div>
+      {/* 字段行：checkbox 勾选（唯一选中动作）+ 点击字段名仅展开 + 右侧展开指示 */}
+      <div className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent">
+        <Checkbox
+          // radix CheckedState：boolean | "indeterminate"（三态原生支持）
+          checked={
+            checkState === "checked"
+              ? true
+              : checkState === "indeterminate"
+                ? "indeterminate"
+                : false
+          }
+          onCheckedChange={() => onToggle(path)}
+          className="size-3.5 shrink-0"
+          aria-label={`${t("gql.selectField")} ${field.name}`}
+        />
+        <button
+          type="button"
+          className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
+          onClick={() => expandable && onToggleExpand(pathKey)}
+          title={fieldTitle(field)}
+        >
+          <span
+            className={cn(
+              "min-w-0 flex-1 truncate text-xs",
+              field.deprecated && "text-destructive line-through",
+            )}
+          >
+            {field.name}
+          </span>
+          {/* 父级后方数字 = 子条目数量（对照 REST tag 端点数语义；args 在 hover title） */}
+          {expandable && (
+            <span className="shrink-0 rounded bg-muted px-1 text-[9px] leading-3 text-muted-foreground">
+              {childFields.length || field.possibleTypes?.length || 0}
+            </span>
+          )}
+          {/* connection 字段徽标（可继续展开 nodes/edges） */}
+          {field.isConnection && (
+            <span className="shrink-0 rounded bg-violet-500/10 px-1 text-[9px] leading-3 text-violet-600 dark:text-violet-400">
+              conn
+            </span>
+          )}
+          {/* 必填参数徽标（$var 提取；hover 看参数清单） */}
+          {field.args.some((a) => a.required) && (
+            <span className="shrink-0 rounded bg-amber-500/10 px-1 text-[9px] leading-3 text-amber-600 dark:text-amber-400">
+              {field.args.filter((a) => a.required).length}▲
+            </span>
+          )}
+        </button>
+        {expandable && (
+          <span
+            role="button"
+            tabIndex={-1}
+            className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleExpand(pathKey);
+            }}
+            title={expanded ? "收起" : "展开返回类型字段"}
+          >
+            <ChevronDown className={cn("size-3 transition-transform", !expanded && "-rotate-90")} />
+          </span>
+        )}
+      </div>
+      {/* 展开：子字段递归（任意深度） */}
+      {expanded && childFields.length > 0 && (
+        <div className="ml-3 border-l border-muted pl-1.5">
+          {childFields.map((cf) => (
+            <FieldRow
+              key={cf.name}
+              t={t}
+              ctx={ctx}
+              opType={opType}
+              root={root}
+              field={cf}
+              path={[...path, cf.name]}
+              depth={depth + 1}
+              selected={selected}
+              expandedPaths={expandedPaths}
+              onToggleExpand={onToggleExpand}
+              onToggle={onToggle}
+            />
+          ))}
+          {/* 深度上限提示 */}
+          {depth + 1 >= MAX_DEPTH && (
+            <p className="px-1.5 py-0.5 text-[10px] text-muted-foreground">{t("gql.depthLimit")}</p>
+          )}
+        </div>
+      )}
+      {/* 展开：union possibleTypes 提示 */}
+      {expanded && field.possibleTypes && (
+        <div className="ml-3 border-l border-muted pl-1.5">
+          <p className="px-1.5 py-0.5 text-[10px] text-muted-foreground">
+            {field.possibleTypes.join(" | ")}
+          </p>
+        </div>
+      )}
+    </div>
+  );
+}
 
 interface GqlTreeProps {
   t: (k: string, vars?: Record<string, unknown>) => string;
@@ -92,9 +254,9 @@ export function GqlTree({
     mutation: true,
     introspection: true,
   });
-  // 字段展开态（字段名 → 已展开返回类型的子字段）
-  const [gqlExpanded, setGqlExpanded] = useState<Record<string, boolean>>({});
-  // 勾选集合（顶层字段 + 子字段合并构造；同操作类型字段共享；状态机在 lib 层）
+  // 字段展开态（path.join(".") → 已展开；任意深度）
+  const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
+  // 勾选集合（顶层字段 key + 嵌套树；状态机在 lib 层）
   const [selected, setSelected] = useState<GqlSelectionMap>({});
   /** 顶层字段树（schema 就绪后构建，含展开浏览数据） */
   const fieldTree: GqlSchemaTree | null = useMemo(
@@ -108,16 +270,15 @@ export function GqlTree({
     if (gqlCtx) onPickGqlMulti(opType, gqlMapToQuery(gqlCtx, next, opType));
   };
 
-  /** 勾选顶层字段（父级 checkbox）→ 状态机切换（对象 root 自动注入默认字段集） */
-  const toggleRoot = (opType: "query" | "mutation", root: GqlFieldNode) => {
+  /** 勾选/取消字段（任意深度路径；root 自身 = []） */
+  const toggleField = (opType: "query" | "mutation", root: GqlFieldNode, path: string[]) => {
     if (!gqlCtx) return;
-    commitSelection(toggleRootSelection(gqlCtx, selected, opType, root), opType);
+    commitSelection(toggleFieldSelection(gqlCtx, selected, opType, root, path), opType);
   };
-  /** 勾选子字段 → 状态机切换（取消最后一个子项 → 父级一并取消） */
-  const toggleChild = (opType: "query" | "mutation", root: GqlFieldNode, childName: string) => {
-    if (!gqlCtx) return;
-    commitSelection(toggleFieldSelection(gqlCtx, selected, opType, root, [childName]), opType);
-  };
+
+  /** 展开/收起（路径化） */
+  const toggleExpand = (pathKey: string) =>
+    setExpandedPaths((s) => ({ ...s, [pathKey]: !s[pathKey] }));
 
   /**
    * 反向同步（手写 → 勾选）：编辑器 query 变化时解析 AST，无语法错误则自动
@@ -135,17 +296,7 @@ export function GqlTree({
     // 与当前勾选深比较：相等 → 不更新（防循环/无谓渲染；不变量 5 收敛稳定）
     if (!gqlMapsEqual(next, selected)) setSelected(next);
   }, [editorQuery, fieldTree, selected, gqlCtx]);
-  /** 字段行 title（hover 详情：返回类型 + 参数清单 + desc） */
-  const fieldTitle = (f: GqlFieldNode): string => {
-    const parts = [`${f.name}: ${f.returnLabel}`];
-    if (f.args.length > 0) {
-      parts.push(
-        `args: ${f.args.map((a) => `${a.name}: ${a.typeLabel}${a.required ? "!" : ""}`).join(", ")}`,
-      );
-    }
-    if (f.desc) parts.push(f.desc);
-    return parts.join("\n");
-  };
+
   return (
     <div className="p-1.5">
       {/* Schema 区：标题 + 右侧 加载/刷新 按钮 */}
@@ -177,8 +328,8 @@ export function GqlTree({
             {t("gql.retry")}
           </button>
         </div>
-      ) : fieldTree ? (
-        /* query / mutation 分组手风琴（字段可展开返回类型；勾选合并构造） */
+      ) : fieldTree && gqlCtx ? (
+        /* query / mutation 分组手风琴（字段可展开返回类型；勾选合并构造；任意深度） */
         <div>
           {(
             [
@@ -207,114 +358,22 @@ export function GqlTree({
                 </button>
                 {open && (
                   <div className="ml-2 border-l pl-1">
-                    {fields.map((f) => {
-                      const expanded = gqlExpanded[f.name] ?? false;
-                      const expandable = !!f.typeFields || !!f.possibleTypes;
-                      const checkState = gqlCtx
-                        ? gqlRootCheckState(gqlCtx, selected, key, f)
-                        : "unchecked";
-                      const isSel = checkState !== "unchecked";
-                      const childSel = isSel ? (selected[`${key}:${f.name}`].children ?? {}) : {};
-                      return (
-                        <div key={f.name}>
-                          {/* 字段行：checkbox 勾选（唯一选中动作）+ 点击字段名仅展开 + 右侧展开指示 */}
-                          <div className="flex items-center gap-1 rounded px-1.5 py-1 hover:bg-accent">
-                            <Checkbox
-                              // radix CheckedState：boolean | "indeterminate"（三态原生支持）
-                              checked={
-                                checkState === "checked"
-                                  ? true
-                                  : checkState === "indeterminate"
-                                    ? "indeterminate"
-                                    : false
-                              }
-                              onCheckedChange={() => toggleRoot(key, f)}
-                              className="size-3.5 shrink-0"
-                              aria-label={`${t("gql.selectField")} ${f.name}`}
-                            />
-                            <button
-                              type="button"
-                              className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-                              onClick={() =>
-                                expandable && setGqlExpanded((s) => ({ ...s, [f.name]: !expanded }))
-                              }
-                              title={fieldTitle(f)}
-                            >
-                              <span
-                                className={cn(
-                                  "min-w-0 flex-1 truncate text-xs",
-                                  f.deprecated && "text-destructive line-through",
-                                )}
-                              >
-                                {f.name}
-                              </span>
-                              {/* 父级后方数字 = 子条目数量（可展开子字段数，对照 REST tag 的端点数语义；
-                                  args 参数清单保留在 hover title） */}
-                              {expandable && (
-                                <span className="shrink-0 rounded bg-muted px-1 text-[9px] leading-3 text-muted-foreground">
-                                  {f.typeFields?.length ?? f.possibleTypes?.length ?? 0}
-                                </span>
-                              )}
-                            </button>
-                            {expandable && (
-                              <span
-                                role="button"
-                                tabIndex={-1}
-                                className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent"
-                                onClick={(e) => {
-                                  e.stopPropagation();
-                                  setGqlExpanded((s) => ({
-                                    ...s,
-                                    [f.name]: !expanded,
-                                  }));
-                                }}
-                                title={expanded ? "收起" : "展开返回类型字段"}
-                              >
-                                <ChevronDown
-                                  className={cn(
-                                    "size-3 transition-transform",
-                                    !expanded && "-rotate-90",
-                                  )}
-                                />
-                              </span>
-                            )}
-                          </div>
-                          {/* 展开：返回类型的子字段（checkbox 勾选 + 点击生成精确模板） */}
-                          {expanded && f.typeFields && (
-                            <div className="ml-3 border-l border-muted pl-1.5">
-                              {f.typeFields.map((cf) => (
-                                <div
-                                  key={cf.name}
-                                  className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent"
-                                >
-                                  <Checkbox
-                                    checked={cf.name in childSel}
-                                    onCheckedChange={() => toggleChild(key, f, cf.name)}
-                                    className="size-3 shrink-0"
-                                    aria-label={`${t("gql.selectField")} ${f.name}.${cf.name}`}
-                                  />
-                                  {/* 子字段纯文本展示（无更深展开；勾选为唯一交互） */}
-                                  <span
-                                    className="min-w-0 flex-1 truncate text-[11px]"
-                                    title={`${f.name} { ${cf.name} } — ${cf.returnLabel}${cf.desc ? `\n${cf.desc}` : ""}`}
-                                  >
-                                    {cf.name}
-                                  </span>
-                                </div>
-                              ))}
-                            </div>
-                          )}
-                          {/* 展开：union possibleTypes 提示 */}
-                          {expanded && f.possibleTypes && (
-                            <div className="ml-3 border-l border-muted pl-1.5">
-                              <p className="px-1.5 py-0.5 text-[10px] text-muted-foreground">
-                                {f.possibleTypes.join(" | ")}
-                              </p>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                    {fields.map((f) => (
+                      <FieldRow
+                        key={f.name}
+                        t={t}
+                        ctx={gqlCtx}
+                        opType={key}
+                        root={f}
+                        field={f}
+                        path={[]}
+                        depth={0}
+                        selected={selected}
+                        expandedPaths={expandedPaths}
+                        onToggleExpand={toggleExpand}
+                        onToggle={(path) => toggleField(key, f, path)}
+                      />
+                    ))}
                   </div>
                 )}
               </div>
