@@ -27,6 +27,8 @@ interface RestTreeProps {
 
 /** 虚拟列表行高估算（px）——tag/端点/骨架/错误行统一紧凑行高 */
 const ROW_HEIGHT = 26;
+/** 每层缩进（px）——与 GqlTree 同款：基础 6px + 层级 × INDENT（端点/骨架/错误为 tag 的 1 级子层） */
+const ROW_INDENT = 14;
 
 /** tag 懒加载状态（提升到 RestTree 持有——虚拟滚动行卸载重建不丢加载进度） */
 type TagState =
@@ -109,7 +111,8 @@ const EndpointRow = memo(function EndpointRow({
   return (
     <button
       type="button"
-      className="ml-2 flex w-[calc(100%-0.5rem)] items-center gap-1.5 rounded border-l border-muted py-0.5 pl-2 pr-1 text-left hover:bg-accent"
+      className="flex w-full items-center gap-1.5 rounded py-0.5 pr-1 text-left hover:bg-accent"
+      style={{ paddingLeft: 6 + ROW_INDENT }}
       onClick={() => onPickEndpoint(ep)}
       title={`${ep.method.toUpperCase()} ${ep.path}\n${ep.op.desc ?? ep.op.summary ?? ""}`}
     >
@@ -252,11 +255,14 @@ export function RestTree({ t, onPickEndpoint }: RestTreeProps) {
                   ) : row.kind === "endpoint" ? (
                     <EndpointRow row={row} onPickEndpoint={onPickEndpoint} />
                   ) : row.kind === "skeleton" ? (
-                    <div className="px-4 py-0.5">
+                    <div className="py-0.5" style={{ paddingLeft: 6 + ROW_INDENT }}>
                       <Skeleton className="h-4 w-3/4" />
                     </div>
                   ) : (
-                    <p className="px-4 py-0.5 text-[10px] text-destructive">
+                    <p
+                      className="py-0.5 text-[10px] text-destructive"
+                      style={{ paddingLeft: 6 + ROW_INDENT }}
+                    >
                       {t("openapi.loadFailed")}
                     </p>
                   )}

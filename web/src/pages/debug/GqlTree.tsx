@@ -68,6 +68,8 @@ const INTROSPECTION_PRESETS = [
 const MAX_DEPTH = 5;
 /** 虚拟列表行高估算（px）——header/字段/模板行统一紧凑行高 */
 const ROW_HEIGHT = 24;
+/** 每层缩进（px）——字段行 paddingLeft = 基础 6px + depth × INDENT（多级层级递进） */
+const ROW_INDENT = 14;
 
 /** 虚拟列表可见行（扁平化渲染模型：分组头 / 字段 / 内省模板三种行，前序遍历顺序） */
 type GqlRow =
@@ -217,13 +219,13 @@ const Row = memo(function Row({
       </div>
     );
   }
-  // 内省模板行
+  // 内省模板行（分组下 1 级子层：固定 1 级缩进）
   if (row.kind === "preset") {
     return (
-      <div className="flex items-center px-1.5">
+      <div className="flex items-center" style={{ paddingLeft: 6 + ROW_INDENT }}>
         <button
           type="button"
-          className="ml-2 flex min-w-0 flex-1 items-center gap-1.5 rounded px-1.5 py-0.5 text-left hover:bg-accent"
+          className="flex min-w-0 flex-1 items-center gap-1.5 rounded px-1.5 py-0.5 text-left hover:bg-accent"
           onClick={() => onPickGqlTemplate(row.query, "query")}
           title={row.query}
         >
@@ -232,14 +234,12 @@ const Row = memo(function Row({
       </div>
     );
   }
-  // 字段行
-  const { field, path } = row;
+  // 字段行（缩进按 depth 递增：顶层 0 级，每展开一层 +1 级）
+  const { field } = row;
   return (
     <div
-      className={cn(
-        "flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent",
-        path.length > 0 && "ml-2 border-l border-muted pl-1",
-      )}
+      className="flex items-center gap-1 rounded py-0.5 pr-1.5 hover:bg-accent"
+      style={{ paddingLeft: 6 + row.depth * ROW_INDENT }}
     >
       <Checkbox
         checked={
