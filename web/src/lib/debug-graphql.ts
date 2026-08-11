@@ -170,10 +170,13 @@ export function clearCachedGqlSchema(): void {
 }
 
 /**
- * 在线刷新：带 token introspection（官方 explorer 同款）→ 构建运行时 schema。
- * 匿名（token 为空）GitHub 恒 401，调用方提示「需登录」；schema 快照版本落后时手动刷新。
+ * 在线 introspection 原始 JSON（F13 自动刷新 + 手动刷新共用）：带 token 全量
+ * introspection → 返回 {__schema}（可写 IndexedDB 持久化，供下次进入使用）。
+ * 匿名（token 为空）GitHub 恒 401，调用方提示「需登录」。
  */
-export async function fetchGqlSchema(token: string | null): Promise<GraphQLSchema> {
+export async function fetchGqlSchemaIntrospection(
+  token: string | null,
+): Promise<{ __schema: unknown }> {
   const headers: Record<string, string> = {
     Accept: "application/vnd.github+json",
     "Content-Type": "application/json",
@@ -196,7 +199,16 @@ export async function fetchGqlSchema(token: string | null): Promise<GraphQLSchem
   const schemaData = (json.data as { __schema?: unknown } | null)?.__schema;
   if (!schemaData) throw new Error("introspection 无 __schema");
   // eslint-disable-next-line no-underscore-dangle -- 同上：GraphQL 内省协议强制字段名
-  return buildGqlSchemaFromIntrospection({ __schema: schemaData });
+  return { __schema: schemaData };
+}
+
+/**
+ * 在线刷新：带 token introspection（官方 explorer 同款）→ 构建运行时 schema。
+ * 匿名（token 为空）GitHub 恒 401，调用方提示「需登录」；schema 快照版本落后时手动刷新。
+ */
+export async function fetchGqlSchema(token: string | null): Promise<GraphQLSchema> {
+  const data = await fetchGqlSchemaIntrospection(token);
+  return buildGqlSchemaFromIntrospection(data);
 }
 
 /* ── 顶层字段树（左栏 Schema 树数据源） ─────────────────────── */
@@ -236,23 +248,64 @@ export interface GqlSchemaContext {
   /** query/mutation 根类型名（变量定义与顶层字段解析用） */
   queryTypeName: string;
   mutationTypeName: string;
-  /** 取命名类型的字段层（对象/接口 → 字段；union → 空数组；标量/枚举/未知 → undefined） */
+  /** 取命名类型的字段层（对象/接口 → 字段；union → 空数组；标量/枚举/未知 → undefined）。
+   *  connection 对象（object 元素）→ **拆包为元素类型字段**（跳过 edges/nodes 语法层） */
   fieldsOf(typeName: string): GqlFieldNode[] | undefined;
 }
 
 /**
  * 从运行时 schema 构建惰性字段层解析上下文。fieldsOf 内部缓存各类型字段层——
  * 展开过的类型零重复构建；未知/标量类型返回 undefined（叶子）。
+ *
+ * **connection 拆包（用户拍板 2026-08-11）**：返回类型为 Connection 的对象
+ * （如 RepositoryConnection）→ 若其元素为 **object**（nodes / edges.node 的元素），
+ * 则直接返回**元素类型字段**（如 Repository 字段）——跳过 `edges`/`nodes`/`pageInfo`
+ * 等**复合查询语法节点**（非业务字段，频繁出现在 payload 且无信息量）。
+ * 元素为 union/interface（无公共字段，如 SearchResultItemConnection）→ 保持原样
+ * （拆包无意义，其 edges 语义仍需保留）。顶层 `node(id: ID!)` 是真正的 API 端点，
+ * 不在 Connection 类型内，不受影响。
  */
 export function buildGqlSchemaContext(schema: GraphQLSchema): GqlSchemaContext {
   const cache = new Map<string, GqlFieldNode[]>();
+  /** connection 元素类型（object/interface/union → 类型；无法识别 → null）：
+   * 优先 `nodes` 字段元素，其次 `edges` 的 `node` 字段元素（GitHub connection 惯例） */
+  const connectionElement = (conn: GraphQLObjectType): GraphQLNamedType | null => {
+    const elemOf = (f: GraphQLField<unknown, unknown> | undefined): GraphQLNamedType | null => {
+      if (!f) return null;
+      const n = unwrapToNamed(f.type);
+      return n && (isObjectType(n) || isInterfaceType(n) || isUnionType(n)) ? n : null;
+    };
+    const nodes = elemOf(conn.getFields()["nodes"]);
+    if (nodes) return nodes;
+    const edge = elemOf(conn.getFields()["edges"]);
+    if (edge && (isObjectType(edge) || isInterfaceType(edge))) {
+      const node = elemOf((edge as GraphQLObjectType).getFields()["node"]);
+      if (node) return node;
+    }
+    return null;
+  };
   const fieldsOf = (typeName: string): GqlFieldNode[] | undefined => {
     const hit = cache.get(typeName);
     if (hit) return hit;
     const t = schema.getType(typeName);
     if (!t) return undefined;
     if (isObjectType(t) || isInterfaceType(t)) {
-      const fields = collectFields(t as GraphQLObjectType);
+      const obj = t as GraphQLObjectType;
+      // connection 拆包：object 元素 → 返回元素字段（跳过 edges/nodes/pageInfo 语法层）
+      if (obj.name.endsWith("Connection")) {
+        const elem = connectionElement(obj);
+        if (elem && isObjectType(elem)) {
+          const fields = collectFields(elem);
+          cache.set(typeName, fields);
+          return fields;
+        }
+        // union/interface 元素 connection：拆包无意义（无公共字段）→ 保持原样
+        // 但过滤 connection 语法字段（edges/nodes/node/pageInfo/cursor 非业务端点）
+        const fields = collectFields(obj).filter((f) => !GQL_CONN_SYNTAX_FIELDS.has(f.name));
+        cache.set(typeName, fields);
+        return fields;
+      }
+      const fields = collectFields(obj);
       cache.set(typeName, fields);
       return fields;
     }
@@ -289,6 +342,22 @@ function typeLabel(t: GraphQLType | null): string {
 /** 展开浏览：顶层字段的返回类型子字段上限（再展开一层；更深层由 UI 惰性触发） */
 const TYPE_FIELD_MAX = 30;
 
+/**
+ * GraphQL 公共语法/内建字段（跨站点通用、非业务端点——用户拍板屏蔽）：
+ * - 顶层 Relay 全局 ID 查询：`node(id:)` / `nodes(ids:)`（几乎所有 GraphQL API 都有）
+ * - Relay 客户端规范化字段：`relay`（GitHub 2023 年加的，返回 Query 自身）
+ * - URL 资源解析：`resource(url:)`（与 node 同族的通用解析器，非业务端点）
+ * 这些类比 SQL 的 `AS`/`COUNT()`——是内定语法而非应列举的业务端点或有效字段。
+ */
+const GQL_TOP_SYNTAX_FIELDS = new Set(["node", "nodes", "relay", "resource"]);
+
+/**
+ * connection 语法层字段（Relay 连接协议结构，非业务字段）：object 元素拆包时已整体
+ * 跳过（fieldsOf 直接返回元素字段）；union/interface 元素保持原样时用本集过滤。
+ * `totalCount` 不在其中——它是 GitHub 连接计数（有业务价值的聚合字段，保留）。
+ */
+const GQL_CONN_SYNTAX_FIELDS = new Set(["edges", "nodes", "node", "pageInfo", "cursor"]);
+
 /** 字段排序：普通字符序（不区分主键——勾选合并无隐式默认字段，`id` 无特殊地位） */
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
 
@@ -319,7 +388,8 @@ function collectFields(type: GraphQLObjectType): GqlFieldNode[] {
         ofTypeName: inner?.name ?? "",
         isConnection,
         deprecated: f.deprecationReason != null || undefined,
-        desc: f.description?.slice(0, 100) || undefined,
+        // F12：desc 全文（不截断——hover title 展示完整文档；惰性生成无额外成本）
+        desc: f.description || undefined,
       };
       if (inner !== null && isUnionType(inner)) {
         node.possibleTypes = schemaPossibleTypes(inner);
@@ -344,21 +414,89 @@ export interface GqlSchemaTree {
 /**
  * 从运行时 schema 构建 query/mutation 顶层字段树。
  * 顶层字段附带一层 typeFields（惰性展开的浏览起点）；更深层由 GqlSchemaContext.fieldsOf 按需取。
+ * **顶层屏蔽公共语法字段**（node/nodes/relay/resource——Relay 内建，非业务端点）。
  */
 export function buildGqlFieldTree(schema: GraphQLSchema): GqlSchemaTree {
   const ctx = buildGqlSchemaContext(schema);
   const top = (t: GraphQLObjectType | null | undefined): GqlFieldNode[] =>
     t
-      ? collectFields(t).map((n) =>
-          n.scalar || n.possibleTypes
-            ? n
-            : {
-                ...n,
-                typeFields: ctx.fieldsOf(n.ofTypeName)?.slice(0, TYPE_FIELD_MAX),
-              },
-        )
+      ? collectFields(t)
+          .filter((n) => !GQL_TOP_SYNTAX_FIELDS.has(n.name))
+          .map((n) =>
+            n.scalar || n.possibleTypes
+              ? n
+              : {
+                  ...n,
+                  typeFields: ctx.fieldsOf(n.ofTypeName)?.slice(0, TYPE_FIELD_MAX),
+                },
+          )
       : [];
   return { query: top(schema.getQueryType()), mutation: top(schema.getMutationType()) };
+}
+
+/* ── Schema 搜索索引（F9 优化：索引预构建 + O(命中) 查询） ─────────── */
+
+/** 搜索索引命中：字段名 → 全树出现位置（root + path 可定位行/勾选） */
+export interface GqlSearchHit {
+  opType: "query" | "mutation";
+  /** 顶层字段（行 id / 勾选定位） */
+  root: GqlFieldNode;
+  /** 从 root 到当前字段的路径（root 自身 = []；勾选用） */
+  path: string[];
+  depth: number;
+  field: GqlFieldNode;
+}
+
+/**
+ * 构建 Schema 搜索索引（纯函数，可测）：**只收集 query/mutation 顶层字段**——
+ * 用户拍板「只搜最顶层」（子字段靠点开顶层后浏览，搜索定位顶层即可）。
+ * 索引 ~304 条（query 30 + mutation 274），搜索 O(顶层数) 极快、命中精准。
+ *
+ * 为什么索引化：旧实现每次 keystroke 全树 DFS（hasAnyMatch + walkField 双遍），
+ * 大 schema（mutation 274 顶层 + 深 5 递归）导致搜索卡顿且命中爆炸
+ * （实测 "repo" 深 5 索引 31 万行）。索引只建一次 + 只含顶层 → 快且准。
+ */
+export function buildGqlSearchIndex(tree: GqlSchemaTree): Map<string, GqlSearchHit[]> {
+  const index = new Map<string, GqlSearchHit[]>();
+  for (const opType of ["query", "mutation"] as const) {
+    const fields = opType === "query" ? tree.query : tree.mutation;
+    for (const root of fields) {
+      const key = root.name.toLowerCase();
+      let arr = index.get(key);
+      if (!arr) {
+        arr = [];
+        index.set(key, arr);
+      }
+      arr.push({ opType, root, path: [], depth: 0, field: root });
+    }
+  }
+  return index;
+}
+
+/**
+ * 搜索索引 → 命中列表（纯函数）：query 小写化 → 遍历索引 keys（顶层字段名集合）
+ * 做 includes 匹配（**只匹配字段名**——不搜 desc/returnLabel，杜绝长文本噪音）→
+ * 聚合命中 → 排序（query 组前 / 组内 root 名字典序）。空 query → []。
+ *
+ * 命中上限 MAX_SEARCH_HITS：顶层已收敛（~304），但前缀词（如 "a"）仍可命中数十条，
+ * 超限截断——搜索是「快速定位字段」，前 N 条即满足意图。
+ */
+export const MAX_SEARCH_HITS = 100;
+
+export function searchGqlIndex(index: Map<string, GqlSearchHit[]>, query: string): GqlSearchHit[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return [];
+  const hits: GqlSearchHit[] = [];
+  for (const [key, arr] of index) {
+    if (!key.includes(q)) continue;
+    hits.push(...arr);
+    if (hits.length >= MAX_SEARCH_HITS) break; // 截断：前 N 条命中即可
+  }
+  hits.sort((a, b) => {
+    if (a.opType !== b.opType) return a.opType === "query" ? -1 : 1;
+    return a.root.name.localeCompare(b.root.name);
+  });
+  return hits;
 }
 
 /* ── 勾选合并 → 查询构造（递归 + 变量提取） ─────────────── */
@@ -517,6 +655,46 @@ export function parseQueryFieldSelections(
         .filter((s): s is FieldNode => s.kind === "Field")
         .map(parseFieldNode),
     };
+  } catch {
+    return null;
+  }
+}
+
+/* ── 多 operation（M6 / F8）：AST 提取 operation 列表 ─────────────── */
+
+/** 单个 operation 概要（M6 下拉数据源；无名字 operation 用类型作显示名） */
+export interface GqlOperationInfo {
+  /** 原始 operation 名（未命名 operation = ""） */
+  name: string;
+  /** 显示名（未命名 → "query"/"mutation"） */
+  label: string;
+  opType: "query" | "mutation";
+  /** 变量定义列表（variables 面板按当前 operation 过滤变量） */
+  varNames: string[];
+}
+
+/**
+ * 从 query 文本提取全部 operation（M6）：AST 遍历 OperationDefinition → 名字/类型/变量。
+ * - 语法错误 → null（不显示下拉）；空文本 → []
+ * - 未命名 operation → label 用类型（query/mutation）——GraphQL 允许单未命名 operation
+ */
+export function collectGqlOperations(query: string): GqlOperationInfo[] | null {
+  if (!query?.trim()) return [];
+  try {
+    const doc = parse(query);
+    const ops: GqlOperationInfo[] = [];
+    for (const def of doc.definitions) {
+      if (def.kind !== "OperationDefinition") continue;
+      const opType = def.operation === "mutation" ? "mutation" : "query";
+      const name = def.name?.value ?? "";
+      ops.push({
+        name,
+        label: name || opType,
+        opType,
+        varNames: (def.variableDefinitions ?? []).map((v) => v.variable.name.value),
+      });
+    }
+    return ops;
   } catch {
     return null;
   }
@@ -736,6 +914,15 @@ export function toggleFieldSelection(
   if (path.length > 0) {
     const children = { ...(cur.children ?? {}) };
     children[path[path.length - 1]] = node;
+    // F2：勾选 connection 的 nodes/edges → 自动附带父级 totalCount（元素类型默认叶子
+    // 已由 buildDefaultSubtree 经 firstLeafField 进入；totalCount 供计数浏览）
+    const lastSeg = path[path.length - 1];
+    if (lastSeg === "nodes" || lastSeg === "edges") {
+      const parentField = fieldAtPath(ctx, root, path.slice(0, -1));
+      if (parentField?.isConnection && !children.totalCount) {
+        children.totalCount = { args: {} };
+      }
+    }
     cur.children = children;
   }
   next[key] = rootNode;

@@ -61,6 +61,7 @@ import {
   endpointToRequest,
   matchEndpoint,
   endpointStillMatches,
+  filterRestEndpoints,
   type OpenApiEndpoint,
   type RestReqFile,
   type RestResMinFile,
@@ -297,5 +298,74 @@ describe("endpointStillMatches（端点固化）", () => {
     expect(endpointStillMatches(cmp, "/repos/{owner}/{repo}/compare/{base}...{head}", "get")).toBe(
       true,
     );
+  });
+});
+
+describe("filterRestEndpoints（R1 搜索过滤）", () => {
+  const mk = (
+    method: "get" | "post" | "delete",
+    path: string,
+    tag = "orgs",
+    summary?: string,
+    desc?: string,
+  ): OpenApiEndpoint => ({
+    tag,
+    path,
+    method,
+    op: { params: [], ...(summary ? { summary } : {}), ...(desc ? { desc } : {}) },
+    label: summary ?? path,
+  });
+  const eps = [
+    mk("get", "/orgs/{org}/repos", "orgs", "List organization repositories"),
+    mk("post", "/orgs/{org}/repos", "orgs", "Create an organization repository"),
+    mk("get", "/repos/{owner}/{repo}/compare/{basehead}", "commits", "Compare two commits"),
+    mk("delete", "/repos/{owner}/{repo}", "repos", undefined, "Delete a repository"),
+  ];
+
+  it("空 query → 原样返回（全量）", () => {
+    expect(filterRestEndpoints(eps, "  ")).toHaveLength(4);
+    expect(filterRestEndpoints(eps, "")).toEqual(eps);
+  });
+
+  it("匹配 path（含占位段）", () => {
+    expect(filterRestEndpoints(eps, "/orgs/{org}").map((e) => e.path)).toEqual([
+      "/orgs/{org}/repos",
+      "/orgs/{org}/repos",
+    ]);
+  });
+
+  it("匹配 tag 名", () => {
+    expect(filterRestEndpoints(eps, "commits").map((e) => e.path)).toEqual([
+      "/repos/{owner}/{repo}/compare/{basehead}",
+    ]);
+  });
+
+  it("匹配方法（大小写不敏感）", () => {
+    expect(filterRestEndpoints(eps, "POST").map((e) => e.method)).toEqual(["post"]);
+    expect(filterRestEndpoints(eps, "delete").map((e) => e.method)).toEqual(["delete"]);
+  });
+
+  it("匹配 summary（经 label 兜底；包含匹配）", () => {
+    // "repo" 命中 label（List/Create organization repository 的 summary）+ commits 的 path
+    // `/repos/...` + delete 的 label 兜底 path `/repos/...`（多字段匹配正确行为）
+    expect(filterRestEndpoints(eps, "repo").map((e) => `${e.method} ${e.path}`)).toEqual([
+      "get /orgs/{org}/repos",
+      "post /orgs/{org}/repos",
+      "get /repos/{owner}/{repo}/compare/{basehead}",
+      "delete /repos/{owner}/{repo}",
+    ]);
+  });
+
+  it("不匹配 desc（只搜顶层——长文本噪音排除）", () => {
+    // delete 端点有 desc "Delete a repository" 但 label 兜底为 path——desc 不再参与匹配
+    expect(filterRestEndpoints(eps, "Delete a repo")).toEqual([]);
+  });
+
+  it("无命中 → 空数组", () => {
+    expect(filterRestEndpoints(eps, "zzz-not-exist")).toEqual([]);
+  });
+
+  it("大小写不敏感 + trim", () => {
+    expect(filterRestEndpoints(eps, "  COMPARE TWO  ").map((e) => e.method)).toEqual(["get"]);
   });
 });

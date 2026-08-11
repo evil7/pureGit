@@ -9,8 +9,8 @@
  * - GraphQL Query：CodeEditor 挂 cm6-graphql schema 驱动补全（字段/参数/枚举 + 诊断）
  * - Body：json/text 用 CodeEditor；form 用 KeyValueTable；none 提示
  */
-import { useEffect, useState } from "react";
-import { BookOpen, ChevronDown, List, Save, Send, Wand2 } from "lucide-react";
+import { useEffect, useMemo, useState } from "react";
+import { BookOpen, Braces, ChevronDown, List, ListTree, Save, Send, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
@@ -34,8 +34,10 @@ import { cn } from "@/lib/utils";
 import { KeyValueTable } from "./KeyValueTable";
 import { ParamsTable } from "./ParamsTable";
 import { GqlVariablesPanel } from "./GqlVariablesPanel";
+import { BodyStructuredPanel } from "./BodyStructuredPanel";
 import { GraphQLLogo } from "./GraphQLLogo";
 import { buildUrlFromParams, syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
+import { collectGqlOperations, type GqlOperationInfo } from "@/lib/debug-graphql";
 import { METHOD_COLOR, REST_API_BASE, normalizeRestUrl, CT_BY_BODY } from "./rest-meta";
 import type { DebugRequest, BodyType, HeaderRow } from "@/lib/debug-api";
 import type { OpenApiEndpoint } from "@/lib/debug-openapi";
@@ -95,6 +97,16 @@ export function RequestEditor({
   const [reqTab, setReqTab] = useState<ReqTab>(req.protocol === "graphql" ? "query" : "headers");
   /** GraphQL 变量校验错误总数（GqlVariablesPanel 上抛；驱动 Variables tab 红色徽标） */
   const [varsError, setVarsError] = useState(0);
+  /** M6：query 内 operation 列表（语法错误 → 空数组；空/单 operation → 不显示下拉） */
+  const gqlOps = useMemo<GqlOperationInfo[]>(
+    () => (req.protocol === "graphql" ? (collectGqlOperations(req.query) ?? []) : []),
+    [req.protocol, req.query],
+  );
+  /** 当前选中的 operation（req.operationName 匹配；空 → 未选/单 op 自动指向首个） */
+  const currentOp = useMemo(
+    () => (gqlOps ?? []).find((o) => o.name === req.operationName) ?? (gqlOps ?? [])[0] ?? null,
+    [gqlOps, req.operationName],
+  );
   /** 参数 tab 显示条件：匹配到端点文档且文档含需设定的参数（path/query）——
    *  未匹配（自定义 URL）或无参数 → 不显示参数 tab（仅请求头/请求数据） */
   const hasDocParams =
@@ -118,6 +130,19 @@ export function RequestEditor({
   const noBodyMethod =
     req.protocol === "rest" &&
     (req.method === "GET" || req.method === "HEAD" || req.method === "OPTIONS");
+
+  // ── R2 双模式视图（默认 JSON 编辑器 ↔ 结构化列表视图；toggle 在 tab 右侧工具栏） ──
+  /** REST Body 视图模式（仅 json bodyType 可用；结构化需 bodySchema 文档） */
+  const [bodyViewMode, setBodyViewMode] = useState<"json" | "structured">("json");
+  /** GraphQL Variables 视图模式 */
+  const [varsViewMode, setVarsViewMode] = useState<"json" | "structured">("json");
+  /** REST Body 结构化可用条件：json bodyType + 已匹配端点文档（bodySchema 非空） */
+  const bodyStructuredAvailable =
+    req.protocol === "rest" && req.bodyType === "json" && !!bodySchema;
+  /** 切回 json 模式时若结构化不可用（端点切换）→ 复位 */
+  useEffect(() => {
+    if (bodyViewMode === "structured" && !bodyStructuredAvailable) setBodyViewMode("json");
+  }, [bodyViewMode, bodyStructuredAvailable]);
 
   // ── 表格行操作（请求头 / form） ──
   const addHeaderRow = () =>
@@ -145,9 +170,18 @@ export function RequestEditor({
   const deleteFormRow = (i: number) =>
     set({ formRows: (req.formRows ?? []).filter((_, xi) => xi !== i) });
 
-  /** 手动格式化当前请求数据（GraphQL → formatGraphQL；JSON → prettyJson） */
+  /** 手动格式化当前请求数据（GraphQL → 当前 tab 分流：Variables tab 格式化 JSON / 否则格式化 query；
+   *  JSON → prettyJson） */
   const formatBody = () => {
     if (req.protocol === "graphql") {
+      // R2：Variables tab（json 视图）→ 格式化 variables JSON；Query tab → 格式化 query
+      if (reqTab === "variables") {
+        void import("@/lib/debug-api").then(({ prettyJson }) => {
+          const out = prettyJson(req.variables);
+          if (out !== req.variables) set({ variables: out });
+        });
+        return;
+      }
       // 延迟 import 避免首屏加载 graphql 格式化逻辑
       void import("@/lib/debug-api").then(({ formatGraphQL }) => {
         const out = formatGraphQL(req.query);
@@ -236,6 +270,50 @@ export function RequestEditor({
             </DropdownMenuGroup>
           </DropdownMenuContent>
         </DropdownMenu>
+        {/* M6：GraphQL 多 operation 下拉（仅 query 含 ≥2 个 operation 时显示）；
+             切换写入 req.operationName（executeDebug body 附带）；无名字 operation 用类型 label */}
+        {req.protocol === "graphql" && gqlOps.length > 1 && (
+          <DropdownMenu>
+            <DropdownMenuTrigger asChild>
+              <Button
+                variant="outline"
+                className="h-8 w-auto max-w-32 shrink-0 gap-1 px-2.5 text-xs font-medium"
+                title={t("gql.operationHint")}
+              >
+                <span className="truncate font-mono text-xs">
+                  {currentOp?.label ?? t("gql.operationSelect")}
+                </span>
+                <ChevronDown className="size-3.5 shrink-0 text-muted-foreground" />
+              </Button>
+            </DropdownMenuTrigger>
+            <DropdownMenuContent align="start" className="w-48">
+              <DropdownMenuGroup>
+                <DropdownMenuLabel className="text-xs text-muted-foreground">
+                  {t("gql.operationSelect")}
+                </DropdownMenuLabel>
+                {gqlOps.map((op) => (
+                  <DropdownMenuItem
+                    key={op.label}
+                    onClick={() => set({ operationName: op.name })}
+                    className="flex items-center gap-1.5"
+                  >
+                    <span
+                      className={cn(
+                        "shrink-0 rounded px-1 font-mono text-[9px] leading-4",
+                        op.opType === "mutation"
+                          ? "bg-orange-500/10 text-orange-600 dark:text-orange-400"
+                          : "bg-violet-500/10 text-violet-600 dark:text-violet-400",
+                      )}
+                    >
+                      {op.opType}
+                    </span>
+                    <span className="truncate font-mono text-xs">{op.label}</span>
+                  </DropdownMenuItem>
+                ))}
+              </DropdownMenuGroup>
+            </DropdownMenuContent>
+          </DropdownMenu>
+        )}
         {/* URL / 端点输入：InputGroup 固定前缀 https://api.github.com（仅输 path）
               REST 可编辑 path；GraphQL 同样 addon 前缀 + 只读 /graphql（端点固定） */}
         <InputGroup className="h-8 min-w-0 flex-1">
@@ -386,7 +464,8 @@ export function RequestEditor({
                 { value: "text", label: "Raw" },
               ]}
             />
-            {req.bodyType === "json" && (
+            {/* R2：JSON 模式 → 格式化 + 切换；结构化模式 → 仅切换（无格式化） */}
+            {req.bodyType === "json" && bodyViewMode === "json" && (
               <Button
                 size="icon"
                 variant="ghost"
@@ -397,20 +476,55 @@ export function RequestEditor({
                 <Wand2 className="size-3.5" />
               </Button>
             )}
+            {req.bodyType === "json" && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 shrink-0 px-0 text-muted-foreground hover:text-foreground"
+                onClick={() => setBodyViewMode((m) => (m === "json" ? "structured" : "json"))}
+                disabled={!bodyStructuredAvailable}
+                title={bodyViewMode === "json" ? t("body.structuredView") : t("body.jsonView")}
+              >
+                {bodyViewMode === "json" ? (
+                  <ListTree className="size-3.5" />
+                ) : (
+                  <Braces className="size-3.5" />
+                )}
+              </Button>
+            )}
           </div>
         )}
-        {/* GraphQL 格式化按钮：tabs 右侧 */}
+        {/* GraphQL 工具栏：tabs 右侧——格式化（Query tab / Variables json 视图）+ 切换（Variables tab） */}
         {req.protocol === "graphql" && (
           <div className="ml-auto flex items-center gap-1 pl-2">
-            <Button
-              size="icon"
-              variant="ghost"
-              className="h-6 w-6 shrink-0 px-0 text-muted-foreground hover:text-foreground"
-              onClick={formatBody}
-              title={t("body.format")}
-            >
-              <Wand2 className="size-3.5" />
-            </Button>
+            {(reqTab !== "variables" || varsViewMode === "json") && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 shrink-0 px-0 text-muted-foreground hover:text-foreground"
+                onClick={formatBody}
+                title={t("body.format")}
+              >
+                <Wand2 className="size-3.5" />
+              </Button>
+            )}
+            {reqTab === "variables" && (
+              <Button
+                size="icon"
+                variant="ghost"
+                className="h-6 w-6 shrink-0 px-0 text-muted-foreground hover:text-foreground"
+                onClick={() => setVarsViewMode((m) => (m === "json" ? "structured" : "json"))}
+                title={
+                  varsViewMode === "json" ? t("variables.structuredView") : t("variables.jsonView")
+                }
+              >
+                {varsViewMode === "json" ? (
+                  <ListTree className="size-3.5" />
+                ) : (
+                  <Braces className="size-3.5" />
+                )}
+              </Button>
+            )}
           </div>
         )}
       </div>
@@ -490,6 +604,14 @@ export function RequestEditor({
                 uploadTitle={t("body.upload")}
                 fileHint={t("body.fileHint")}
               />
+            ) : bodyViewMode === "structured" ? (
+              /* R2：结构化列表视图（schema 驱动表单；切换按钮在 tab 右侧工具栏） */
+              <BodyStructuredPanel
+                t={t}
+                schema={bodySchema}
+                body={req.body}
+                onChange={(v) => set({ body: v })}
+              />
             ) : (
               /* json/text 编辑器：直接作为外层 flex 子项（fill 撑满，与 GraphQL query 同构）
                  overflow-visible：补全 tooltip 溢出编辑器底部/右侧不被裁剪
@@ -525,8 +647,8 @@ export function RequestEditor({
           </div>
         )}
         {reqTab === "variables" && req.protocol === "graphql" && (
-          /* GraphQL Variables（智能面板：自动骨架 + 实时校验条 + 枚举下拉 + 编辑器） */
-          <div className="p-2">
+          /* GraphQL Variables（R2 双模式：json 默认直编 / structured 智能表格自动骨架 + 校验） */
+          <div className="flex h-full min-h-0 flex-col p-2">
             <GqlVariablesPanel
               t={t}
               gqlSchema={gqlSchema}
@@ -534,6 +656,7 @@ export function RequestEditor({
               variables={req.variables}
               onChange={(v) => set({ variables: v })}
               onErrorsChange={setVarsError}
+              viewMode={varsViewMode}
             />
           </div>
         )}

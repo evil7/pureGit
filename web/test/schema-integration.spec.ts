@@ -66,6 +66,7 @@ import {
   type DocParams,
   parsePathSeg,
 } from "@/lib/debug-params";
+import { openApiSchemaToStructured } from "@/lib/debug-rest-structured";
 
 const REST_DIR = fileURLToPath(new URL("../public/debug/rest/", import.meta.url));
 
@@ -245,6 +246,19 @@ describe(`全量产物（${tags.length} tag / ${endpoints.length} 端点）`, ()
         const outQueries = out.filter((p) => p.in === "query");
         const reqQueries = queryParams.filter((q) => q.required);
         expect(outQueries.map((p) => p.name).sort()).toEqual(reqQueries.map((q) => q.name).sort());
+      });
+
+      it("R2 body schema 可结构化转换（deref → StructuredField，顶层 object）", () => {
+        const b = e.op.body?.["application/json"];
+        if (!b) return; // 无 JSON body 端点跳过
+        const f = openApiSchemaToStructured(b as Record<string, unknown>);
+        expect(f.kind, `${id} 顶层应为 input`).toBe("input");
+        expect(f.typeLabel).toBe("object");
+        // 必填字段恒在可选前（三修正基线）
+        const reqFlags = f.fields.map((x) => x.required);
+        for (let i = 1; i < reqFlags.length; i++) {
+          expect(reqFlags[i - 1] >= reqFlags[i], `${id} 必填排序破坏`).toBe(true);
+        }
       });
     });
   }

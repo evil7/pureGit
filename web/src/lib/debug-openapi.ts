@@ -182,6 +182,7 @@ export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
     method,
     url: ep.path, // 模板占位路径（path 参数 value 空 + placeholder 提示；填值覆盖段）
     query: "",
+    operationName: "",
     variables: "",
     headers: [],
     body: "",
@@ -275,4 +276,22 @@ export function endpointStillMatches(ep: OpenApiEndpoint, url: string, method: s
     if (t !== urlSegs[i]) return false;
   }
   return true;
+}
+
+/**
+ * R1：端点搜索过滤（纯函数，可测）——REST 集合树搜索数据源
+ * 匹配字段：tag / method / path / label（summary 或 operationId）——**只搜顶层**
+ * （端点平铺即顶层；不搜 desc/summary 长文本——命中噪音大，label 已含 summary）。
+ * query 空 → 原样返回（调用方保证非搜索模式不调用）；大小写不敏感包含匹配。
+ * 供 RestTree 搜索模式平铺命中端点（getAllEndpoints 全量索引 + 虚拟滚动）。
+ */
+export function filterRestEndpoints(eps: OpenApiEndpoint[], query: string): OpenApiEndpoint[] {
+  const q = query.trim().toLowerCase();
+  if (!q) return eps;
+  const hit = (ep: OpenApiEndpoint): boolean =>
+    ep.tag.toLowerCase().includes(q) ||
+    ep.method.toLowerCase().includes(q) ||
+    ep.path.toLowerCase().includes(q) ||
+    ep.label.toLowerCase().includes(q);
+  return eps.filter(hit);
 }

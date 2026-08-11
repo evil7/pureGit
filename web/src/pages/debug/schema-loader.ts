@@ -29,6 +29,7 @@ import type { GraphQLSchema } from "graphql";
 
 const REST_BASE = "/debug/rest";
 const GQL_PATH = "/debug/gql/schema.json";
+const GQL_INDEX_PATH = "/debug/gql/index.json";
 
 /** 缓存默认 TTL（GitHub schema 更新节奏低，24h 足够） */
 const DEFAULT_TTL = 24 * 3600 * 1000;
@@ -254,6 +255,11 @@ export { endpointToRequest };
 
 let gqlSchema: GraphQLSchema | null = null;
 
+/** 数据源 npm 包版本（`graphql-schema@15.26.1`——第二行 hover 描述数据源） */
+export function getGqlVersion(): Promise<LoadResult<{ version: string }>> {
+  return loadJson<{ version: string }>("gql:index", GQL_INDEX_PATH, "gql");
+}
+
 /** 加载完整 GraphQL schema（introspection 原数据 → 运行时 schema）：
  * 内存命中直接返回；否则 IndexedDB 缓存原始 JSON 文本 → 重新 build（构建不可缓存，
  * class 实例不可结构化克隆）。完整 introspection 含 description（悬停文档数据）。 */
@@ -272,6 +278,36 @@ export function getCachedGqlSchema(): GraphQLSchema | null {
 export function clearGqlSchema(): void {
   gqlSchema = null;
   memCache.delete("gql:schema");
+}
+
+/** R3/刷新：清空 REST 内存缓存（index + 各 tag + 全量端点索引）——强制下次加载走网络 */
+export function clearRestCache(): void {
+  for (const key of [...memCache.keys()]) {
+    if (key.startsWith("rest:") || key === "rest:index") memCache.delete(key);
+  }
+  allEndpoints = null;
+  allEndpointsLoading = null;
+}
+
+/** F13：本地快照的缓存时间戳（ms；-1 = 无缓存）——供「版本落后自动刷新」判断 */
+export async function getGqlSchemaFetchedAt(): Promise<number> {
+  const entry = await idbGet<unknown>("gql:schema");
+  return entry?.ts ?? -1;
+}
+
+/** F13：在线 introspection 结果写缓存（登录态后台自动刷新）——
+ * 覆盖 IndexedDB + 内存 + 运行时 schema（下次进入即用新快照）。
+ * introspectionData = fetchGqlSchema 的原始 introspection JSON（{__schema}）。 */
+export function saveGqlSchemaOnline(introspectionData: unknown): void {
+  const now = Date.now();
+  memCache.set("gql:schema", { data: introspectionData, ts: now, version: "gql" });
+  void idbSet("gql:schema", { data: introspectionData, ts: now, version: "gql" });
+  // 运行时 schema 同步更新（当前会话立即可用）
+  try {
+    gqlSchema = buildGqlSchemaFromIntrospection(introspectionData as { __schema: unknown });
+  } catch {
+    /* 在线数据异常 → 保持现状（下次进入回退旧缓存） */
+  }
 }
 
 /* ── 后台预热（左栏底部缓存进度条数据源） ─────────────────── */

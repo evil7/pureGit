@@ -25,27 +25,42 @@
  *   点击填充内省查询
  * - **hover 详情**：字段行 title 含返回类型 + 参数清单（name: Type!）+ description
  */
-import { memo, startTransition, useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  memo,
+  startTransition,
+  useCallback,
+  useDeferredValue,
+  useEffect,
+  useMemo,
+  useRef,
+  useState,
+} from "react";
 import { useVirtualizer } from "@tanstack/react-virtual";
-import { ChevronDown, RefreshCw } from "lucide-react";
+import { ChevronDown } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
-import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
 import {
   buildGqlFieldTree,
+  buildGqlSearchIndex,
   buildSelectionsFromParsed,
   gqlFieldCheckState,
   gqlMapToQuery,
   gqlMapsEqual,
   parseQueryFieldSelections,
+  searchGqlIndex,
   toggleFieldSelection,
   type GqlFieldNode,
   type GqlSchemaContext,
   type GqlSchemaTree,
+  type GqlSearchHit,
   type GqlSelectionMap,
 } from "@/lib/debug-graphql";
 import type { GraphQLSchema } from "graphql";
+import { getGqlVersion } from "./schema-loader";
 import { GraphQLLogo } from "./GraphQLLogo";
+import { TreeSearchInput } from "./TreeSearchInput";
+import { SchemaHeader } from "./SchemaHeader";
+import { TreeListSkeleton } from "./TreeListSkeleton";
 
 /** 内省查询模板（GraphQL spec 标准：__schema / __type / __typename） */
 const INTROSPECTION_PRESETS = [
@@ -101,6 +116,8 @@ function groupRowId(opType: string): string {
 /**
  * 扁平化可见行（纯函数）：DFS 前序遍历，仅深入「已展开」的节点——
  * 未展开子树不遍历，计算量 O(可见行) 而非 O(全树)。selected 不参与（勾选不重建行数组）。
+ * **搜索模式不在此**——搜索走独立索引（buildGqlSearchIndex + searchGqlIndex，
+ * schema 就绪后索引一次，搜索 O(keys) 而非全树 DFS；本函数仅服务正常浏览）。
  */
 function flattenRows(tree: GqlSchemaTree, ctx: GqlSchemaContext, expanded: Set<string>): GqlRow[] {
   const rows: GqlRow[] = [];
@@ -156,6 +173,46 @@ function walkField(
   for (const cf of childFields) {
     walkField(ctx, rows, expanded, opType, root, cf, [...path, cf.name], depth + 1);
   }
+}
+
+/** 搜索命中 → 可见行（纯函数）：分组头（query/mutation）+ 命中字段行（含嵌套命中） */
+function searchHitsToRows(hits: GqlSearchHit[], ctx: GqlSchemaContext, query: string): GqlRow[] {
+  const q = query.trim().toLowerCase();
+  const rows: GqlRow[] = [];
+  const pushGroup = (opType: "query" | "mutation") => {
+    const group = hits.filter((h) => h.opType === opType);
+    if (group.length === 0) return;
+    rows.push({ kind: "header", id: groupRowId(opType), label: opType, count: group.length });
+    for (const h of group) {
+      const childFields =
+        !h.field.scalar && h.depth < MAX_DEPTH ? (ctx.fieldsOf(h.field.ofTypeName) ?? []) : [];
+      rows.push({
+        kind: "field",
+        id: fieldRowId(h.opType, h.root.name, h.path),
+        opType: h.opType,
+        root: h.root,
+        field: h.field,
+        path: h.path,
+        depth: h.depth,
+        expandable: childFields.length > 0 || !!h.field.possibleTypes,
+      });
+    }
+  };
+  pushGroup("query");
+  pushGroup("mutation");
+  // 内省模板按名称过滤
+  const intro = INTROSPECTION_PRESETS.filter((p) => p.name.toLowerCase().includes(q));
+  if (intro.length > 0) {
+    rows.push({
+      kind: "header",
+      id: groupRowId("introspection"),
+      label: "introspection",
+      count: intro.length,
+    });
+    for (const p of intro)
+      rows.push({ kind: "preset", id: `preset:${p.name}`, name: p.name, query: p.query });
+  }
+  return rows;
 }
 
 /** 字段行 title（hover 详情：返回类型 + 参数清单 + desc） */
@@ -338,11 +395,42 @@ export function GqlTree({
   );
   /** 滚动容器 ref（虚拟列表挂载） */
   const scrollRef = useRef<HTMLDivElement>(null);
-  /** 扁平化可见行（依赖 expanded——勾选 selected 不参与，勾选不重建行数组） */
-  const visibleRows: GqlRow[] = useMemo(
-    () => (fieldTree && gqlCtx ? flattenRows(fieldTree, gqlCtx, expanded) : []),
-    [fieldTree, gqlCtx, expanded],
+  /** 第二行数据源版本号（`15.26.1`；hover 描述 `schema data by @octokit/graphql-schema@…`） */
+  const [gqlVersion, setGqlVersion] = useState<string | null>(null);
+  useEffect(() => {
+    let cancelled = false;
+    getGqlVersion()
+      .then((r) => {
+        if (cancelled) return;
+        const ver = r.data.version.replace("graphql-schema@", "");
+        setGqlVersion(ver);
+      })
+      .catch(() => {
+        /* 版本读取失败 → 不显示版本徽章（不影响树浏览） */
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+  /** F9：Schema 搜索过滤文本（空 = 正常浏览；非空 = 索引检索，只匹配字段名） */
+  const [searchQuery, setSearchQuery] = useState("");
+  /** 搜索输入延迟值（F9 性能：输入即时响应，索引检索低优先级滞后执行——不阻塞输入） */
+  const deferredQuery = useDeferredValue(searchQuery);
+  /** 搜索索引（schema 就绪后构建一次；只含顶层字段——搜索 O(顶层数) 快且准） */
+  const searchIndex = useMemo(
+    () => (fieldTree ? buildGqlSearchIndex(fieldTree) : null),
+    [fieldTree],
   );
+  /** 搜索命中（索引查询；空 query → null 走浏览模式） */
+  const searchHits = useMemo(
+    () => (searchIndex && deferredQuery.trim() ? searchGqlIndex(searchIndex, deferredQuery) : null),
+    [searchIndex, deferredQuery],
+  );
+  /** 可见行：搜索模式 = 命中行（不依赖 expanded——索引全树；浏览模式 = 展开树扁平化） */
+  const visibleRows: GqlRow[] = useMemo(() => {
+    if (searchHits && gqlCtx) return searchHitsToRows(searchHits, gqlCtx, deferredQuery);
+    return fieldTree && gqlCtx ? flattenRows(fieldTree, gqlCtx, expanded) : [];
+  }, [searchHits, deferredQuery, fieldTree, gqlCtx, expanded]);
   /** 虚拟列表：只渲染可视区行（overscan 8），滚动性能与行数无关 */
   const rowVirtualizer = useVirtualizer({
     count: visibleRows.length,
@@ -414,30 +502,33 @@ export function GqlTree({
   }, [editorQuery, fieldTree, selected, gqlCtx]);
 
   return (
-    /* 根容器 flex 高度链：标题 shrink-0 + 虚拟滚动区 flex-1（TabsContent 已撑满左栏高度） */
+    /* 根容器 flex 高度链：搜索框（第一行）→ 标题行（第二行）→ 虚拟滚动区 flex-1
+       （TabsContent 已撑满左栏高度） */
     <div className="flex h-full min-h-0 flex-col">
-      {/* Schema 区：标题 + 右侧 加载/刷新 按钮 */}
-      <div className="flex shrink-0 items-center gap-1 px-3 pb-1 pt-1.5">
-        <p className="flex items-center gap-1 text-[10px] uppercase tracking-wide text-muted-foreground">
-          <GraphQLLogo className="size-3 text-violet-600 dark:text-violet-400" />
-          {t("gql.schema")}
-        </p>
-        <button
-          type="button"
-          className="ml-auto flex h-5 w-5 items-center justify-center rounded text-muted-foreground hover:bg-accent hover:text-foreground"
-          onClick={onReload}
-          disabled={loading}
-          title={fieldTree ? t("gql.refresh") : t("gql.load")}
-        >
-          <RefreshCw className={cn("size-3", loading && "animate-spin")} />
-        </button>
-      </div>
-      {loading ? (
-        <div className="space-y-1.5 px-1.5 py-1">
-          <Skeleton className="h-4 w-3/4" />
-          <Skeleton className="h-4 w-2/3" />
-          <Skeleton className="h-4 w-4/5" />
+      {/* 第一行：Schema 搜索框（/ 快捷键聚焦；索引检索只匹配字段名——快且准） */}
+      {fieldTree && (
+        <div className="shrink-0 px-1.5 pt-1.5">
+          <TreeSearchInput
+            value={searchQuery}
+            onChange={setSearchQuery}
+            placeholder={t("gql.searchPlaceholder")}
+            clearTitle={t("gql.searchClear")}
+          />
         </div>
+      )}
+      {/* 第二行：Schema 标题 + 版本号（hover 数据源 `schema data by pkg@ver`）+ 刷新；加载中状态文字 */}
+      <SchemaHeader
+        title={t("gql.schema")}
+        icon={<GraphQLLogo className="size-3 text-violet-600 dark:text-violet-400" />}
+        version={gqlVersion ?? undefined}
+        versionDesc={gqlVersion ? t("gql.schemaSource", { ver: gqlVersion }) : undefined}
+        loading={loading}
+        onRefresh={onReload}
+        refreshTitle={fieldTree ? t("gql.refresh") : t("gql.load")}
+        loadingText={loading ? t("gql.loading") : undefined}
+      />
+      {loading ? (
+        <TreeListSkeleton />
       ) : error ? (
         <div className="flex items-center gap-1.5 px-1.5 py-1">
           <p className="text-xs text-destructive">{t("gql.loadFailed")}</p>

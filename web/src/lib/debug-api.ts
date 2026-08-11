@@ -75,6 +75,8 @@ export interface DebugRequest {
   url: string;
   /** GraphQL 查询体 */
   query: string;
+  /** M6：多 operation 时当前选中的 operation 名（body 附带 operationName；空 = 不附带） */
+  operationName: string;
   /** GraphQL variables（JSON 文本） */
   variables: string;
   /** 附加请求头（Postman 风格 K/V 表格行） */
@@ -96,6 +98,7 @@ export const EMPTY_REQUEST: DebugRequest = {
   url: "/",
   // GraphQL 默认空——仅 placeholder 提示示例（queryPlaceholder），不自动填写
   query: "",
+  operationName: "",
   variables: "",
   // 默认 Authorization 行（filled 占位）：渲染后由 DebugPage 补 identityLabel
   headers: [{ key: "Authorization", value: "Bearer ••••••••••", enabled: true, token: true }],
@@ -185,6 +188,8 @@ export async function executeDebug(
     let res: Response;
     if (req.protocol === "graphql") {
       const body: Record<string, unknown> = { query: req.query };
+      // M6：operationName 附带（多 operation 只发选中项；空则全量发送）
+      if (req.operationName) body.operationName = req.operationName;
       const vars = tryParseJson(req.variables);
       if (vars) body.variables = vars;
       res = await fetch(GQL_ENDPOINT, {

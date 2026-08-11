@@ -20,12 +20,20 @@
 | **M2** variables 纯函数三件套 | ✅ | `web/src/lib/debug-gql-variables.ts`：`collectVariables`（AST 提取变量定义）/ `buildVariablesJson`（递归骨架）/ `parseVariablesJson`（语法与语义分离）/ `validateVariables`（双向校验），22 测试 |
 | **M3** GqlTree 重构 | ✅ | `web/src/pages/debug/GqlTree.tsx`：任意深度勾选树 + 反向同步接线。**偏离**：① 渲染模型改为**扁平化可见行 + `@tanstack/react-virtual` 虚拟滚动**（递归 FieldRow 全量挂载导致展开 >2s 迟滞；扁平 DFS 只遍历已展开子树，DOM 恒 ~40 行）；② 多级缩进统一 `paddingLeft = 6 + depth × 14px`；③ **不做下钻导航栈**（原 M5 计划取消，勾选树即主交互）；④ 内省分组保留 |
 | **M4** Variables 面板 | ✅ | `web/src/pages/debug/GqlVariablesPanel.tsx` + RequestEditor 接入。**重大偏离**：由「JSON 编辑器 + chips + 校验条」改为 **KV 表格**（对齐 REST 参数操作习惯）——`[checkbox] [key+类型胶囊] [value] [操作 Lock/X]`；必填变量自动锁定行、可选变量待选 badge（同 REST docBadges）、枚举/布尔下拉、输入 → 自动转 JSON 写 `req.variables`（发送/历史零改动复用）、正反向同步防光标跳动（lastEmitted）；**校验提示只保留输入框红框 + tab 徽标**（校验条/错误明细/JSON 提示文段已移除） |
+| **M5.5** StructuredTable 复合数组编辑器 | ✅ | `web/src/lib/debug-gql-structured.ts`（纯函数）+ `web/src/pages/debug/StructuredTable.tsx` + GqlVariablesPanel 接入。**实现与偏离**：① `StructuredField` 五分类（scalar/enum/boolean/input/list）+ `inputTypeToStructured` 递归（NON_NULL 剥壳 → required；input 展开 fields 含默认值；list 收 element 任意深度嵌套）；② 双向序列化 `jsonToStructuredRows`（忠实还原——缺字段空骨架，默认值由 placeholder 承载，保证正反向收敛）/ `structuredRowToJson`（空 input/list → undefined 跳过）；③ **UI 为「值格内嵌展开」**——input/list 变量行 value 格变展开按钮（chevron），点击行下展开子表格：input → 递归字段行（checkbox + 必填琥珀标记/可选灰胶囊 + 枚举下拉/嵌套子表格）、list → 数组编辑器（[+ 添加] 项 + 删除）；④ 枚举/布尔/标量行维持现状零回归；⑤ 24 测试（结构/骨架/序列化/反向/端到端收敛）。**三修正（用户拍板）**：必填字段排最上（`inputTypeToStructured` 稳定排序）、必填星号红色（`text-destructive`）、必填 checkbox 禁用不可取消勾选。**范围限定**：仅服务 GraphQL variables（REST body / REST 列表参数未做——最小范围，用户拍板） |
+| **F12** hover 详情补齐 | ✅ | `web/src/lib/debug-graphql.ts`：`desc: f.description || undefined`（不再 slice(0,100) 截断）——字段 hover title 显示 desc 全文 |
+| **F9** Schema 搜索过滤 | ✅ | `web/src/pages/debug/GqlTree.tsx`：搜索框（`/` 快捷键聚焦、X 清除、placeholder）+ `flattenRows` 搜索模式（跨全树匹配字段名/返回类型/desc；命中行 + 祖先链路径）+ `hasAnyMatch`（无命中分组头隐藏）+ `walkField` 搜索模式遍历全部子树 + 内省模板过滤；i18n keys `gql.searchPlaceholder`/`gql.searchClear` |
+| **F2** nodes/edges 自动带 totalCount | ✅ | `web/src/lib/debug-graphql.ts` `toggleFieldSelection`：勾选 nodes/edges 且父为 connection → 自动附带 `children.totalCount = { args: {} }` |
+| **M6** 多 operation 下拉 | ✅ | `web/src/lib/debug-graphql.ts` `collectGqlOperations(query)`（AST 提取 name/label/opType/varNames；语法错误 → null）+ `web/src/pages/debug/RequestEditor.tsx` operation DropdownMenu（仅 `gqlOps.length > 1` 显示；切换写 `req.operationName`）+ `web/src/lib/debug-api.ts` `executeDebug` GraphQL body 附带 `operationName`；71 测试 |
+| **F13** schema 自动刷新 | ✅ | `web/src/lib/debug-graphql.ts` `fetchGqlSchemaIntrospection(token)`（返回 `{__schema}` 原始数据）+ `web/src/pages/debug/schema-loader.ts` `getGqlSchemaFetchedAt()`（IndexedDB 缓存时间戳）/ `saveGqlSchemaOnline()`（写 IndexedDB + 内存 + 运行时 schema）+ `DebugPage` 登录态 + 本地快照过旧（7 天 TTL）→ 后台 introspection 刷新 |
+| **F10** 缺变量 key 补全 | ✅ | `web/src/pages/debug/GqlVariablesPanel.tsx`：自定义变量行 name Input 加 `list="gql-var-names"` + `<datalist>` 列出未添加的声明变量名（GraphQL 变量声明自动补全） |
+| **connection 拆包 + 公共语法屏蔽** | ✅ | **用户拍板：解析层刻意去除**——`edges`/`nodes`/`node` 等 connection 语法节点是复合查询语法结构而非「API 功能端点」，在 `buildGqlSchemaContext` 的 `fieldsOf` 层去除（不按勾选决定）：object 元素 connection → 直接返回元素字段；union/interface 元素 → 保持原样但过滤语法字段（edges/nodes/node/pageInfo/cursor，业务聚合如 codeCount/totalCount 保留）；**顶层 `node`/`nodes`/`relay`/`resource` 是 Relay 公共语法（跨站点内建）→ 顶层列表整体屏蔽**（query 30→26 字段）。一次改动全链路生效（树/勾选/构造/反向同步自动受益），conn 徽章保留。89 测试（新增 5 用例） |
 
 ### 0.2 已取消 / 延后
 
 - **下钻导航栈（原 M5 / F5）**：取消——勾选树即主交互，字段 hover 详情（title）已承载类型/参数/desc
 - **`graphql-language-service` 显式依赖（D8）**：未引入——补全仍用 cm6-graphql，variables 校验自实现纯函数（见 §5.3），无额外依赖需求
-- **ResponsePanel 分页摘要（原 M4 后半 / F7）**：延后为 **M5**（计划 §10）
+- **ResponsePanel 分页摘要（原 M4 后半 / F7）**：**舍弃（2026-08-11 用户拍板）**——MVP 覆盖展示不合并（翻页后看不到前页，无法对比累计）；游标不与 query 条件/变量联动（改条件后旧游标失效）；实际调试改 `first: 100` 更直接；多 connection 嵌套（issues→nodes→comments→nodes）游标生命周期 + 结果合并去重 + 测试矩阵爆炸，维护成本远超 debug 工具定位。**D6 决策一并废止**（不做自动翻页），input/列表变量 JSON 字面量已由 **M5.5 StructuredTable** 承接（✅ 完成）
 - **复合数组编辑器（input 嵌套展开）**：新增 **M5.5 计划**（调研结论见 §0.3）——input 变量当前仍为 JSON 字面量（value 格手写 + 骨架占位），拟以结构驱动递归表格替换
 
 ### 0.3 复合数组编辑器调研（新增）
@@ -339,9 +347,11 @@ AST.definitions 过滤 OperationDefinition
 2. ~~M2（P0）~~ ✅ `debug-gql-variables.ts` 纯函数三件套 + 测试
 3. ~~M3（P0）~~ ✅ `GqlTree.tsx` 任意深度勾选树 + 反向同步（扁平化 + 虚拟滚动 + 层级缩进）
 4. ~~M4（P1）~~ ✅ `GqlVariablesPanel` 接入 Variables tab（KV 表格版，见 §0.1 偏离）
-5. **M5（P1）**：`ResponsePanel` 分页摘要 + 下一页（原 M4 后半；`pageInfo{hasNextPage, endCursor}` → totalCount · 已取 N + 注入 `after: endCursor` 重执行）
-6. **M5.5（P1）**：`StructuredTable` 复合数组编辑器——结构驱动递归表格（GraphQL input 展开子表格 / REST body / REST 列表参数），替换 input 变量 JSON 字面量（方案 §0.3）
-7. **M6（P2）**：多 operation 下拉 + 高亮；schema 自动刷新（F13）
-8. **M7**：`docs/debug-page.md` 同步 + `pnpm build` + 全量质量门禁（每新增组件 rebuild）
+5. ~~M5（P1）~~ ❌ **舍弃**（2026-08-11 用户拍板：翻页 MVP 无合并无价值 + 多连接维护爆炸；D6 废止，见 §0.2）
+6. ~~M5.5（P1）~~ ✅ `StructuredTable` 复合数组编辑器——`debug-gql-structured.ts` 纯函数 + StructuredTable 递归组件 + GqlVariablesPanel 值格内嵌展开（仅 GraphQL variables，见 §0.1）
+7. **M6（P2）** ✅ 多 operation 下拉 + operationName 附带（collectGqlOperations + RequestEditor 下拉）；F12/F9/F2/F13/F10 一并完成（见 §0.1）
+8. **M7** ✅ `docs/debug-page.md` 同步 + `pnpm build` + 全量质量门禁（7927 测试全绿；LINT/FMT/TSC/BUILD 通过）
 
 > 每步结束保持 `pnpm test` 全绿（纯函数先行，UI 后置，测试先行驱动）。复用组件（CodeEditor/KeyValueTable/ResponsePanel/schema-loader）全程不动，改动面收敛到 GqlTree + RequestEditor + 新增小组件。
+>
+> **后续（反哺对照）**：GraphQL 强化成果反哺 REST 面板——见 `debug-rest-redesign.md`（R1 搜索已实施 ✅，R2 body 结构化 / R3 自动刷新 / R4 hover 对齐待做）。

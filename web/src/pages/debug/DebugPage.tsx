@@ -28,12 +28,14 @@ import {
   type OpenApiEndpoint,
 } from "@/lib/debug-openapi";
 import { syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
-import { buildGqlSchemaContext } from "@/lib/debug-graphql";
+import { buildGqlSchemaContext, fetchGqlSchemaIntrospection } from "@/lib/debug-graphql";
 import { cn } from "@/lib/utils";
 import {
   loadGqlSchema,
   clearGqlSchema,
   getCachedGqlSchema,
+  saveGqlSchemaOnline,
+  getGqlSchemaFetchedAt,
   preloadAll,
   getAllEndpoints,
 } from "./schema-loader";
@@ -109,6 +111,34 @@ export default function DebugPage() {
     if (req.protocol !== "graphql" || gqlSchema || gqlLoading || gqlError) return;
     void loadGql(false);
   }, [req.protocol, gqlSchema, gqlLoading, gqlError, loadGql]);
+
+  /**
+   * F13：schema 自动刷新——登录态 + 本地快照过旧（TTL 7 天）→ 后台带 token
+   * introspection 覆盖缓存（写 IndexedDB + 更新运行时 schema）。下次进入即用新快照；
+   * 匿名 / 快照新鲜 / 已在刷新 / 失败 → 静默跳过（不打断用户，手动刷新按钮兜底）。
+   */
+  useEffect(() => {
+    let cancelled = false;
+    if (!token || gqlLoading) return;
+    void (async () => {
+      const fetchedAt = await getGqlSchemaFetchedAt();
+      if (cancelled) return;
+      // 无缓存（首次）或超过 7 天 → 后台拉新；否则保持现状
+      const STALE_MS = 7 * 24 * 3600 * 1000;
+      if (fetchedAt !== -1 && Date.now() - fetchedAt < STALE_MS) return;
+      try {
+        const data = await fetchGqlSchemaIntrospection(token);
+        if (cancelled) return;
+        saveGqlSchemaOnline(data);
+        setGqlSchema(getCachedGqlSchema());
+      } catch {
+        /* 网络受限/introspection 失败 → 静默（本地快照仍可用） */
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [token, gqlLoading]);
 
   /** 后台预热全部 REST tag（首屏后异步，不阻塞交互；左栏底部进度条感知） */
   useEffect(() => {

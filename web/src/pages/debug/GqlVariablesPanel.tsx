@@ -2,7 +2,7 @@
  * GraphQL Variables 面板（RequestEditor · GraphQL Variables tab）——KV 表格对齐 REST 参数操作习惯
  *
  * 对标 KeyValueTable/ParamsTable 的列结构与锁定/删除/添加语义，替代 JSON 编辑器：
- * `[checkbox] [key + 类型胶囊] [value（枚举/布尔=下拉；input/列表=JSON 字面量）] [操作]`
+ * `[checkbox] [key + 类型胶囊] [value（枚举/布尔=下拉；input/列表=结构化展开）] [操作]`
  * - **必填变量自动成行（锁定）**：query 声明 NON_NULL → 自动行——checkbox 恒开、name 只读、
  *   操作列 Lock 不可删；空值必填 → 输入框警告样式（红框）+ 类型化 placeholder
  * - **可选变量 → 待选 badge**：query 声明非必填 → 添加按钮右侧虚线胶囊（同 REST docBadges
@@ -10,19 +10,20 @@
  * - **类型胶囊**：key 输入框 InputGroup 内嵌（String! / Int / OrderDirection）——必填红调、
  *   可选灰调；自定义行无胶囊（发送时 extra 校验提醒）
  * - **枚举/布尔下拉**：value 格 Select 切换（OrderDirection → ASC/DESC；Boolean → true/false）
- * - **输入 → 自动转 JSON**：任意编辑实时 rowsToJson（按类型转换：String 原样 / Int·Float
- *   Number / input·列表 JSON.parse）写入 req.variables——发送（executeDebug 已 tryParseJson）
- *   与历史记录天然复用，无独立转换动作
+ * - **M5.5 结构化 input/列表变量**：value 格为展开按钮（点击内嵌子表格 StructuredTable）——
+ *   替代 JSON 字面量手写：input 递归字段行（必填标记/枚举下拉/嵌套子表格）、list 数组编辑器；
+ *   行值经 structuredRowsToJson 序列化写 req.variables（发送/历史零改动复用）
  * - **实时校验**：validateVariables 双向校验（缺必填/多余/类型）+ 行转换错误，校验条按
  *   missing/extra/type 三色分类，错误总数经 onErrorsChange 驱动 tab 徽标
  *
  * 正反向同步（防输入光标跳动）：
- * - 正向：行编辑 → rowsToJson → commit(json)（lastEmitted 记录自己写入文本）
+ * - 正向：行编辑 → rowsToJson（结构化行走 structuredRowToJson）→ commit(json)
+ *   （lastEmitted 记录自己写入文本）
  * - 反向：variables 变化 → effect——若为自身写入（isSelf）只同步声明结构（增删行，值不动）；
- *   外部变化（历史重放等）全量重建行值
+ *   外部变化（历史重放等）全量重建行值（结构化行 jsonToStructuredRows 反向重建）
  */
 import { useEffect, useMemo, useRef, useState } from "react";
-import { Lock, Plus, X } from "lucide-react";
+import { ChevronRight, Lock, Plus, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
@@ -34,6 +35,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
+import { CodeEditor } from "@/components/CodeEditor";
 import {
   collectVariables,
   parseVariablesJson,
@@ -41,6 +43,13 @@ import {
   type GqlVariableDef,
   type GqlVariableError,
 } from "@/lib/debug-gql-variables";
+import {
+  inputTypeToStructured,
+  jsonToStructuredRows,
+  structuredRowToJson,
+  type StructuredRow,
+} from "@/lib/debug-gql-structured";
+import { StructuredTable } from "./StructuredTable";
 import {
   getNamedType,
   isEnumType,
@@ -62,9 +71,11 @@ interface GqlVarRow {
   required: boolean;
   /** 是否 query 声明（true = 自动行，name 只读；false = 用户自定义） */
   declared: boolean;
-  /** 文本值（按类型语义：String 原样 / Int 数字 / input·列表 JSON 字面量） */
+  /** 文本值（标量/枚举/布尔语义；input·列表变量为 null——值由 structure 承载） */
   value: string;
   enabled: boolean;
+  /** M5.5：input/list 变量的结构化子表格（StructuredTable 编辑；null = 标量/枚举/布尔） */
+  structure: StructuredRow | null;
 }
 
 interface GqlVariablesPanelProps {
@@ -78,6 +89,8 @@ interface GqlVariablesPanelProps {
   onChange: (v: string) => void;
   /** 校验错误总数回调（驱动 RequestEditor 的 Variables tab 徽标） */
   onErrorsChange: (count: number) => void;
+  /** R2 视图模式：json（默认，CodeEditor 直编）↔ structured（KV 表格 + 结构化展开） */
+  viewMode: "json" | "structured";
 }
 
 /** 行值（文本）→ JSON 值：按声明类型转换；null 类型（自定义行）宽松 JSON.parse */
@@ -95,14 +108,8 @@ function textToJsonValue(
   }
   if (isNonNullType(type)) return textToJsonValue(text, type.ofType);
   if (isListType(type)) {
-    try {
-      const v = JSON.parse(text);
-      return Array.isArray(v)
-        ? { ok: true, value: v }
-        : { ok: false, error: "列表值应为 JSON 数组文本" };
-    } catch {
-      return { ok: false, error: "列表值应为 JSON 数组文本" };
-    }
+    // M5.5：list 变量由 structure 承载（结构化序列化）；无 structure 才回退 JSON 字面量
+    return { ok: true, value: undefined };
   }
   const named = getNamedType(type);
   if (isScalarType(named)) {
@@ -117,14 +124,8 @@ function textToJsonValue(
   }
   if (isEnumType(named)) return { ok: true, value: text };
   if (isInputObjectType(named)) {
-    try {
-      const v = JSON.parse(text);
-      return typeof v === "object" && v !== null && !Array.isArray(v)
-        ? { ok: true, value: v }
-        : { ok: false, error: "input 值应为 JSON 对象文本" };
-    } catch {
-      return { ok: false, error: "input 值应为 JSON 对象文本" };
-    }
+    // M5.5：input 变量由 structure 承载；无 structure 不输出（防御）
+    return { ok: true, value: undefined };
   }
   return { ok: true, value: text };
 }
@@ -137,6 +138,12 @@ function rowsToJson(rows: GqlVarRow[], defs: GqlVariableDef[]): Record<string, u
     if (row.enabled === false) continue;
     const name = row.name.trim();
     if (!name) continue;
+    // M5.5：input/list 变量 → 结构化序列化（structure 承载值；空 → 跳过）
+    if (row.structure) {
+      const res = structuredRowToJson(row.structure);
+      if (res.ok && res.value !== undefined) json[name] = res.value;
+      continue;
+    }
     const def = defMap.get(name);
     const type = def?.type ?? row.type;
     if (row.value.trim() === "") continue; // 空值（必填缺失由 validate 报 missing）
@@ -144,6 +151,15 @@ function rowsToJson(rows: GqlVarRow[], defs: GqlVariableDef[]): Record<string, u
     if (res.ok && res.value !== undefined) json[name] = res.value;
   }
   return json;
+}
+
+/** 类型 → 是否结构化变量（input 对象或列表——用 StructuredTable 编辑） */
+function isStructuredType(type: GraphQLInputType | null): boolean {
+  if (!type) return false;
+  let t = type;
+  while (isNonNullType(t)) t = t.ofType;
+  if (isListType(t)) return true;
+  return isInputObjectType(getNamedType(t));
 }
 
 /** 声明行同步（防输入光标跳动）：isSelf（自身写入）只增删结构不动值；外部变化全量重建值 */
@@ -166,7 +182,17 @@ function syncRows(
       type: d.type,
       required: true,
       declared: true,
-      value: v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v),
+      // M5.5：input/list 变量 → 结构化反向重建（structure 承载值）；标量 → 文本
+      value: isStructuredType(d.type)
+        ? ""
+        : v === undefined
+          ? ""
+          : typeof v === "string"
+            ? v
+            : JSON.stringify(v),
+      structure: isStructuredType(d.type)
+        ? jsonToStructuredRows(inputTypeToStructured(d.type), v)
+        : null,
       enabled: true,
     });
   }
@@ -174,6 +200,12 @@ function syncRows(
   if (!isSelf) {
     rows = rows.map((r) => {
       if (!r.declared) return r;
+      if (r.structure) {
+        // 结构化行：外部值 → 反向重建（结构变化同步；值不动由用户编辑）
+        const v = json[r.name];
+        const nextStructure = jsonToStructuredRows(inputTypeToStructured(r.type!), v);
+        return r.structure === nextStructure ? r : { ...r, structure: nextStructure };
+      }
       const v = json[r.name];
       const text = v === undefined ? "" : typeof v === "string" ? v : JSON.stringify(v);
       return r.value === text ? r : { ...r, value: text };
@@ -188,6 +220,7 @@ function syncRows(
           required: false,
           declared: false,
           value: typeof v === "string" ? v : JSON.stringify(v),
+          structure: null,
           enabled: true,
         });
       }
@@ -196,13 +229,14 @@ function syncRows(
   return rows;
 }
 
-/** 行值类型化 placeholder（对齐 REST 参数 requiredPlaceholder 思路） */
-function valuePlaceholder(row: GqlVarRow): string {
+/** 行值类型化 placeholder（对齐 REST 参数 requiredPlaceholder 思路；结构化行 → 展开提示） */
+function valuePlaceholder(row: GqlVarRow, tr: (k: string) => string): string {
+  if (row.structure) return tr("variables.structuredHint");
   if (!row.type) return "值";
-  let t: GraphQLInputType = row.type;
-  while (isNonNullType(t)) t = t.ofType;
-  if (isListType(t)) return "[ ... ]";
-  const named = getNamedType(t);
+  let gt: GraphQLInputType = row.type;
+  while (isNonNullType(gt)) gt = gt.ofType;
+  if (isListType(gt)) return "[ ... ]";
+  const named = getNamedType(gt);
   if (isScalarType(named)) {
     if (named.name === "Int" || named.name === "Float") return "123";
     if (named.name === "Boolean") return "";
@@ -212,9 +246,9 @@ function valuePlaceholder(row: GqlVarRow): string {
   return "值";
 }
 
-/** 枚举 / 布尔 → 下拉选项；其余 null（普通输入框） */
+/** 枚举 / 布尔 → 下拉选项；其余 null（普通输入框；结构化行无下拉） */
 function selectOptions(row: GqlVarRow): string[] | null {
-  if (!row.type) return null;
+  if (!row.type || row.structure) return null;
   let t: GraphQLInputType = row.type;
   while (isNonNullType(t)) t = t.ofType;
   const named = getNamedType(t);
@@ -230,6 +264,7 @@ export function GqlVariablesPanel({
   variables,
   onChange,
   onErrorsChange,
+  viewMode,
 }: GqlVariablesPanelProps) {
   /** 变量定义（null = query 语法错误；[] = 无变量） */
   const defs = useMemo(
@@ -284,16 +319,36 @@ export function GqlVariablesPanel({
         declared: false,
         value: "",
         enabled: true,
+        structure: null,
       },
     ]);
+  };
+  /** M5.5：结构化的 input/list 变量展开态（Set<变量名>——value 格点击展开子表格） */
+  const [expandedVars, setExpandedVars] = useState<Set<string>>(new Set());
+  const toggleExpanded = (name: string) => {
+    setExpandedVars((prev) => {
+      const next = new Set(prev);
+      if (next.has(name)) next.delete(name);
+      else next.add(name);
+      return next;
+    });
   };
 
   /** JSON 解析态（语法错误提示） */
   const parsed = useMemo(() => parseVariablesJson(variables), [variables]);
-  /** 语义校验：validateVariables（缺/多/类型）+ 行值转换错误（type-mismatch） */
+  /** 语义校验（R2 双模式分流）：
+   * - json 模式：直接对 JSON 文本解析结果校验（不经过表格行）
+   * - structured 模式：表格行序列化 → validateVariables + 行转换错误 */
   const errors = useMemo(() => {
+    if (!defs || !parsed.ok) return [];
+    if (viewMode === "json") {
+      const json =
+        typeof parsed.value === "object" && parsed.value !== null && !Array.isArray(parsed.value)
+          ? (parsed.value as Record<string, unknown>)
+          : {};
+      return validateVariables(defs, json);
+    }
     const out: GqlVariableError[] = [];
-    if (!defs || !parsed.ok) return out;
     const json = rowsToJson(rows, defs);
     out.push(...validateVariables(defs, json));
     // 行转换错误（列表/input JSON 解析失败等）
@@ -303,7 +358,7 @@ export function GqlVariablesPanel({
       if (!res.ok) out.push({ key: row.name, kind: "type-mismatch", message: res.error });
     }
     return out;
-  }, [defs, parsed, rows]);
+  }, [defs, parsed, rows, viewMode]);
 
   // 错误总数上抛（tab 徽标）；0 时也上抛（清空旧徽标）
   useEffect(() => {
@@ -317,6 +372,23 @@ export function GqlVariablesPanel({
     if (row.value.trim() === "") return false; // 可选空值不警告
     return !textToJsonValue(row.value, row.type).ok; // 值格式错误（type-mismatch）
   };
+
+  // R2：JSON 视图（默认）——CodeEditor 直编 variables；格式化/切换按钮在 RequestEditor 工具栏
+  if (viewMode === "json") {
+    return (
+      <div className="flex h-full min-h-0 flex-col">
+        <CodeEditor
+          value={variables}
+          onChange={onChange}
+          path="variables.json"
+          placeholder='{ "owner": "evil7" }'
+          fill
+          toolbar={false}
+          className="relative z-10 flex-1 overflow-visible rounded-md"
+        />
+      </div>
+    );
+  }
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -368,7 +440,25 @@ export function GqlVariablesPanel({
                       </InputGroup>
                     </td>
                     <td className="py-1 pr-1.5">
-                      {opts ? (
+                      {r.structure ? (
+                        /* M5.5：input/list 结构化变量——value 格为展开按钮（点击内嵌子表格） */
+                        <button
+                          type="button"
+                          className="flex h-7 w-full items-center gap-1 rounded border border-border/60 px-2 text-left font-mono text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
+                          onClick={() => toggleExpanded(r.name)}
+                          title={t("variables.structuredHint")}
+                        >
+                          <ChevronRight
+                            className={cn(
+                              "size-3 shrink-0 transition-transform",
+                              expandedVars.has(r.name) && "rotate-90",
+                            )}
+                          />
+                          {expandedVars.has(r.name)
+                            ? t("variables.structuredEditing")
+                            : t("variables.structuredExpand")}
+                        </button>
+                      ) : opts ? (
                         <Select value={r.value} onValueChange={(v) => updateRow(ri, { value: v })}>
                           <SelectTrigger className="h-7 w-full font-mono text-xs">
                             <SelectValue placeholder="…" />
@@ -385,7 +475,7 @@ export function GqlVariablesPanel({
                         <Input
                           value={r.value}
                           onChange={(e) => updateRow(ri, { value: e.target.value })}
-                          placeholder={valuePlaceholder(r)}
+                          placeholder={valuePlaceholder(r, t)}
                           className={cn(
                             "h-7 w-full font-mono text-xs",
                             rowHasError(r) &&
@@ -405,6 +495,23 @@ export function GqlVariablesPanel({
                   </tr>
                 );
               })}
+            {/* M5.5：结构化的必填变量展开行（值格内嵌子表格；colSpan 4） */}
+            {rows
+              .filter((r) => r.declared && r.required && r.structure && expandedVars.has(r.name))
+              .map((r) => (
+                <tr key={`req-exp-${r.name}`} className="border-b bg-background/40 last:border-b-0">
+                  <td colSpan={4} className="px-2 py-1.5">
+                    <StructuredTable
+                      t={t}
+                      row={r.structure!}
+                      onChange={(next) => {
+                        const i = rows.indexOf(r);
+                        updateRow(i, { structure: next });
+                      }}
+                    />
+                  </td>
+                </tr>
+              ))}
             {/* 用户行（可选声明行 / 自定义行）：checkbox 可开关、X 可删 */}
             {rows
               .filter((r) => !(r.declared && r.required))
@@ -439,16 +546,45 @@ export function GqlVariablesPanel({
                           </InputGroupAddon>
                         </InputGroup>
                       ) : (
-                        <Input
-                          value={r.name}
-                          onChange={(e) => updateRow(i, { name: e.target.value })}
-                          placeholder="$var"
-                          className="h-7 w-full font-mono text-xs"
-                        />
+                        <>
+                          <Input
+                            value={r.name}
+                            onChange={(e) => updateRow(i, { name: e.target.value })}
+                            placeholder="$var"
+                            // F10：query 声明的变量名补全（datalist）——自定义行输入时提示可补 key
+                            list="gql-var-names"
+                            className="h-7 w-full font-mono text-xs"
+                          />
+                          <datalist id="gql-var-names">
+                            {(defs ?? [])
+                              .filter((d) => !rows.some((x) => x.name === d.name))
+                              .map((d) => (
+                                <option key={d.name} value={d.name} />
+                              ))}
+                          </datalist>
+                        </>
                       )}
                     </td>
                     <td className="py-1 pr-1.5">
-                      {opts ? (
+                      {r.structure ? (
+                        /* M5.5：input/list 结构化变量——value 格为展开按钮（点击内嵌子表格） */
+                        <button
+                          type="button"
+                          className="flex h-7 w-full items-center gap-1 rounded border border-border/60 px-2 text-left font-mono text-xs text-muted-foreground hover:border-foreground hover:text-foreground"
+                          onClick={() => toggleExpanded(r.name)}
+                          title={t("variables.structuredHint")}
+                        >
+                          <ChevronRight
+                            className={cn(
+                              "size-3 shrink-0 transition-transform",
+                              expandedVars.has(r.name) && "rotate-90",
+                            )}
+                          />
+                          {expandedVars.has(r.name)
+                            ? t("variables.structuredEditing")
+                            : t("variables.structuredExpand")}
+                        </button>
+                      ) : opts ? (
                         <Select value={r.value} onValueChange={(v) => updateRow(i, { value: v })}>
                           <SelectTrigger className="h-7 w-full font-mono text-xs">
                             <SelectValue placeholder="…" />
@@ -465,7 +601,7 @@ export function GqlVariablesPanel({
                         <Input
                           value={r.value}
                           onChange={(e) => updateRow(i, { value: e.target.value })}
-                          placeholder={valuePlaceholder(r)}
+                          placeholder={valuePlaceholder(r, t)}
                           className={cn(
                             "h-7 w-full font-mono text-xs",
                             rowHasError(r) &&
@@ -488,6 +624,26 @@ export function GqlVariablesPanel({
                   </tr>
                 );
               })}
+            {/* M5.5：结构化的用户变量展开行（值格内嵌子表格；colSpan 4） */}
+            {rows
+              .filter((r) => !(r.declared && r.required) && r.structure && expandedVars.has(r.name))
+              .map((r) => (
+                <tr
+                  key={`user-exp-${r.name}`}
+                  className="border-b bg-background/40 last:border-b-0"
+                >
+                  <td colSpan={4} className="px-2 py-1.5">
+                    <StructuredTable
+                      t={t}
+                      row={r.structure!}
+                      onChange={(next) => {
+                        const i = rows.indexOf(r);
+                        updateRow(i, { structure: next });
+                      }}
+                    />
+                  </td>
+                </tr>
+              ))}
             {/* 添加按钮行：Plus 靠左（与 checkbox 槽对齐）+ 可选变量待选 badge 靠左显示 */}
             <tr>
               <td colSpan={4} className="py-1 pl-3 pr-3">
@@ -522,6 +678,9 @@ export function GqlVariablesPanel({
                                 required: false,
                                 declared: true,
                                 value: "",
+                                structure: isStructuredType(d.type)
+                                  ? jsonToStructuredRows(inputTypeToStructured(d.type), undefined)
+                                  : null,
                                 enabled: true,
                               },
                             ])

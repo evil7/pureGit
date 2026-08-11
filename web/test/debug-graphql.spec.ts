@@ -89,13 +89,16 @@ import { buildClientSchema, type GraphQLSchema } from "graphql";
 import {
   buildGqlFieldTree,
   buildGqlSchemaContext,
+  buildGqlSearchIndex,
   buildSelectionsFromParsed,
+  collectGqlOperations,
   gqlFieldCheckState,
   gqlMapToQuery,
   gqlMapToQueryDetailed,
   gqlMapsEqual,
   gqlRootCheckState,
   parseQueryFieldSelections,
+  searchGqlIndex,
   toggleFieldSelection,
   toggleRootSelection,
   type GqlFieldNode,
@@ -368,16 +371,20 @@ function findRoot(tree: ReturnType<typeof buildGqlFieldTree>, name: string): Gql
 /* ═══ 1. buildGqlFieldTree：Schema 树构建 ═══ */
 
 describe("buildGqlFieldTree：Schema 树构建", () => {
-  it("query 顶层字段按普通字符序（id 不特殊，deprecatedField 打头）", () => {
+  it("query 顶层字段按普通字符序（id 不特殊，deprecatedField 打头；Relay 语法字段已屏蔽）", () => {
     const tree = buildGqlFieldTree(miniSchema());
     expect(tree.query.map((f) => f.name)).toEqual([
       "deprecatedField",
-      "node",
       "scalarField",
       "search",
       "searchResult",
       "viewer",
     ]);
+    // Relay 内建语法字段（node/nodes/relay/resource）不在顶层列表——非业务端点
+    expect(tree.query.map((f) => f.name)).not.toContain("node");
+    expect(tree.query.map((f) => f.name)).not.toContain("nodes");
+    expect(tree.query.map((f) => f.name)).not.toContain("relay");
+    expect(tree.query.map((f) => f.name)).not.toContain("resource");
   });
 
   it("mutation 顶层字段存在（addReaction）", () => {
@@ -404,12 +411,13 @@ describe("buildGqlFieldTree：Schema 树构建", () => {
     expect(login.typeFields).toBeUndefined();
   });
 
-  it("接口返回（node: Node）→ typeFields 含接口字段 id + 必填参数", () => {
+  it("Relay 全局 ID 查询（node: Node）→ 顶层屏蔽；Node 接口字段层经 fieldsOf 可用", () => {
+    // node(id:) 是 Relay 内建（其他站点也有）——不列为业务端点，顶层列表无它
     const tree = buildGqlFieldTree(miniSchema());
-    const node = findRoot(tree, "node");
-    expect(node.scalar).toBe(false);
-    expect(node.typeFields?.map((f) => f.name)).toEqual(["id"]);
-    expect(node.args).toEqual([{ name: "id", required: true, typeLabel: "ID!" }]);
+    expect(tree.query.some((f) => f.name === "node")).toBe(false);
+    // Node 接口仍是合法类型（业务字段引用它），字段层正常解析
+    const c = gqlCtx();
+    expect(c.fieldsOf("Node")?.map((f) => f.name)).toEqual(["id"]);
   });
 
   it("union 返回 → possibleTypes 名列表；无 typeFields", () => {
@@ -419,10 +427,11 @@ describe("buildGqlFieldTree：Schema 树构建", () => {
     expect(searchResult.typeFields).toBeUndefined();
   });
 
-  it("对象返回含 list 链 → typeFields 正常（search: SearchResultItemConnection）", () => {
+  it("对象返回含 list 链 → typeFields 正常（search: SearchResultItemConnection，语法字段已过滤）", () => {
     const tree = buildGqlFieldTree(miniSchema());
     const search = findRoot(tree, "search");
-    expect(search.typeFields?.map((f) => f.name)).toEqual(["edges", "totalCount"]);
+    // union 元素 connection 保持原样但过滤 edges 语法字段——仅剩 totalCount
+    expect(search.typeFields?.map((f) => f.name)).toEqual(["totalCount"]);
     expect(search.returnLabel).toBe("SearchResultItemConnection!");
   });
 
@@ -569,18 +578,18 @@ describe("toggleFieldSelection：子字段勾选（任意深度）", () => {
     expect(Object.keys(twice)).toHaveLength(0);
   });
 
-  it("深层 3 级路径：viewer.repositories.edges.node → 隐式建父链 + 目标默认子树", () => {
-    const path = ["repositories", "edges", "node"];
+  it("深层 3 级路径：viewer.repositories.name → 隐式建父链 + 目标默认子树（connection 拆包后元素字段直达）", () => {
+    // repositories 是 RepositoryConnection（object 元素）→ 拆包为 Repository 字段（无 edges/nodes）
+    const path = ["repositories", "name"];
     const next = toggleFieldSelection(c, {}, "query", viewer, path);
     const entry = next["query:viewer"];
-    // viewer 隐式建（无默认集）；repositories/edges 隐式建空节点；node 目标注入默认子树
-    // Repository 字符序：description < id < name → 首个无必填标量 description
-    const node = entry.children!["repositories"].children!["edges"].children!["node"];
-    expect(Object.keys(node.children ?? {})).toEqual(["description"]);
+    // viewer 隐式建（无默认集）；repositories 隐式建空节点；name 标量目标
+    const repos = entry.children!["repositories"];
+    expect(Object.keys(repos.children ?? {})).toEqual(["name"]);
   });
 
   it("取消深层子项 → 级联删除父链直至顶层 entry（不变量 1）", () => {
-    const path = ["repositories", "edges", "node"];
+    const path = ["repositories", "name"];
     let next = toggleFieldSelection(c, {}, "query", viewer, path);
     next = toggleFieldSelection(c, next, "query", viewer, path);
     expect(next["query:viewer"]).toBeUndefined();
@@ -810,10 +819,10 @@ describe("gqlMapToQuery / gqlMapToQueryDetailed：勾选 → 查询构造", () =
     );
   });
 
-  it("深层递归嵌套（viewer.repositories.edges.node）", () => {
-    const map = toggleFieldSelection(c, {}, "query", viewer, ["repositories", "edges", "node"]);
+  it("深层递归嵌套（viewer.repositories.name —— connection 拆包后元素字段直达）", () => {
+    const map = toggleFieldSelection(c, {}, "query", viewer, ["repositories", "name"]);
     expect(gqlMapToQuery(c, map, "query")).toBe(
-      "query {\n  viewer {\n    repositories {\n      edges {\n        node {\n          description\n        }\n      }\n    }\n  }\n}",
+      "query {\n  viewer {\n    repositories {\n      name\n    }\n  }\n}",
     );
   });
 
@@ -978,5 +987,278 @@ describe("不变量 5：正反向收敛（勾选 → 生成 → 解析 → 归�
       'query {\n  search(query: "x", type: REPOSITORY) {\n    totalCount\n  }\n}',
     );
     roundTrip(map);
+  });
+});
+
+/* ═══ 9. collectGqlOperations（M6 多 operation 提取） ═══ */
+
+describe("collectGqlOperations：多 operation 提取", () => {
+  it("单命名 operation → 提取名字/类型/变量", () => {
+    const ops = collectGqlOperations(
+      "query GetUser($login: String!) { user(login: $login) { login } }",
+    )!;
+    expect(ops).toHaveLength(1);
+    expect(ops[0]).toEqual({
+      name: "GetUser",
+      label: "GetUser",
+      opType: "query",
+      varNames: ["login"],
+    });
+  });
+
+  it("多 operation（query + mutation）→ 全部提取", () => {
+    const ops = collectGqlOperations(
+      [
+        "query A { viewer { login } }",
+        "mutation B($input: AddReactionInput!) { addReaction(input: $input) { clientMutationId } }",
+      ].join("\n"),
+    )!;
+    expect(ops).toHaveLength(2);
+    expect(ops[0]).toEqual({ name: "A", label: "A", opType: "query", varNames: [] });
+    expect(ops[1]).toEqual({
+      name: "B",
+      label: "B",
+      opType: "mutation",
+      varNames: ["input"],
+    });
+  });
+
+  it("未命名 operation → label 用类型（query/mutation）", () => {
+    const ops = collectGqlOperations("query { viewer { login } }")!;
+    expect(ops).toHaveLength(1);
+    expect(ops[0].name).toBe("");
+    expect(ops[0].label).toBe("query");
+    expect(ops[0].opType).toBe("query");
+  });
+
+  it("多 operation 含未命名 → 各自 label 正确", () => {
+    const ops = collectGqlOperations(
+      [
+        "query { viewer { login } }",
+        'mutation { addReaction(input: { subjectId: "x", content: THUMBS_UP }) { clientMutationId } }',
+      ].join("\n"),
+    )!;
+    expect(ops.map((o) => o.label)).toEqual(["query", "mutation"]);
+    expect(ops.map((o) => o.opType)).toEqual(["query", "mutation"]);
+  });
+
+  it("空文本 → []；语法错误 → null", () => {
+    expect(collectGqlOperations("")).toEqual([]);
+    expect(collectGqlOperations("query { viewer {")).toBeNull();
+  });
+
+  it("fragment 定义不产生 operation", () => {
+    const ops = collectGqlOperations(
+      ["query A { viewer { ...F } }", "fragment F on User { login }"].join("\n"),
+    )!;
+    expect(ops).toHaveLength(1);
+    expect(ops[0].name).toBe("A");
+  });
+});
+
+/* ═══ 8. buildGqlSearchIndex / searchGqlIndex：Schema 搜索索引（F9 优化，只搜顶层） ═══ */
+
+describe("buildGqlSearchIndex / searchGqlIndex：Schema 搜索索引（只搜顶层）", () => {
+  const tree = buildGqlFieldTree(miniSchema());
+
+  it("索引只含 query/mutation 顶层字段（不递归子字段）", () => {
+    const idx = buildGqlSearchIndex(tree);
+    // 顶层字段（viewer/search）入索引
+    expect(idx.get("viewer")).toBeDefined();
+    expect(idx.get("viewer")!.some((h) => h.opType === "query")).toBe(true);
+    expect(idx.get("search")).toBeDefined();
+    // 嵌套字段（login 在 User 下）不入索引——只搜顶层
+    expect(idx.get("login")).toBeUndefined();
+    // 所有 hit 都是顶层（path 空、depth 0）
+    for (const [key, arr] of idx) {
+      expect(key.length).toBeGreaterThan(0);
+      for (const h of arr) {
+        expect(h.path).toEqual([]);
+        expect(h.depth).toBe(0);
+      }
+    }
+  });
+
+  it("索引覆盖 query + mutation 两侧顶层（互不冲突）", () => {
+    const idx = buildGqlSearchIndex(tree);
+    const mutation = tree.mutation;
+    // mutation 顶层字段入索引（如 addReaction）
+    const addReaction = mutation.find((m) => m.name === "addReaction");
+    if (addReaction) {
+      const hits = idx.get("addreaction")!;
+      expect(hits.some((h) => h.opType === "mutation")).toBe(true);
+    }
+  });
+
+  it("搜索只匹配字段名（key）——不匹配 desc/returnLabel（杜绝长文本噪音）", () => {
+    const idx = buildGqlSearchIndex(tree);
+    // "search" 命中顶层 search 字段
+    const hits = searchGqlIndex(idx, "search");
+    expect(hits.length).toBeGreaterThan(0);
+    expect(hits.every((h) => h.field.name.toLowerCase().includes("search"))).toBe(true);
+    // 嵌套 login 不命中（只在 User 下，非顶层）
+    expect(searchGqlIndex(idx, "login")).toEqual([]);
+  });
+
+  it("大小写不敏感 + trim", () => {
+    const idx = buildGqlSearchIndex(tree);
+    expect(searchGqlIndex(idx, "  VIEWER ").length).toBe(searchGqlIndex(idx, "viewer").length);
+  });
+
+  it("空 query → []（不搜索）", () => {
+    const idx = buildGqlSearchIndex(tree);
+    expect(searchGqlIndex(idx, "")).toEqual([]);
+    expect(searchGqlIndex(idx, "   ")).toEqual([]);
+  });
+
+  it("无命中 → []", () => {
+    const idx = buildGqlSearchIndex(tree);
+    expect(searchGqlIndex(idx, "zzz-not-exist")).toEqual([]);
+  });
+
+  it("排序：query 组前 → root 名字典序（稳定可读）", () => {
+    const idx = buildGqlSearchIndex(tree);
+    // 用 "search"（命中 query 组多个字段）验证排序；node 已被屏蔽不入索引
+    const hits = searchGqlIndex(idx, "search");
+    expect(hits.length).toBeGreaterThan(0);
+    const ops = hits.map((h) => h.opType);
+    const firstQueryIdx = ops.findIndex((o) => o === "query");
+    const firstMutationIdx = ops.findIndex((o) => o === "mutation");
+    // 组内连续：query 全在 mutation 前
+    if (firstQueryIdx !== -1 && firstMutationIdx !== -1) {
+      expect(firstQueryIdx).toBeLessThan(firstMutationIdx);
+      const lastQueryIdx = ops.lastIndexOf("query");
+      expect(lastQueryIdx).toBeLessThan(firstMutationIdx);
+    }
+    // 组内按 root 名排序
+    const names = hits.map((h) => h.root.name);
+    expect([...names].sort((a, b) => a.localeCompare(b))).toEqual(names);
+  });
+});
+
+/* ═══ 9. connection 拆包：语法节点（edges/nodes/node/pageInfo）解析层去除 ═══ */
+
+describe("connection 拆包：语法节点解析层去除（用户拍板）", () => {
+  const tree = buildGqlFieldTree(miniSchema());
+  const c = gqlCtx();
+
+  it("object 元素 connection（RepositoryConnection）→ fieldsOf 返回元素字段（无 edges/totalCount）", () => {
+    // viewer.repositories 返回 RepositoryConnection（元素 = object Repository）
+    const viewer = findRoot(tree, "viewer");
+    expect(viewer.isConnection).toBe(false); // viewer 自身非 connection
+    const fields = c.fieldsOf("RepositoryConnection")!;
+    // 拆包 → Repository 字段（description/id/name），无 edges/totalCount 语法节点
+    expect(fields.map((f) => f.name)).toEqual(["description", "id", "name"]);
+    expect(fields.some((f) => f.name === "edges")).toBe(false);
+    expect(fields.some((f) => f.name === "totalCount")).toBe(false);
+  });
+
+  it("union 元素 connection（SearchResultItemConnection）→ 保持原样但过滤语法字段（edges 去除，totalCount 保留）", () => {
+    // search 返回 SearchResultItemConnection（元素 = union SearchResultItem）
+    const search = findRoot(tree, "search");
+    expect(search.isConnection).toBe(true);
+    const fields = c.fieldsOf("SearchResultItemConnection")!;
+    // union 无公共字段 → 不拆包；但 connection 语法字段（edges）非业务端点已过滤，
+    // 业务计数 totalCount 保留（GitHub 连接计数，有业务价值）
+    expect(fields.map((f) => f.name)).toEqual(["totalCount"]);
+    expect(fields.some((f) => f.name === "edges")).toBe(false);
+    expect(fields.some((f) => f.name === "nodes")).toBe(false);
+    expect(fields.some((f) => f.name === "pageInfo")).toBe(false);
+  });
+
+  it("顶层 node(id:) 被屏蔽（Relay 内建全局 ID 查询，非业务端点——用户需求 1）", () => {
+    // node/nodes 是 Relay 公共语法（其他站点也有）——不再列为业务端点
+    expect(tree.query.some((f) => f.name === "node")).toBe(false);
+    expect(tree.mutation.some((f) => f.name === "node")).toBe(false);
+    // Node 接口本身仍是合法类型（业务字段引用它），字段层正常解析
+    const fields = c.fieldsOf("Node")!;
+    expect(fields.length).toBeGreaterThan(0);
+  });
+
+  it("勾选 object 元素 connection → 生成元素字段 query（payload 无 edges/nodes 包装）", () => {
+    const viewer = findRoot(tree, "viewer");
+    const map = toggleFieldSelection(c, {}, "query", viewer, ["repositories", "name"]);
+    expect(gqlMapToQuery(c, map, "query")).toBe(
+      "query {\n  viewer {\n    repositories {\n      name\n    }\n  }\n}",
+    );
+  });
+
+  it("勾选 connection 顶层字段 → 默认子树 = 元素字段（firstLeafField 走拆包后字段）", () => {
+    // search 是 union 元素 → 保持原样 → totalCount 仍是首标量
+    const search = findRoot(tree, "search");
+    const map = toggleRootSelection(c, {}, "query", search);
+    expect(Object.keys(map["query:search"].children ?? {})).toEqual(["totalCount"]);
+    // viewer.repositories 若作为对象勾选 → 默认子树取元素 Repository 的首个无必填标量
+    const viewer = findRoot(tree, "viewer");
+    const reposMap = toggleFieldSelection(c, {}, "query", viewer, ["repositories"]);
+    const repos = reposMap["query:viewer"].children!["repositories"];
+    // Repository 字段 description/id/name：description 无必填参数 → 默认子树首标量
+    expect(Object.keys(repos.children ?? {})).toEqual(["description"]);
+  });
+
+  it("手写 edges 包装 query 反向同步 → 不勾选（edges 非 schema 字段，拆包后不存在）", () => {
+    const parsed = parseQueryFieldSelections(
+      "query { viewer { repositories { edges { node { id } } } } }",
+    );
+    expect(parsed).not.toBeNull();
+    const fields = parsed!.fields;
+    // viewer 子字段 repositories → edges（非 schema）→ 跳过 → repositories 空 selection → 不勾选
+    const map = buildSelectionsFromParsed(c, "query", fields, tree.query);
+    expect(map["query:viewer"]).toBeUndefined();
+  });
+});
+
+/* ═══ 10. GraphQL 公共语法屏蔽（Relay 内建，非业务端点——用户需求 1） ═══ */
+
+describe("GraphQL 公共语法屏蔽：node/nodes/relay/resource + connection 语法字段", () => {
+  const tree = buildGqlFieldTree(miniSchema());
+  const c = gqlCtx();
+
+  it("顶层屏蔽四字段：node/nodes/relay/resource（Relay 内建，跨站点通用，非业务端点）", () => {
+    // mini 夹具的 Query 含 node（Node 接口返回）——屏蔽后不出现在业务顶层列表
+    expect(tree.query.map((f) => f.name)).not.toContain("node");
+    expect(tree.query.map((f) => f.name)).not.toContain("nodes");
+    expect(tree.query.map((f) => f.name)).not.toContain("relay");
+    expect(tree.query.map((f) => f.name)).not.toContain("resource");
+    // mutation 侧同规则
+    expect(tree.mutation.map((f) => f.name)).not.toContain("node");
+  });
+
+  it("屏蔽字段不入搜索索引（buildGqlSearchIndex 基于顶层树——自动生效）", () => {
+    const idx = buildGqlSearchIndex(tree);
+    expect(idx.get("node")).toBeUndefined();
+    expect(idx.get("nodes")).toBeUndefined();
+    expect(idx.get("relay")).toBeUndefined();
+    expect(idx.get("resource")).toBeUndefined();
+    // 业务字段仍可搜索
+    expect(idx.get("viewer")).toBeDefined();
+  });
+
+  it("反向同步跳过屏蔽字段（手写 node(id:) 不勾选——非业务端点不参与勾选）", () => {
+    const parsed = parseQueryFieldSelections('query { node(id: "x") { id } }');
+    expect(parsed).not.toBeNull();
+    const map = buildSelectionsFromParsed(c, "query", parsed!.fields, tree.query);
+    expect(Object.keys(map)).toEqual([]);
+  });
+
+  it("非 connection 普通类型不误伤（User 业务字段完整，edges/nodes 仅存在于 connection 类型）", () => {
+    const fields = c.fieldsOf("User")!;
+    expect(fields.map((f) => f.name)).toEqual([
+      "avatarUrl",
+      "email",
+      "id",
+      "login",
+      "name",
+      "repositories",
+    ]);
+  });
+
+  it("connection 语法字段全集过滤（edges/nodes/node/pageInfo/cursor 均去除）", () => {
+    // 真实 GitHub schema：connection 类型含 edges/nodes/pageInfo/totalCount——
+    // 用 mini 夹具 SearchResultItemConnection 模拟（edges 去除、totalCount 保留）
+    const fields = c.fieldsOf("SearchResultItemConnection")!;
+    for (const syntax of ["edges", "nodes", "node", "pageInfo", "cursor"]) {
+      expect(fields.some((f) => f.name === syntax)).toBe(false);
+    }
   });
 });

@@ -7,13 +7,10 @@
  *   时显示「正在预载 schema 数据 N/M」（shadcn Progress 细条，低对比不打扰）；
  *   空闲时隐藏。后台任务不影响正常使用，但能视觉感知。
  */
-import { useEffect, useState } from "react";
 import { History as HistoryIcon, Trash2 } from "lucide-react";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
-import { Progress } from "@/components/ui/progress";
 import { cn } from "@/lib/utils";
-import { onPreloadProgress } from "./schema-loader";
 import { RestTree } from "./RestTree";
 import { GqlTree } from "./GqlTree";
 import { GraphQLLogo } from "./GraphQLLogo";
@@ -65,22 +62,6 @@ export function LeftPanel({
   onGqlReload,
   onPickGqlTemplate,
 }: LeftPanelProps) {
-  // 底部缓存进度条状态（后台预热 / 过期刷新；空闲 null 隐藏）
-  const [preload, setPreload] = useState<{ done: number; total: number; label: string } | null>(
-    null,
-  );
-
-  useEffect(() => {
-    return onPreloadProgress((p) => {
-      if (p.done >= p.total) {
-        // 完成 → 短暂保留后隐藏（延迟让用户感知完成）
-        setTimeout(() => setPreload(null), 800);
-        return;
-      }
-      setPreload({ done: p.done, total: p.total, label: p.label });
-    });
-  }, []);
-
   return (
     <div className="flex h-full flex-col">
       <Tabs defaultValue="history" className="flex min-h-0 flex-1 flex-col">
@@ -193,21 +174,6 @@ export function LeftPanel({
           )}
         </TabsContent>
       </Tabs>
-
-      {/* 底部缓存进度条：后台预热 / 过期刷新视觉感知（不阻塞交互，空闲隐藏） */}
-      {preload && (
-        <div className="shrink-0 border-t px-3 py-1.5">
-          <div className="mb-1 flex items-center justify-between gap-2">
-            <span className="truncate text-[10px] text-muted-foreground">
-              {t("cache.preloading", { label: preload.label })}
-            </span>
-            <span className="shrink-0 font-mono text-[10px] text-muted-foreground">
-              {preload.done}/{preload.total}
-            </span>
-          </div>
-          <Progress value={(preload.done / Math.max(1, preload.total)) * 100} className="h-1" />
-        </div>
-      )}
     </div>
   );
 }
