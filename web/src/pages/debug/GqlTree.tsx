@@ -446,7 +446,9 @@ export function GqlTree({
           </button>
         </div>
       ) : fieldTree && gqlCtx ? (
-        /* 扁平化可见行 + 虚拟滚动（分组头/字段/内省模板统一为行；只渲染可视区） */
+        /* 扁平化可见行 + 虚拟滚动（分组头/字段/内省模板统一为行；只渲染可视区）
+         * 每个虚拟项必须绝对定位（top:0 + translateY(vi.start)）到虚拟位置——
+         * 缺定位所有行会堆叠文档流顶部，滚动后可视区只剩虚拟高度空白（白屏 bug） */
         <div ref={scrollRef} className="min-h-0 flex-1 overflow-y-auto px-1.5">
           <div className="relative" style={{ height: rowVirtualizer.getTotalSize() }}>
             {rowVirtualizer.getVirtualItems().map((vi) => {
@@ -456,18 +458,24 @@ export function GqlTree({
                   ? gqlFieldCheckState(gqlCtx, selected, row.opType, row.root, row.path)
                   : "unchecked";
               return (
-                <Row
+                <div
                   key={row.id}
-                  t={t}
-                  ctx={gqlCtx}
-                  row={row}
-                  expanded={expanded.has(row.id)}
-                  checkState={checkState}
-                  onToggleGroup={toggleGroup}
-                  onToggleExpand={toggleExpand}
-                  onToggleField={toggleField}
-                  onPickGqlTemplate={onPickGqlTemplate}
-                />
+                  data-index={vi.index}
+                  className="absolute left-0 top-0 w-full"
+                  style={{ transform: `translateY(${vi.start}px)` }}
+                >
+                  <Row
+                    t={t}
+                    ctx={gqlCtx}
+                    row={row}
+                    expanded={expanded.has(row.id)}
+                    checkState={checkState}
+                    onToggleGroup={toggleGroup}
+                    onToggleExpand={toggleExpand}
+                    onToggleField={toggleField}
+                    onPickGqlTemplate={onPickGqlTemplate}
+                  />
+                </div>
               );
             })}
           </div>
