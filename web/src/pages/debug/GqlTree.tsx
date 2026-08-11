@@ -25,7 +25,7 @@
  *   点击填充内省查询
  * - **hover 详情**：字段行 title 含返回类型 + 参数清单（name: Type!）+ description
  */
-import { useEffect, useMemo, useState } from "react";
+import { startTransition, useCallback, useEffect, useMemo, useState } from "react";
 import { ChevronDown, RefreshCw } from "lucide-react";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -79,8 +79,12 @@ interface FieldRowProps {
   /** 当前深度 */
   depth: number;
   selected: GqlSelectionMap;
-  /** 路径化展开态（path.join(".") → boolean） */
+  /** 展开态 map（仅子级 expanded 计算用；自身 expanded 由父级传入布尔，避免无关重绘） */
   expandedPaths: Record<string, boolean>;
+  /** 当前行展开态 key（含 opType:root 前缀唯一；父级计算传入） */
+  expandedKey: string;
+  /** 当前行是否展开（父级从 expandedPaths 读好传入） */
+  expanded: boolean;
   onToggleExpand: (pathKey: string) => void;
   /** 勾选/取消（路径化） */
   onToggle: (path: string[]) => void;
@@ -109,11 +113,11 @@ function FieldRow({
   depth,
   selected,
   expandedPaths,
+  expandedKey,
+  expanded,
   onToggleExpand,
   onToggle,
 }: FieldRowProps) {
-  const pathKey = path.join(".");
-  const expanded = !!expandedPaths[pathKey];
   // 可展开：非标量且深度未超上限（子字段层或 union possibleTypes）
   const childFields =
     !field.scalar && depth < MAX_DEPTH ? (ctx.fieldsOf(field.ofTypeName) ?? []) : [];
@@ -139,7 +143,7 @@ function FieldRow({
         <button
           type="button"
           className="flex min-w-0 flex-1 items-center gap-1.5 text-left"
-          onClick={() => expandable && onToggleExpand(pathKey)}
+          onClick={() => expandable && onToggleExpand(expandedKey)}
           title={fieldTitle(field)}
         >
           <span
@@ -176,7 +180,7 @@ function FieldRow({
             className="flex h-4 w-4 shrink-0 items-center justify-center rounded text-muted-foreground hover:bg-accent"
             onClick={(e) => {
               e.stopPropagation();
-              onToggleExpand(pathKey);
+              onToggleExpand(expandedKey);
             }}
             title={expanded ? "收起" : "展开返回类型字段"}
           >
@@ -199,6 +203,8 @@ function FieldRow({
               depth={depth + 1}
               selected={selected}
               expandedPaths={expandedPaths}
+              expandedKey={`${expandedKey}.${cf.name}`}
+              expanded={!!expandedPaths[`${expandedKey}.${cf.name}`]}
               onToggleExpand={onToggleExpand}
               onToggle={onToggle}
             />
@@ -254,7 +260,8 @@ export function GqlTree({
     mutation: true,
     introspection: true,
   });
-  // 字段展开态（path.join(".") → 已展开；任意深度）
+  // 字段展开态（`opType:rootName:path` 唯一 key；root 自身 = `opType:rootName`——
+  // 修复旧版 path.join(".") 导致 root 全共享 "" key 的全展开 bug）
   const [expandedPaths, setExpandedPaths] = useState<Record<string, boolean>>({});
   // 勾选集合（顶层字段 key + 嵌套树；状态机在 lib 层）
   const [selected, setSelected] = useState<GqlSelectionMap>({});
@@ -276,9 +283,13 @@ export function GqlTree({
     commitSelection(toggleFieldSelection(gqlCtx, selected, opType, root, path), opType);
   };
 
-  /** 展开/收起（路径化） */
-  const toggleExpand = (pathKey: string) =>
-    setExpandedPaths((s) => ({ ...s, [pathKey]: !s[pathKey] }));
+  /**
+   * 展开/收起（唯一 key；startTransition 低优先级——大字段展开渲染数百行不阻塞输入，
+   * React 18 并发分片渲染）。useCallback 稳定引用配合 memo 组件减少无关重绘。
+   */
+  const toggleExpand = useCallback((pathKey: string) => {
+    startTransition(() => setExpandedPaths((s) => ({ ...s, [pathKey]: !s[pathKey] })));
+  }, []);
 
   /**
    * 反向同步（手写 → 勾选）：编辑器 query 变化时解析 AST，无语法错误则自动
@@ -358,22 +369,27 @@ export function GqlTree({
                 </button>
                 {open && (
                   <div className="ml-2 border-l pl-1">
-                    {fields.map((f) => (
-                      <FieldRow
-                        key={f.name}
-                        t={t}
-                        ctx={gqlCtx}
-                        opType={key}
-                        root={f}
-                        field={f}
-                        path={[]}
-                        depth={0}
-                        selected={selected}
-                        expandedPaths={expandedPaths}
-                        onToggleExpand={toggleExpand}
-                        onToggle={(path) => toggleField(key, f, path)}
-                      />
-                    ))}
+                    {fields.map((f) => {
+                      const rootKey = `${key}:${f.name}`;
+                      return (
+                        <FieldRow
+                          key={f.name}
+                          t={t}
+                          ctx={gqlCtx}
+                          opType={key}
+                          root={f}
+                          field={f}
+                          path={[]}
+                          depth={0}
+                          selected={selected}
+                          expandedPaths={expandedPaths}
+                          expandedKey={rootKey}
+                          expanded={!!expandedPaths[rootKey]}
+                          onToggleExpand={toggleExpand}
+                          onToggle={(path) => toggleField(key, f, path)}
+                        />
+                      );
+                    })}
                   </div>
                 )}
               </div>
