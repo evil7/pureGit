@@ -124,11 +124,11 @@ export default function IssuesPage() {
       q: q || undefined,
     };
     fetchIssuesSmart(owner!, repo!, state, token, filters, undefined, page)
-      .then(({ items, openCount, closedCount }) => {
+      .then(({ items, openCount: openCountRes, closedCount: closedCountRes }) => {
         if (!cancelled) {
           setIssues(items);
-          setOpenCount(openCount);
-          setClosedCount(closedCount);
+          setOpenCount(openCountRes);
+          setClosedCount(closedCountRes);
         }
       })
       .catch((e) => {

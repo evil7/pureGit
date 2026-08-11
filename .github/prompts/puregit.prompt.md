@@ -31,7 +31,7 @@ argument-hint: "可选：本次要开发/研讨的具体任务"
 4. **尽量复用**：优先使用已有模块、成熟成品包与现成组件（shadcn/ui、成熟开源库），不重复造轮子。
 5. **外部资产操作问询**：凡涉及**用户真实外部文件、外部站点的资产、账号、数据、密钥**的操作/访问/使用（如真实 GitHub 账号的写操作、真实 token/凭据、外部站点资源抓取、用户本地真实文件读写），测试开发中**必须先问询请示用户**，经批准后才按用户指导、限定的方式处理。
 6. **文档集中且精简**：项目文档集中存放于 `docs/`，分公开/内部两级（公开随仓库发布：vision/design/architecture/api-compat/cli-setup/github-schema；内部 gitignore：tasks/plan）。**不强制记录临时任务/决策**——临时任务与决策随开发自动消亡，最终结果沉淀在代码注释（总结性语义）与公开框架文档；开发过程中只**不断修正关键框架文档**（vision/design/architecture/api-compat 等）。完整地图见 `docs/index.md`。
-7. **提交前质量门禁**：每次编写与提交新 commit 前必须通过——**oxlint 零警告**（`pnpm lint` / `pnpm --filter worker lint`，非必要不使用 disable 注释）与 **oxfmt 格式一致**（`pnpm format` 后 `pnpm format:check` 通过；PR 评审同样按此格式检查）。
+7. **提交前质量门禁**：每次编写与提交新 commit 前必须通过——**oxlint 零警告**（`pnpm lint`，根 oxlint 全量 web/worker/scripts，非必要不使用 disable 注释）与 **oxfmt 格式一致**（`pnpm format` 后 `pnpm format:check` 通过；PR 评审同样按此格式检查）。
 
 ## 三、技能（Skills）策略
 
@@ -44,7 +44,7 @@ argument-hint: "可选：本次要开发/研讨的具体任务"
 2. 临时测试文件、调试代码用后**立即移除**，不留垃圾。
 3. 当前处于 **0.0.x 内部试错阶段**，**不要求**兼容保留原有逻辑与代码，可大胆重构与简化；破坏性改动前说明理由与影响面。
 4. 以最小化改动、懒开发路径为原则快速迭代；完成阶段性改动后**同步修正关键框架文档**（vision/design/architecture/api-compat 等公开文档），保持代码与文档一致。
-5. **提交前跑门禁**：`pnpm lint`（web/worker oxlint 零警告）+ `pnpm format` 后 `pnpm format:check` 通过（oxfmt 格式一致）——见开发原则 7。
+5. **提交前跑门禁**：`pnpm lint`（根 oxlint 全量零警告）+ `pnpm format` 后 `pnpm format:check` 通过（oxfmt 格式一致）——见开发原则 7。
 
 ### 4.1 复刻 GitHub 官方页面（标准 6 步流程）
 

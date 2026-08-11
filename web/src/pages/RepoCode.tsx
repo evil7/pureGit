@@ -898,15 +898,15 @@ export function BlobPage() {
   };
   /** symbols 点击（官方：跳定义行高亮 + 面板切详情视图显示 Definition/References） */
   const jumpToSymbol = (s: SymbolInfo) => {
-    const view = cmViewRef.current;
+    const cmView = cmViewRef.current;
     let defText = "";
     let refs: SymbolRef[] = [];
-    if (view) {
-      const doc = view.state.doc;
+    if (cmView) {
+      const doc = cmView.state.doc;
       const line = Math.min(Math.max(s.line, 1), doc.lines);
       defText = doc.line(line).text.trim();
       // 高亮定义行（整行选中，官方同款）
-      view.dispatch({
+      cmView.dispatch({
         selection: { anchor: doc.line(line).from, head: doc.line(line).to },
         scrollIntoView: true,
       });
@@ -916,7 +916,7 @@ export function BlobPage() {
         window.history.replaceState(null, "", next);
       }
       // 提取文件内引用（官方 References in this file）
-      refs = collectReferences(view, s);
+      refs = collectReferences(cmView, s);
     }
     setSelectedSym({ symbol: s, defText, refs });
   };
@@ -924,11 +924,11 @@ export function BlobPage() {
   const backToAll = () => setSelectedSym(null);
   /** 详情视图内跳转（Definitions/References 行） */
   const jumpToLine = (line: number) => {
-    const view = cmViewRef.current;
-    if (!view) return;
-    const doc = view.state.doc;
+    const cmView = cmViewRef.current;
+    if (!cmView) return;
+    const doc = cmView.state.doc;
     const l = Math.min(Math.max(line, 1), doc.lines);
-    view.dispatch({
+    cmView.dispatch({
       selection: { anchor: doc.line(l).from, head: doc.line(l).to },
       scrollIntoView: true,
     });

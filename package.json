@@ -6,8 +6,8 @@
     "dev": "node scripts/dev-fast.mjs",
     "build": "pnpm --filter web build",
     "typegen": "pnpm --filter worker typegen",
-    "typecheck": "pnpm --filter web typecheck",
-    "lint": "pnpm --filter web lint",
+    "typecheck": "pnpm --filter web exec tsc -b",
+    "lint": "oxlint . --max-warnings 0",
     "test": "pnpm --filter web test",
     "test:watch": "pnpm --filter web test:watch",
     "format": "oxfmt web/src worker/src worker/test scripts web/test",
@@ -24,6 +24,7 @@
   "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1",
   "devDependencies": {
     "@octokit/openapi": "^22.0.0",
-    "oxfmt": "^0.62.0"
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.77.0"
   }
 }

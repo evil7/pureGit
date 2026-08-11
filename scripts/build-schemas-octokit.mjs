@@ -159,6 +159,7 @@ function transcribeGql() {
   const raw = Buffer.byteLength(JSON.stringify(mod.schema.json));
   const gz = require("node:zlib").gzipSync(Buffer.from(JSON.stringify(mod.schema.json))).length;
   console.log(
+    // eslint-disable-next-line no-underscore-dangle -- __schema 为 GraphQL 内省协议强制字段名，非代码命名
     `[GraphQL] 转录 ${mod.schema.json.__schema.types.length} 类型（原数据含 description）→ web/public/debug/gql/schema.json（${(raw / 1024).toFixed(0)}KB raw / ${(gz / 1024).toFixed(0)}KB gzip）`,
   );
 }

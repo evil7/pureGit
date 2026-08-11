@@ -285,11 +285,11 @@ export async function fetchIssuesSmart(
         token,
       );
       if (!hasGraphQLErrors(resp) && resp.data?.repository) {
-        const repo = resp.data.repository;
+        const repoData = resp.data.repository;
         return {
-          items: repo.issues.nodes.map(toIssue),
-          openCount: repo.openCount.totalCount,
-          closedCount: repo.closedCount.totalCount,
+          items: repoData.issues.nodes.map(toIssue),
+          openCount: repoData.openCount.totalCount,
+          closedCount: repoData.closedCount.totalCount,
         };
       }
     } catch {
@@ -425,11 +425,11 @@ export async function fetchPullsSmart(
         token,
       );
       if (!hasGraphQLErrors(resp) && resp.data?.repository) {
-        const repo = resp.data.repository;
+        const repoData = resp.data.repository;
         return {
-          items: repo.pullRequests.nodes.map(toPull),
-          openCount: repo.openCount.totalCount,
-          closedCount: repo.closedCount.totalCount,
+          items: repoData.pullRequests.nodes.map(toPull),
+          openCount: repoData.openCount.totalCount,
+          closedCount: repoData.closedCount.totalCount,
         };
       }
     } catch {

@@ -776,7 +776,7 @@ describe("gqlMapToQuery / gqlMapToQueryDetailed：勾选 → 查询构造", () =
   });
 
   it("同操作类型多字段拼接为单个 selection set（AST 式构造）", () => {
-    let map = toggleFieldSelection(c, {}, "query", viewer, ["login"]);
+    const map = toggleFieldSelection(c, {}, "query", viewer, ["login"]);
     const scalar = toggleRootSelection(c, map, "query", scalarField);
     expect(gqlMapToQuery(c, scalar, "query")).toBe(
       "query {\n  viewer {\n    login\n  }\n  scalarField\n}",

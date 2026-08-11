@@ -16,7 +16,11 @@
  *
  * 代码块复制：库自带复制按钮（octicon 图标 + prettylights 语法色）与站点主题不符，
  * 用 disableCopy 禁掉，components.pre 注入与操作栏一致的 lucide 复制按钮（chart-1 蓝 √）。
+ *
+ * oxlint 豁免：components 内联对象由库 API 强制要求（需闭包访问 owner/repo/rawBase/isDark 等），
+ * 无法提升为模块级组件，no-unstable-nested-components 属误报，统一豁免。
  */
+/* eslint-disable react/no-unstable-nested-components -- 库 components API 强制内联，需闭包访问渲染上下文 */
 import { useState, type ComponentProps, type ReactNode } from "react";
 import MarkdownPreview from "@uiw/react-markdown-preview";
 import { Check, Copy } from "lucide-react";

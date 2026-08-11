@@ -58,9 +58,9 @@ export function RepositoryCard({ repo }: { repo: Repository }) {
 
         {repo.topics && repo.topics.length > 0 && (
           <div className="flex flex-wrap gap-1 pt-1">
-            {repo.topics.slice(0, 3).map((t) => (
-              <Badge key={t} variant="secondary" className="text-xs">
-                {t}
+            {repo.topics.slice(0, 3).map((topic) => (
+              <Badge key={topic} variant="secondary" className="text-xs">
+                {topic}
               </Badge>
             ))}
           </div>

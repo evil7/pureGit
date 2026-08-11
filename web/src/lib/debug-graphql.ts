@@ -192,8 +192,10 @@ export async function fetchGqlSchema(token: string | null): Promise<GraphQLSchem
   if (json.errors?.length) {
     throw new Error(json.errors[0]?.message ?? "introspection errors");
   }
+  // eslint-disable-next-line no-underscore-dangle -- __schema 为 GraphQL 内省协议强制字段名，非代码命名
   const schemaData = (json.data as { __schema?: unknown } | null)?.__schema;
   if (!schemaData) throw new Error("introspection 无 __schema");
+  // eslint-disable-next-line no-underscore-dangle -- 同上：GraphQL 内省协议强制字段名
   return buildGqlSchemaFromIntrospection({ __schema: schemaData });
 }
 

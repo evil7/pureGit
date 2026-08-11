@@ -100,7 +100,7 @@ function splitSyntax(
   opts: { owner?: string; repo?: string; mentions: boolean },
 ): Segment[] {
   const segments: Segment[] = [];
-  let rest = text;
+  const rest = text;
   // 组合正则：@mention | #issue | :emoji:
   const re = /(@[\w][\w-]*)|(?:^|\s)(#(\d+))|(:\w+:)/g;
   let last = 0;

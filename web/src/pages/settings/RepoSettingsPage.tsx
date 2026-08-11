@@ -160,7 +160,7 @@ export default function RepoSettingsPage() {
       // topics 单独端点（PUT /repos/{owner}/{repo}/topics，最多 20 个）
       const topics = topicsText
         .split(/[,\s]+/)
-        .map((t) => t.trim())
+        .map((topic) => topic.trim())
         .filter(Boolean)
         .slice(0, 20);
       await replaceRepoTopicsSmart(owner, repoName, token, topics);

@@ -110,11 +110,11 @@ export default function PullsPage() {
       q: q || undefined,
     };
     fetchPullsSmart(owner!, repo!, state, token, filters, page)
-      .then(({ items, openCount, closedCount }) => {
+      .then(({ items, openCount: openCountRes, closedCount: closedCountRes }) => {
         if (!cancelled) {
           setPulls(items);
-          setOpenCount(openCount);
-          setClosedCount(closedCount);
+          setOpenCount(openCountRes);
+          setClosedCount(closedCountRes);
         }
       })
       .catch((e) => {

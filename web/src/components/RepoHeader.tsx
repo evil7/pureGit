@@ -80,10 +80,11 @@ export default function RepoHeader({
   const { pathname } = useLocation();
   const { user } = useAuth();
   const { t } = useI18n();
-  const pathname_ = `/${owner}/${repo}`;
+  // 当前仓库根路径（pathname 前缀），用于计算当前 tab
+  const basePath = `/${owner}/${repo}`;
 
   // 当前所在 tab：Code 涵盖根路径 /tree/... /blob/...
-  const rest = pathname.slice(pathname_.length).replace(/^\/+/, "");
+  const rest = pathname.slice(basePath.length).replace(/^\/+/, "");
   const current = rest === "" ? "code" : rest.split("/")[0].toLowerCase();
   const isCodeActive = current === "code" || current === "tree" || current === "blob";
   // Settings tab 仅仓库所有者可见（官方：非 owner/admin 完全无设置入口）。
@@ -111,7 +112,7 @@ export default function RepoHeader({
               {owner}
             </Link>
             <span className="shrink-0 text-muted-foreground">/</span>
-            <Link to={pathname_} className="truncate font-semibold hover:underline">
+            <Link to={basePath} className="truncate font-semibold hover:underline">
               <span className="text-foreground">{repo}</span>
             </Link>
           </span>
@@ -147,7 +148,7 @@ export default function RepoHeader({
             if (!showTabByFeature(tab.feature, data)) return null;
             const Icon = tab.icon;
             const isActive = tab.to ? current === tab.to.slice(1) : isCodeActive;
-            const full = tab.to ? pathname_ + tab.to : pathname_;
+            const full = tab.to ? basePath + tab.to : basePath;
             const link = (
               <Link
                 key={tab.to}
