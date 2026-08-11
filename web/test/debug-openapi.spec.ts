@@ -124,12 +124,14 @@ describe("endpointToRequest", () => {
       {
         name: "org",
         in: "path",
-        value: "{org}",
+        value: "", // 必填未填：value 空 + placeholder 提示 {name}（URL 保持模板占位）
         enabled: true,
         index: 2,
         segPos: 0,
         segCount: 1,
         segSeparators: ["", ""],
+        required: true,
+        type: "string",
       },
     ]);
   });
@@ -143,7 +145,15 @@ describe("endpointToRequest", () => {
     expect(r.url).toBe("/search/repositories");
     // 仅 required q 填行；sort/order 非必填不出现（badge）
     expect(r.params).toEqual([
-      { name: "q", in: "query", value: "", enabled: true, explicit: false },
+      {
+        name: "q",
+        in: "query",
+        value: "",
+        enabled: true,
+        explicit: false,
+        required: true,
+        type: "string",
+      },
     ]);
   });
   it("POST → bodyType json；常用 owner/repo 占位保持", () => {
@@ -154,8 +164,9 @@ describe("endpointToRequest", () => {
     const r = endpointToRequest(e);
     expect(r.bodyType).toBe("json");
     expect(r.url).toBe("/repos/{owner}/{repo}/issues");
-    expect(r.params[0]).toMatchObject({ name: "owner", value: "{owner}", index: 2 });
-    expect(r.params[1]).toMatchObject({ name: "repo", value: "{repo}", index: 3 });
+    // path 行 value 空（必填未填，placeholder 提示）；index 模板段位
+    expect(r.params[0]).toMatchObject({ name: "owner", value: "", index: 2, required: true });
+    expect(r.params[1]).toMatchObject({ name: "repo", value: "", index: 3, required: true });
   });
   it("compare 复合占位 `{base}...{head}`：两参数共享段 index + 段内模型（历史 bug：正则提取失败 index=-1）", () => {
     const e = ep("get", "/repos/{owner}/{repo}/compare/{base}...{head}", [
@@ -168,8 +179,8 @@ describe("endpointToRequest", () => {
     expect(r.url).toBe("/repos/{owner}/{repo}/compare/{base}...{head}");
     const byName = Object.fromEntries(r.params.map((p) => [p.name, p]));
     // split('/')：owner=2、repo=3、compare=4、`{base}...{head}`=5 → base/head 共享 index 5
-    expect(byName.base).toMatchObject({ value: "{base}", index: 5 });
-    expect(byName.head).toMatchObject({ value: "{head}", index: 5 });
+    expect(byName.base).toMatchObject({ value: "", index: 5, required: true });
+    expect(byName.head).toMatchObject({ value: "", index: 5, required: true });
     // 段内模型：base=segPos 0、head=segPos 1（同段 segCount=2、分隔符 ["","...",""]）
     expect(byName.base).toMatchObject({ segPos: 0, segCount: 2, segSeparators: ["", "...", ""] });
     expect(byName.head).toMatchObject({ segPos: 1, segCount: 2, segSeparators: ["", "...", ""] });

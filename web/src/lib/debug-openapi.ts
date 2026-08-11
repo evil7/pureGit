@@ -136,15 +136,9 @@ function literalPartsOf(seg: string): string[] {
 export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
   const pathParams = ep.op.params?.filter((p) => p.in === "path") ?? [];
   const queryParams = ep.op.params?.filter((p) => p.in === "query") ?? [];
-  let url = ep.path;
-  // 常用参数默认值（repository/owner 常用占位）
-  const defaults: Record<string, string> = {
-    owner: "{owner}",
-    repo: "{repo}",
-    org: "{org}",
-  };
   // Params 表：path 行带模板段位置 index（path[n] 徽章显示，误删占位可定位）；
-  // 值默认占位符 `{name}`（或常用占位）→ buildUrlFromParams 替换。
+  // **value 恒空（必填未填状态）**——placeholder 提示 `{name}`/1 + 警告样式；
+  // URL 模板保持占位符，填值后 buildUrlFromParams 覆盖段、删空恢复占位。
   // index 取「段包含 `{name}`」的位置——兼容 compare 类 `{base}...{head}` 复合占位
   // （两个 path 参数共享同一段 index）；同时填段内模型（segPos/segCount/segSeparators）
   // ——复合段识别与渲染（单行合并多 input + 真实分隔符）的权威来源
@@ -152,19 +146,19 @@ export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
     const name = p.name;
     const segments = ep.path.split("/");
     const idx = segments.findIndex((seg) => seg.includes(`{${name}}`));
-    const placeholder = defaults[name] ?? `{${name}}`;
-    url = url.replace(`{${name}}`, placeholder);
     const { names, seps } = parsePathSeg(segments[idx]);
     const pos = names.indexOf(name);
     return {
       name,
       in: "path" as const,
-      value: placeholder,
+      value: "",
       enabled: true,
       index: idx,
       segPos: pos,
       segCount: names.length,
       segSeparators: seps,
+      required: true,
+      type: p.type,
     };
   });
   for (const p of queryParams) {
@@ -172,13 +166,21 @@ export function endpointToRequest(ep: OpenApiEndpoint): DebugRequest {
     // 空值不输出 URL，反向解析保留；**非必填 query 不自动列出**（由 ParamsTable
     // docQueryNames badge 呈现，用户点击添加）
     if (!p.required) continue;
-    params.push({ name: p.name, in: "query" as const, value: "", enabled: true, explicit: false });
+    params.push({
+      name: p.name,
+      in: "query" as const,
+      value: "",
+      enabled: true,
+      explicit: false,
+      required: true,
+      type: p.type,
+    });
   }
   const method = ep.method.toUpperCase() as DebugRequest["method"];
   return {
     protocol: "rest",
     method,
-    url,
+    url: ep.path, // 模板占位路径（path 参数 value 空 + placeholder 提示；填值覆盖段）
     query: "",
     variables: "",
     headers: [],

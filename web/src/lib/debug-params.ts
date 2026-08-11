@@ -39,11 +39,13 @@ export function parseQuery(qs: string): [string, string][] {
  * - path：按段位置 `index` 覆盖 URL 对应段（不依赖 `{name}` 占位符——占位符被替换后
  *   仍正确联动）；**段内含 `{name}` 子占位（复合段 `{base}...{head}`）→ 只替换该子串**
  *   （共享 index 的多个 path 参数互不破坏，其余部分保留），否则整体覆盖段；
- *   值空或段缺失 → 保留当前段；值为 `{name}` 占位符 → 保持占位
+ *   **值空（必填删空）→ doc 提供模板时恢复模板占位**（`/orgs/evil7/repos` 删空 org →
+ *   `/orgs/{org}/repos`；复合段空值恢复该参数子占位 `{base}`，其余保留）；无 doc
+ *   （自定义 URL）→ 保留当前段；段缺失 → 不动
  * - **复合占位段分次编辑**：先填 base（段变 `main...{head}`）后再填 head 时，段已不含
  *   `{base}` 子串 → 子串替换失效、整体覆盖会毁掉其余子占位。**doc 提供模板时，复合段
- *   直接从模板段重建**（模板永远含全部 `{name}`，各行值替换各自子占位；缺失行保留
- *   子占位）；无 doc（自定义 URL）维持子串替换/整体覆盖语义
+ *   直接从模板段重建**（模板永远含全部 `{name}`，各行值替换各自子占位；缺失/空值行
+ *   保留子占位）；无 doc（自定义 URL）维持子串替换/整体覆盖语义
  * - query：enabled 即输出——值非空 → `name=value`；值空但 explicit（显式存在）→ 裸名
  *   `name`（`?aa&bb` 无值 query 保持不丢）；disabled 或空值非显式 → 不输出
  */
@@ -52,10 +54,7 @@ export function buildUrlFromParams(url: string, params: DebugParam[], doc?: DocP
   const segments = pathPart.split("/");
   const pathRows = params.filter(
     (p): p is DebugParam & { index: number } =>
-      p.in === "path" &&
-      p.enabled === true &&
-      typeof p.index === "number" &&
-      (p.value?.trim() ?? "") !== "",
+      p.in === "path" && p.enabled === true && typeof p.index === "number",
   );
 
   // 复合占位段（doc 模板段含多个占位符）：从模板段重建——模板永远含全部 `{name}` 子占位，
@@ -71,7 +70,7 @@ export function buildUrlFromParams(url: string, params: DebugParam[], doc?: DocP
       for (const row of pathRows) {
         if (row.index !== idx) continue;
         const v = row.value?.trim() ?? "";
-        seg = seg.split(`{${row.name}}`).join(v);
+        seg = seg.split(`{${row.name}}`).join(v || `{${row.name}}`); // 空值恢复子占位
       }
       segments[idx] = seg;
     }
@@ -82,6 +81,17 @@ export function buildUrlFromParams(url: string, params: DebugParam[], doc?: DocP
     const v = p.value?.trim() ?? "";
     const seg = segments[p.index];
     if (seg === undefined || seg === "") continue; // 段缺失（URL 被改短/改路径）→ 不动
+    if (!v) {
+      // 空值（必填删空）→ doc 提供模板时恢复模板占位（URL 回占位态，方便重填）
+      if (doc) {
+        const tplSeg = doc.path.split("/")[p.index];
+        if (tplSeg) {
+          segments[p.index] = tplSeg;
+          continue;
+        }
+      }
+      continue; // 无 doc → 保留当前段
+    }
     const sub = `{${p.name}}`;
     if (seg.includes(sub)) {
       // 段含该参数子占位（单占位段）：替换后其余部分保留
@@ -244,10 +254,15 @@ export function syncParamsFromUrl(
             const tplSeg = doc.path.split("/")[idx];
             const vals = tplSeg ? splitCompoundUrlSeg(tplSeg, decoded) : null;
             if (vals && vals[p.name] !== undefined) {
-              return { ...p, value: vals[p.name], index: idx };
+              // 段值 = 占位符 → 未填（value 空，placeholder 提示）
+              const v = vals[p.name] === `{${p.name}}` ? "" : vals[p.name];
+              return { ...p, value: v, index: idx };
             }
           }
-          return { ...p, value: decoded, index: idx };
+          // 段值 = 模板占位符 → 未填（value 空）；实际值 → decode 回写
+          const v =
+            decoded === `{${p.name}}` || decoded === doc?.path.split("/")[idx] ? "" : decoded;
+          return { ...p, value: v, index: idx };
         } catch {
           return { ...p, value: seg, index: idx };
         }
@@ -256,13 +271,14 @@ export function syncParamsFromUrl(
     })
     .filter((p): p is DebugParam => p !== null);
 
-  // 补齐文档模板的 path 行（手写 URL 匹配端点后补锁定行；值取 URL 段实际值或占位符）
+  // 补齐文档模板的 path 行（手写 URL 匹配端点后补锁定行；值取 URL 段实际值或空——
+  // 占位符段 → 未填（value 空，placeholder 提示））
   for (const d of docPathParams) {
     if (!doc) break; // docPathParams 非空即 doc 存在（TS 无法推断，防御）
     if (next.some((p) => p.in === "path" && p.name === d.name)) continue;
     const seg = segments[d.index];
     const placeholder = `{${d.name}}`;
-    let value = seg && seg !== placeholder ? seg : placeholder;
+    let value = seg && seg !== placeholder ? seg : "";
     // 复合占位补齐行：按模板段切分取该参数子串（`main...dev` → base 行 "main"）
     if (seg && seg !== placeholder) {
       const tplSeg = doc.path.split("/")[d.index];
@@ -273,7 +289,9 @@ export function syncParamsFromUrl(
         decoded = seg;
       }
       const vals = tplSeg ? splitCompoundUrlSeg(tplSeg, decoded) : null;
-      if (vals && vals[d.name] !== undefined) value = vals[d.name];
+      if (vals && vals[d.name] !== undefined) {
+        value = vals[d.name] === placeholder ? "" : vals[d.name];
+      }
     }
     next.push({
       name: d.name,
@@ -284,6 +302,7 @@ export function syncParamsFromUrl(
       segPos: d.segPos,
       segCount: d.segCount,
       segSeparators: d.segSeparators,
+      required: true, // path 必填（补齐行同锁定语义；type 无文档信息 → 占位兜底 {name}）
     });
   }
 

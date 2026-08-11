@@ -57,6 +57,12 @@ export interface DebugParam {
    *  （文档参数自动转为待选 badge）。false = 编辑中行（端点文档填充 / 手动添加），
    *  空值不输出 URL，反向解析保留（不因 URL 无此 key 而移除） */
   explicit?: boolean;
+  /** 必填标记（path 恒必填；query 仅 required query 自动行带 true）——锁定行语义：
+   *  checkbox 恒开、key 只读、操作列 Lock 不可删除；**未填值时警告样式 + 占位提示** */
+  required?: boolean;
+  /** OpenAPI 参数类型（string/integer/number/boolean/array…；来自 op.params.type）——
+   *  必填未填时的占位提示：数字类 → `1`，其余 → `{name}` */
+  type?: string;
 }
 
 /** REST 请求数据类型（快速切换发送内容格式；form-urlencoded/form-data 均走表格） */

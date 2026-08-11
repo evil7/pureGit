@@ -173,12 +173,20 @@ describe(`全量产物（${tags.length} tag / ${endpoints.length} 端点）`, ()
           expect(p.segCount, `${id} ${p.name} segCount`).toBe(names.length);
           expect(p.segSeparators, `${id} ${p.name} seps`).toEqual(seps);
         }
+        // path 行：required=true（path 恒必填）+ type 与文档一致
+        for (const p of r.params.filter((x) => x.in === "path")) {
+          expect(p.required, `${id} ${p.name} required`).toBe(true);
+          const docP = pathParams.find((x) => x.name === p.name);
+          expect(p.type, `${id} ${p.name} type`).toBe(docP?.type);
+        }
         // query 行数 == 文档 **required** query 数（非必填不自动填行，badge 呈现）；
-        // 皆 explicit=false 空值
+        // 皆 explicit=false 空值 + required=true + type 与文档一致
         const reqQueries = queryParams.filter((q) => q.required);
         expect(r.params.filter((x) => x.in === "query")).toHaveLength(reqQueries.length);
         for (const q of r.params.filter((x) => x.in === "query")) {
-          expect(q).toMatchObject({ value: "", explicit: false });
+          expect(q).toMatchObject({ value: "", explicit: false, required: true });
+          const docQ = queryParams.find((x) => x.name === q.name);
+          expect(q.type, `${id} ${q.name} type`).toBe(docQ?.type);
         }
       });
 
@@ -223,7 +231,7 @@ describe(`全量产物（${tags.length} tag / ${endpoints.length} 端点）`, ()
         const outPaths = out.filter((p) => p.in === "path");
         expect(outPaths.map((p) => p.name).sort()).toEqual(tpl.map((t) => t.name).sort());
         // path 行段模型一致（补缺失/同步分支都带 segPos/segCount/segSeparators——
-        // 复合段合并渲染依赖；历史 bug：补齐行只带 name/index 导致合并失效）
+        // 复合段合并渲染依赖；历史 bug：补齐行只带 name/index 导致合并失效）+ required=true
         for (const p of outPaths) {
           const seg = e.path.split("/")[p.index ?? -1];
           const { names, seps } = parsePathSeg(seg);
@@ -231,6 +239,7 @@ describe(`全量产物（${tags.length} tag / ${endpoints.length} 端点）`, ()
           expect(p.segPos, `${id} ${p.name} segPos`).toBe(pos);
           expect(p.segCount, `${id} ${p.name} segCount`).toBe(names.length);
           expect(p.segSeparators, `${id} ${p.name} seps`).toEqual(seps);
+          expect(p.required, `${id} ${p.name} required`).toBe(true);
         }
         // query 行集合 == 文档 **required** query 集（编辑中行保留；非必填由 badge 呈现）
         const outQueries = out.filter((p) => p.in === "query");

@@ -421,8 +421,11 @@ export function RequestEditor({
           </div>
         )}
         {reqTab === "body" && req.protocol === "rest" && (
-          /* Body：类型选项栏在 tabs 右侧；none 提示；form 表格；json/text 编辑器（fill 撑满） */
-          <div className="flex min-h-full flex-col p-2">
+          /* Body：类型选项栏在 tabs 右侧；none 提示；form 表格；json/text 编辑器（fill 撑满）
+             h-full min-h-0（非 min-h-full）：外层 scroll 容器高度确定 → 本容器 height:100% 确定 →
+             CodeEditor 外层 flex-1 → cm-host flex-1 → cm-editor height:100% 才能解析撑满
+             （min-h-full 只给 min-height 不给 height，flex 高度链 indeterminate → cm-editor 塌陷成内容高） */
+          <div className="flex h-full min-h-0 flex-col p-2">
             {req.bodyType === "none" ? (
               <p className="px-1 py-2 text-[11px] text-muted-foreground">{t("body.noneHint")}</p>
             ) : req.bodyType === "form-urlencoded" || req.bodyType === "form-data" ? (
@@ -461,8 +464,9 @@ export function RequestEditor({
         )}
         {reqTab === "query" && req.protocol === "graphql" && (
           /* GraphQL 查询体（schema 就绪后挂载智能补全 + 语法诊断；
-             overflow-visible 防 tooltip 裁剪；relative z-10 防诊断框向上被 tabs 行遮挡） */
-          <div className="flex min-h-full flex-col p-2">
+             overflow-visible 防 tooltip 裁剪；relative z-10 防诊断框向上被 tabs 行遮挡）
+             h-full min-h-0：确定高度链（同 Body 注释），cm-editor 撑满 */
+          <div className="flex h-full min-h-0 flex-col p-2">
             <CodeEditor
               value={req.query}
               onChange={(v) => set({ query: v })}
@@ -476,8 +480,9 @@ export function RequestEditor({
           </div>
         )}
         {reqTab === "variables" && req.protocol === "graphql" && (
-          /* GraphQL Variables（fill 撑满；overflow-visible + relative z-10 防 tooltip 裁剪/遮挡） */
-          <div className="flex min-h-full flex-col p-2">
+          /* GraphQL Variables（fill 撑满；overflow-visible + relative z-10 防 tooltip 裁剪/遮挡）
+             h-full min-h-0：确定高度链（同 Body 注释），cm-editor 撑满 */
+          <div className="flex h-full min-h-0 flex-col p-2">
             <CodeEditor
               value={req.variables}
               onChange={(v) => set({ variables: v })}

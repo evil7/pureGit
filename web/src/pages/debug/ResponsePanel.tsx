@@ -193,10 +193,12 @@ export function ResponsePanel({
                   />
                 </div>
               ) : (
-                <div className="relative">
+                /* raw 态：pre 撑满响应内容区（min-h-full——内容少时占满容器，
+                   内容多时自然撑高、外层 overflow-auto 滚动），右上角复制按钮 */
+                <div className="relative h-full min-h-0">
                   <pre
                     className={cn(
-                      "m-0 px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-all",
+                      "m-0 min-h-full px-3 py-2 font-mono text-xs leading-5 whitespace-pre-wrap break-all",
                       !result.ok && "text-destructive",
                     )}
                   >

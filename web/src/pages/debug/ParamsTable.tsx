@@ -6,9 +6,12 @@
  * - **类型胶囊**：仅 key 输入框用 `InputGroup` + `InputGroupAddon align="inline-end"`
  *   将胶囊放在输入框后方（框内右侧）——path → `path[n]`（n = split('/') 段索引，
  *   误删占位可快速定位取值位置）；query → `query`。其余单元格保持纯 Input。
- * - **必填（path）**：checkbox 恒开不可编辑，name 只读，**操作列 Lock 图标**（不可删除）
- *   ——与请求头必填锁定行同语义
- * - **选填（query）**：checkbox 可开关，name 可编辑，**操作列 X 删除按钮**（可增删）；
+ * - **必填（path + required query）**：checkbox 恒开不可编辑，name 只读，**操作列 Lock 图标**
+ *   （不可删除）——与请求头必填锁定行同语义。**必填未填值（value 空）→ 输入框警告样式**
+ *   （红色边框 + 浅红底）+ placeholder 占位提示（字符串类 `{name}`、数字类 `1`）；
+ *   删空不再自动补回 `{key}` 文本——placeholder 提示代替，URL 由 buildUrlFromParams
+ *   恢复模板占位（`/orgs/{org}/repos`）
+ * - **选填（query 非必填）**：checkbox 可开关，name 可编辑，**操作列 X 删除按钮**（可增删）；
  *   删除/添加按钮与 KeyValueTable 同款 `Button size="icon" variant="ghost" h-6 w-6`，
  *   添加行同为表格内 colSpan 行（靠左与 checkbox 槽对齐）
  *
@@ -70,6 +73,17 @@ function compoundKeyLabel(group: DebugParam[]): string {
     label += g.name;
   });
   return label;
+}
+
+/** 必填未填时的占位提示：数字类 → `1`，其余 → `{name}`（需求：path/query 必填删空显示占位） */
+function requiredPlaceholder(p: DebugParam): string {
+  if (p.type === "integer" || p.type === "number") return "1";
+  return `{${p.name}}`;
+}
+
+/** 必填未填（value 空）→ 输入框警告样式（红色边框 + focus ring） */
+function requiredMissing(p: DebugParam): boolean {
+  return p.required === true && (p.value?.trim() ?? "") === "";
 }
 
 export function ParamsTable({ t, rows, onChange, docQueryNames }: ParamsTableProps) {
@@ -171,11 +185,20 @@ export function ParamsTable({ t, rows, onChange, docQueryNames }: ParamsTablePro
                         <Input
                           value={g.value}
                           onChange={(e) => {
-                            const v = e.target.value;
-                            updateRef(g, { value: v.trim() === "" ? `{${g.name}}` : v });
+                            // 复合段必填删空 → 清空 value（placeholder 提示；URL 由
+                            // buildUrlFromParams 恢复该参数子占位）
+                            updateRef(g, { value: e.target.value });
                           }}
-                          placeholder={t("params.valuePlaceholder")}
-                          className="h-7 min-w-0 flex-1 font-mono text-xs"
+                          placeholder={
+                            requiredMissing(g)
+                              ? requiredPlaceholder(g)
+                              : t("params.valuePlaceholder")
+                          }
+                          className={cn(
+                            "h-7 min-w-0 flex-1 font-mono text-xs",
+                            requiredMissing(g) &&
+                              "border-destructive/70 bg-destructive/5 focus-visible:ring-destructive/30",
+                          )}
                         />
                       </div>
                     ))}
@@ -193,7 +216,9 @@ export function ParamsTable({ t, rows, onChange, docQueryNames }: ParamsTablePro
             ) : (
               (() => {
                 const p = rows[item.idx];
-                const locked = p.in === "path"; // path 必填锁定；query 选填可删
+                // 锁定：path 必填 + required query（不可删除、checkbox 恒开、key 只读）
+                const locked = p.in === "path" || p.required === true;
+                const missing = requiredMissing(p); // 必填未填 → 警告样式 + 占位提示
                 return (
                   <tr
                     key={`${p.in}-${p.name}-${item.idx}`}
@@ -212,7 +237,7 @@ export function ParamsTable({ t, rows, onChange, docQueryNames }: ParamsTablePro
                         />
                       </div>
                     </td>
-                    {/* key：InputGroup 内嵌类型胶囊（inline-end 框后）；path 只读 */}
+                    {/* key：InputGroup 内嵌类型胶囊（inline-end 框后）；锁定行只读 */}
                     <td className="py-1 pr-1.5">
                       <InputGroup className="h-7">
                         <InputGroupInput
@@ -227,19 +252,24 @@ export function ParamsTable({ t, rows, onChange, docQueryNames }: ParamsTablePro
                         </InputGroupAddon>
                       </InputGroup>
                     </td>
-                    {/* value：普通 Input（path 填真实值替换占位；query 拼 query string）
-                      必填 path 删空 → 自动补回 {name} 占位符（URL 回到占位状态，方便重填） */}
+                    {/* value：path 填真实值替换占位；query 拼 query string。
+                        必填（path/required query）删空 → value 清空 + placeholder 显示
+                        {name}/1（URL 由 buildUrlFromParams 恢复模板占位）+ 警告样式 */}
                     <td className="py-1 pr-1.5">
                       <Input
                         value={p.value}
                         onChange={(e) => {
-                          const v = e.target.value;
-                          update(item.idx, {
-                            value: locked && v.trim() === "" ? `{${p.name}}` : v,
-                          });
+                          // 删空不再自动补回 {key}（placeholder 提示代替）；显式行空值保留
+                          update(item.idx, { value: e.target.value });
                         }}
-                        placeholder={t("params.valuePlaceholder")}
-                        className="h-7 w-full font-mono text-xs"
+                        placeholder={
+                          missing ? requiredPlaceholder(p) : t("params.valuePlaceholder")
+                        }
+                        className={cn(
+                          "h-7 w-full font-mono text-xs",
+                          missing &&
+                            "border-destructive/70 bg-destructive/5 focus-visible:ring-destructive/30",
+                        )}
                       />
                     </td>
                     {/* 操作：必填 Lock 占位（同请求头锁定行）；选填 X 删除按钮（同请求头用户行） */}

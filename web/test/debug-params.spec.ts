@@ -101,7 +101,7 @@ const ORGS_REPOS_DOC: DocParams = {
  */
 function docRows(): DebugParam[] {
   return [
-    { name: "org", in: "path", value: "{org}", enabled: true, index: 2 },
+    { name: "org", in: "path", value: "", enabled: true, index: 2, required: true },
     { name: "type", in: "query", value: "", enabled: true, explicit: false },
     { name: "sort", in: "query", value: "", enabled: true, explicit: false },
     { name: "direction", in: "query", value: "", enabled: true, explicit: false },
@@ -174,6 +174,31 @@ describe("buildUrlFromParams（正向：参数 → URL）", () => {
       { name: "org", in: "path", value: "x", enabled: true, index: 9 },
     ];
     expect(buildUrlFromParams("/orgs/evil7/repos", missing)).toBe("/orgs/evil7/repos");
+  });
+  it("path 空值 + doc 提供 → 恢复模板占位（必填删空 URL 回占位态，需求 2）", () => {
+    const doc: DocParams = { path: "/orgs/{org}/repos", queryNames: [] };
+    const empty: DebugParam[] = [{ name: "org", in: "path", value: "", enabled: true, index: 2 }];
+    expect(buildUrlFromParams("/orgs/evil7/repos", empty, doc)).toBe("/orgs/{org}/repos");
+    // 复合段空值 → 恢复该参数子占位（其余保留）
+    const cmpDoc: DocParams = {
+      path: "/repos/{owner}/{repo}/compare/{base}...{head}",
+      queryNames: [],
+    };
+    const rows: DebugParam[] = [
+      { name: "base", in: "path", value: "", enabled: true, index: 5 },
+      { name: "head", in: "path", value: "dev", enabled: true, index: 5 },
+    ];
+    expect(buildUrlFromParams("/repos/{owner}/{repo}/compare/main...dev", rows, cmpDoc)).toBe(
+      "/repos/{owner}/{repo}/compare/{base}...dev",
+    );
+    // 全部空 → 整段回模板占位
+    const allEmpty: DebugParam[] = [
+      { name: "base", in: "path", value: "", enabled: true, index: 5 },
+      { name: "head", in: "path", value: "", enabled: true, index: 5 },
+    ];
+    expect(buildUrlFromParams("/repos/{owner}/{repo}/compare/main...dev", allEmpty, cmpDoc)).toBe(
+      "/repos/{owner}/{repo}/compare/{base}...{head}",
+    );
   });
   it("query 值非空 → name=value；空值显式 → 裸名 name（?aa&bb 循环不丢）", () => {
     const rows: DebugParam[] = [
@@ -304,13 +329,13 @@ describe("syncParamsFromUrl（反向：URL → 参数）", () => {
     // 排序：URL 中的 bb 在前，manual 排末尾
     expect(out.map((p) => p.name)).toEqual(["bb", "manual"]);
   });
-  it("path：按 index 同步 URL 段值（占位段 → 占位符；实际值 → decode 回写）", () => {
+  it("path：按 index 同步 URL 段值（占位段 → value 空未填；实际值 → decode 回写）", () => {
     const out = syncParamsFromUrl(docRows(), "/orgs/evil7/repos?type=all", ORGS_REPOS_DOC);
     const org = out.find((p) => p.name === "org");
-    expect(org).toMatchObject({ value: "evil7", index: 2 });
-    // 占位段
+    expect(org).toMatchObject({ value: "evil7", index: 2, required: true });
+    // 占位段 → 未填（value 空 + placeholder 提示）
     const out2 = syncParamsFromUrl(docRows(), "/orgs/{org}/repos", ORGS_REPOS_DOC);
-    expect(out2.find((p) => p.name === "org")).toMatchObject({ value: "{org}" });
+    expect(out2.find((p) => p.name === "org")).toMatchObject({ value: "", index: 2 });
   });
   it("path：doc 模板补缺失行 / 移多余行（path 行只能来自端点）", () => {
     // 多余 path 行（不属于模板）→ 移除
@@ -320,13 +345,16 @@ describe("syncParamsFromUrl（反向：URL → 参数）", () => {
     ];
     const out = syncParamsFromUrl(withExtra, "/orgs/evil7/repos", ORGS_REPOS_DOC);
     expect(out.some((p) => p.name === "extra")).toBe(false);
-    // 缺失 path 行（手写 URL 匹配端点）→ 补齐
+    // 缺失 path 行（手写 URL 匹配端点）→ 补齐（实际值 → value 填；占位 → value 空）
     const out2 = syncParamsFromUrl([], "/orgs/microsoft/repos", ORGS_REPOS_DOC);
     expect(out2.find((p) => p.name === "org")).toMatchObject({
       value: "microsoft",
       index: 2,
       enabled: true,
+      required: true,
     });
+    const out3 = syncParamsFromUrl([], "/orgs/{org}/repos", ORGS_REPOS_DOC);
+    expect(out3.find((p) => p.name === "org")).toMatchObject({ value: "", required: true });
   });
   it("表格展示排序：path 在前按 index 升序；query 按 URL 出现顺序；不在 URL 排末尾", () => {
     const rows: DebugParam[] = [
