@@ -33,6 +33,7 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { cn } from "@/lib/utils";
 import { KeyValueTable } from "./KeyValueTable";
 import { ParamsTable } from "./ParamsTable";
+import { GqlVariablesPanel } from "./GqlVariablesPanel";
 import { GraphQLLogo } from "./GraphQLLogo";
 import { buildUrlFromParams, syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
 import { METHOD_COLOR, REST_API_BASE, normalizeRestUrl, CT_BY_BODY } from "./rest-meta";
@@ -92,6 +93,8 @@ export function RequestEditor({
   // ── 请求 Tab（Postman 风格：REST Params/Headers/Body；GraphQL Query/Variables/Headers） ──
   type ReqTab = "params" | "headers" | "body" | "query" | "variables";
   const [reqTab, setReqTab] = useState<ReqTab>(req.protocol === "graphql" ? "query" : "headers");
+  /** GraphQL 变量校验错误总数（GqlVariablesPanel 上抛；驱动 Variables tab 红色徽标） */
+  const [varsError, setVarsError] = useState(0);
   /** 参数 tab 显示条件：匹配到端点文档且文档含需设定的参数（path/query）——
    *  未匹配（自定义 URL）或无参数 → 不显示参数 tab（仅请求头/请求数据） */
   const hasDocParams =
@@ -360,6 +363,12 @@ export function RequestEditor({
             )}
           >
             {tab.label}
+            {/* GraphQL 变量校验错误徽标（>0 时红色计数，任何 tab 下可见） */}
+            {tab.value === "variables" && req.protocol === "graphql" && varsError > 0 && (
+              <span className="ml-1 inline-flex min-w-3.5 items-center justify-center rounded-full bg-destructive/10 px-1 text-[9px] font-semibold leading-4 text-destructive">
+                {varsError}
+              </span>
+            )}
           </button>
         ))}
         {/* 请求数据类型选项栏：tabs 右侧（JSON/FormUrl/FormData/Raw；点选自动设置 Content-Type） */}
@@ -516,17 +525,15 @@ export function RequestEditor({
           </div>
         )}
         {reqTab === "variables" && req.protocol === "graphql" && (
-          /* GraphQL Variables（fill 撑满；overflow-visible + relative z-10 防 tooltip 裁剪/遮挡）
-             h-full min-h-0：确定高度链（同 Body 注释），cm-editor 撑满 */
-          <div className="flex h-full min-h-0 flex-col p-2">
-            <CodeEditor
-              value={req.variables}
+          /* GraphQL Variables（智能面板：自动骨架 + 实时校验条 + 枚举下拉 + 编辑器） */
+          <div className="p-2">
+            <GqlVariablesPanel
+              t={t}
+              gqlSchema={gqlSchema}
+              query={req.query}
+              variables={req.variables}
               onChange={(v) => set({ variables: v })}
-              path="variables.json"
-              placeholder={t("variablesPlaceholder")}
-              fill
-              toolbar={false}
-              className="relative z-10 flex-1 overflow-visible rounded-md"
+              onErrorsChange={setVarsError}
             />
           </div>
         )}
