@@ -80,13 +80,6 @@ interface GqlVariablesPanelProps {
   onErrorsChange: (count: number) => void;
 }
 
-/** 校验错误分类徽标（missing/extra/type-mismatch 三色区分） */
-const KIND_STYLE: Record<GqlVariableError["kind"], string> = {
-  missing: "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-  extra: "bg-sky-500/10 text-sky-600 dark:text-sky-400",
-  "type-mismatch": "bg-destructive/10 text-destructive",
-};
-
 /** 行值（文本）→ JSON 值：按声明类型转换；null 类型（自定义行）宽松 JSON.parse */
 function textToJsonValue(
   text: string,
@@ -311,17 +304,19 @@ export function GqlVariablesPanel({
     }
     return out;
   }, [defs, parsed, rows]);
-  const missing = errors.filter((e) => e.kind === "missing");
-  const extra = errors.filter((e) => e.kind === "extra");
-  const typeErrors = errors.filter((e) => e.kind === "type-mismatch");
 
   // 错误总数上抛（tab 徽标）；0 时也上抛（清空旧徽标）
   useEffect(() => {
     onErrorsChange(errors.length);
   }, [errors.length, onErrorsChange]);
 
-  /** 必填空值 → 警告样式（对齐 ParamsTable requiredMissing） */
-  const requiredMissing = (row: GqlVarRow): boolean => row.required && row.value.trim() === "";
+  /** 行值输入框警告（唯一提示手段：红色边框 + 浅红底——必填缺失 / 值格式错误） */
+  const rowHasError = (row: GqlVarRow): boolean => {
+    if (row.enabled === false || row.name.trim() === "") return false;
+    if (row.required && row.value.trim() === "") return true; // 必填缺失
+    if (row.value.trim() === "") return false; // 可选空值不警告
+    return !textToJsonValue(row.value, row.type).ok; // 值格式错误（type-mismatch）
+  };
 
   return (
     <div className="flex h-full min-h-0 flex-col">
@@ -393,7 +388,7 @@ export function GqlVariablesPanel({
                           placeholder={valuePlaceholder(r)}
                           className={cn(
                             "h-7 w-full font-mono text-xs",
-                            requiredMissing(r) &&
+                            rowHasError(r) &&
                               "border-destructive bg-destructive/5 focus-visible:ring-destructive/40",
                           )}
                         />
@@ -471,7 +466,11 @@ export function GqlVariablesPanel({
                           value={r.value}
                           onChange={(e) => updateRow(i, { value: e.target.value })}
                           placeholder={valuePlaceholder(r)}
-                          className="h-7 w-full font-mono text-xs"
+                          className={cn(
+                            "h-7 w-full font-mono text-xs",
+                            rowHasError(r) &&
+                              "border-destructive bg-destructive/5 focus-visible:ring-destructive/40",
+                          )}
                         />
                       )}
                     </td>
@@ -538,72 +537,6 @@ export function GqlVariablesPanel({
             </tr>
           </tbody>
         </table>
-      )}
-
-      {/* 校验条：通过 ✅ / 有问题 ⚠（分类计数，点击展开错误明细） */}
-      {defs !== null && (defs.length > 0 || rows.some((r) => r.name.trim())) && (
-        <div className="px-1 pb-1.5 pt-1">
-          <details className="group">
-            <summary
-              className={cn(
-                "flex cursor-pointer list-none items-center gap-1.5 rounded px-1.5 py-1 text-[10px] font-medium",
-                errors.length === 0
-                  ? "bg-emerald-500/10 text-emerald-600 dark:text-emerald-400"
-                  : "bg-amber-500/10 text-amber-600 dark:text-amber-400",
-              )}
-            >
-              <span>{errors.length === 0 ? "✓" : "⚠"}</span>
-              <span>
-                {errors.length === 0
-                  ? t("variables.valid")
-                  : t("variables.errors", { n: errors.length })}
-              </span>
-              {errors.length > 0 && (
-                <span className="ml-auto flex gap-1">
-                  {missing.length > 0 && (
-                    <span className="rounded bg-amber-500/15 px-1">
-                      {t("variables.missing")} {missing.length}
-                    </span>
-                  )}
-                  {extra.length > 0 && (
-                    <span className="rounded bg-sky-500/15 px-1">
-                      {t("variables.extra")} {extra.length}
-                    </span>
-                  )}
-                  {typeErrors.length > 0 && (
-                    <span className="rounded bg-destructive/15 px-1">
-                      {t("variables.type")} {typeErrors.length}
-                    </span>
-                  )}
-                </span>
-              )}
-            </summary>
-            {errors.length > 0 && (
-              <ul className="mt-1 space-y-0.5 rounded border border-muted p-1">
-                {errors.map((e, i) => (
-                  <li key={`${e.key}-${i}`} className="flex items-start gap-1.5 text-[10px]">
-                    <span
-                      className={cn("mt-px shrink-0 rounded px-1 leading-4", KIND_STYLE[e.kind])}
-                    >
-                      {e.kind === "missing"
-                        ? t("variables.missing")
-                        : e.kind === "extra"
-                          ? t("variables.extra")
-                          : t("variables.type")}
-                    </span>
-                    <span className="font-mono text-muted-foreground">{e.key}</span>
-                    <span className="text-foreground/80">{e.message}</span>
-                  </li>
-                ))}
-              </ul>
-            )}
-          </details>
-        </div>
-      )}
-      {!parsed.ok && (
-        <p className="px-1 pb-1.5 text-[10px] text-destructive">
-          {t("variables.jsonError")}: {parsed.error}
-        </p>
       )}
     </div>
   );
