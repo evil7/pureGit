@@ -28,6 +28,7 @@ import {
   type OpenApiEndpoint,
 } from "@/lib/debug-openapi";
 import { syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
+import { buildGqlSchemaContext } from "@/lib/debug-graphql";
 import { cn } from "@/lib/utils";
 import {
   loadGqlSchema,
@@ -127,6 +128,9 @@ export default function DebugPage() {
   // ── Authorization token 行 ──
   /** 占位文本（默认 filled；identity 变化时 effect 同步更新 label） */
   const tokenPlaceholder = useMemo(() => `Bearer •••••••••• (${identityLabel})`, [identityLabel]);
+
+  // ── GraphQL 惰性字段层解析上下文（schema 就绪后构建；GqlTree 勾选树与查询生成共用） ──
+  const gqlCtx = useMemo(() => (gqlSchema ? buildGqlSchemaContext(gqlSchema) : null), [gqlSchema]);
   /** 确保请求带 Authorization 行：缺失则补 filled 占位；已有保持原样 */
   const ensureAuthRow = (r: DebugRequest): DebugRequest => {
     if (r.headers.some((h) => h.token)) return r;
@@ -326,6 +330,7 @@ export default function DebugPage() {
             onPickGqlMulti={pickGqlMulti}
             gqlEditorQuery={req.query}
             gqlSchema={gqlSchema}
+            gqlCtx={gqlCtx}
             gqlLoading={gqlLoading}
             gqlError={gqlError}
             onGqlReload={() => void loadGql(true)}

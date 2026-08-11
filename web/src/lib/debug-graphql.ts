@@ -26,13 +26,16 @@ import {
   isScalarType,
   isUnionType,
   parse,
+  print,
   type GraphQLField,
+  type GraphQLNamedType,
   type GraphQLObjectType,
   type GraphQLSchema,
   type GraphQLType,
   type IntrospectionQuery,
   type OperationDefinitionNode,
   type FieldNode,
+  type ValueNode,
 } from "graphql";
 
 const GQL_ENDPOINT = "https://api.github.com/graphql";
@@ -211,7 +214,11 @@ export interface GqlFieldNode {
   returnLabel: string;
   /** 标量/枚举返回（无子字段，模板为裸调用） */
   scalar: boolean;
-  /** 返回类型的一层子字段（对象/接口；union 无字段）——Schema 树展开浏览用 */
+  /** 返回类型最内层命名类型名（标量/枚举为自身；对象/接口/union 为内层类型名）——惰性展开与 connection 识别用 */
+  ofTypeName: string;
+  /** 返回类型是否为 connection（ofTypeName 以 Connection 结尾的对象）——勾选 nodes 自动展开元素类型用 */
+  isConnection: boolean;
+  /** 返回类型的一层子字段（对象/接口；union 无字段）——Schema 树展开浏览用，更深层由 ctx.fieldsOf 惰性取 */
   typeFields?: GqlFieldNode[];
   /** union 返回：possibleTypes 类型名列表（展开浏览显示可并集类型） */
   possibleTypes?: string[];
@@ -219,13 +226,54 @@ export interface GqlFieldNode {
   desc?: string;
 }
 
-/** 展开 NON_NULL/LIST 找到最内层命名类型 */
-function unwrapToNamed(t: GraphQLType | null): GraphQLType | null {
+/**
+ * Schema 查询上下文：惰性字段层解析（buildGqlSchemaContext 工厂，内存缓存、零网络）。
+ * 任意深度展开时按类型名即时取字段层，避免预构建整棵递归树（防无限膨胀）。
+ */
+export interface GqlSchemaContext {
+  /** query/mutation 根类型名（变量定义与顶层字段解析用） */
+  queryTypeName: string;
+  mutationTypeName: string;
+  /** 取命名类型的字段层（对象/接口 → 字段；union → 空数组；标量/枚举/未知 → undefined） */
+  fieldsOf(typeName: string): GqlFieldNode[] | undefined;
+}
+
+/**
+ * 从运行时 schema 构建惰性字段层解析上下文。fieldsOf 内部缓存各类型字段层——
+ * 展开过的类型零重复构建；未知/标量类型返回 undefined（叶子）。
+ */
+export function buildGqlSchemaContext(schema: GraphQLSchema): GqlSchemaContext {
+  const cache = new Map<string, GqlFieldNode[]>();
+  const fieldsOf = (typeName: string): GqlFieldNode[] | undefined => {
+    const hit = cache.get(typeName);
+    if (hit) return hit;
+    const t = schema.getType(typeName);
+    if (!t) return undefined;
+    if (isObjectType(t) || isInterfaceType(t)) {
+      const fields = collectFields(t as GraphQLObjectType);
+      cache.set(typeName, fields);
+      return fields;
+    }
+    if (isUnionType(t)) {
+      cache.set(typeName, []);
+      return [];
+    }
+    return undefined;
+  };
+  return {
+    queryTypeName: schema.getQueryType()?.name ?? "",
+    mutationTypeName: schema.getMutationType()?.name ?? "",
+    fieldsOf,
+  };
+}
+
+/** 展开 NON_NULL/LIST 找到最内层命名类型（剥壳后必为命名类型，供 name/ofTypeName 直接访问） */
+function unwrapToNamed(t: GraphQLType | null): GraphQLNamedType | null {
   let cur = t;
   while (cur && (isNonNullType(cur) || isListType(cur))) {
     cur = cur.ofType;
   }
-  return cur;
+  return cur as GraphQLNamedType | null;
 }
 
 /** 类型引用链 → 展示文本（Repository!、[User!]!） */
@@ -236,22 +284,27 @@ function typeLabel(t: GraphQLType | null): string {
   return t.name;
 }
 
-/** 展开浏览：字段的返回类型子字段上限（再递归一层，避免树无限膨胀） */
+/** 展开浏览：顶层字段的返回类型子字段上限（再展开一层；更深层由 UI 惰性触发） */
 const TYPE_FIELD_MAX = 30;
 
 /** 字段排序：普通字符序（不区分主键——勾选合并无隐式默认字段，`id` 无特殊地位） */
 const byName = (a: { name: string }, b: { name: string }): number => a.name.localeCompare(b.name);
 
 /**
- * 收集类型字段列表（含展开浏览所需数据）。deep=true 时附加返回类型的一层子字段
- * （typeFields）与 union possibleTypes；deep=false 仅自身字段（避免递归膨胀）。
+ * 收集类型字段列表（一层，不含递归 typeFields——深层由 ctx.fieldsOf 惰性展开）。
+ * 每个字段携带 ofTypeName/isConnection，供任意深度解析与 connection 识别。
  */
-function collectFields(type: GraphQLObjectType, deep = false): GqlFieldNode[] {
+function collectFields(type: GraphQLObjectType): GqlFieldNode[] {
   return Object.values(type.getFields())
     .sort(byName)
     .map((f: GraphQLField<unknown, unknown>) => {
       const inner = unwrapToNamed(f.type);
       const scalar = inner !== null && (isScalarType(inner) || isEnumType(inner));
+      // connection 识别：内层类型为以 Connection 结尾的对象（if 守卫显式收窄，兼容 strict 谓词链）
+      let isConnection = false;
+      if (inner !== null && isObjectType(inner)) {
+        isConnection = inner.name.endsWith("Connection");
+      }
       const node: GqlFieldNode = {
         name: f.name,
         args: f.args.map((a) => ({
@@ -261,21 +314,13 @@ function collectFields(type: GraphQLObjectType, deep = false): GqlFieldNode[] {
         })),
         returnLabel: typeLabel(f.type),
         scalar,
+        ofTypeName: inner?.name ?? "",
+        isConnection,
         deprecated: f.deprecationReason != null || undefined,
         desc: f.description?.slice(0, 100) || undefined,
       };
-      // 展开浏览数据（仅顶层字段附带；返回对象/接口 → 一层子字段，union → possibleTypes）
-      if (deep && inner !== null && !scalar) {
-        if (isObjectType(inner)) {
-          node.typeFields = collectFields(inner).slice(0, TYPE_FIELD_MAX);
-        } else if (isInterfaceType(inner)) {
-          node.typeFields = collectFields(inner as unknown as GraphQLObjectType).slice(
-            0,
-            TYPE_FIELD_MAX,
-          );
-        } else {
-          node.possibleTypes = schemaPossibleTypes(inner);
-        }
+      if (inner !== null && isUnionType(inner)) {
+        node.possibleTypes = schemaPossibleTypes(inner);
       }
       return node;
     });
@@ -294,72 +339,168 @@ export interface GqlSchemaTree {
   mutation: GqlFieldNode[];
 }
 
-/** 从运行时 schema 构建 query/mutation 顶层字段树（含展开浏览数据） */
+/**
+ * 从运行时 schema 构建 query/mutation 顶层字段树。
+ * 顶层字段附带一层 typeFields（惰性展开的浏览起点）；更深层由 GqlSchemaContext.fieldsOf 按需取。
+ */
 export function buildGqlFieldTree(schema: GraphQLSchema): GqlSchemaTree {
-  const q = schema.getQueryType();
-  const m = schema.getMutationType();
-  return {
-    query: q ? collectFields(q, true) : [],
-    mutation: m ? collectFields(m, true) : [],
-  };
+  const ctx = buildGqlSchemaContext(schema);
+  const top = (t: GraphQLObjectType | null | undefined): GqlFieldNode[] =>
+    t
+      ? collectFields(t).map((n) =>
+          n.scalar || n.possibleTypes
+            ? n
+            : {
+                ...n,
+                typeFields: ctx.fieldsOf(n.ofTypeName)?.slice(0, TYPE_FIELD_MAX),
+              },
+        )
+      : [];
+  return { query: top(schema.getQueryType()), mutation: top(schema.getMutationType()) };
 }
 
-/* ── 点按字段 → 即用查询模板 ─────────────────────────────── */
+/* ── 勾选合并 → 查询构造（递归 + 变量提取） ─────────────── */
 
-/** 参数示例值（按类型名启发式：数字/布尔 → 字面量；其余 → 字符串占位提示替换） */
-function exampleArgValue(typeLabelText: string): string {
-  const base = typeLabelText.replace(/[[\]!]/g, "");
-  if (base === "Int" || base === "Float") return "0";
-  if (base === "Boolean") return "true";
-  return '"…"';
-}
-
-/** 勾选合并的单个字段选择（root 顶层字段 + 其下勾选的子字段集） */
-export interface GqlSelection {
-  root: GqlFieldNode;
-  /** 勾选的子字段名集（对象类型恒非空——状态机不变量；标量类型恒空） */
-  children: Set<string>;
+/** 勾选集合 → 查询文档 + 变量定义/骨架（gqlMapToQueryDetailed 返回值） */
+export interface GqlQueryResult {
+  query: string;
+  /** 变量定义参数名列表（如 ["owner", "name"]）——拼接为 `($owner: String!, ...)` */
+  varDefs: string[];
+  /** 变量 JSON 骨架（变量名 → 初始值；标量/枚举/input 统一空字符串，UI 层按类型渲染辅助） */
+  varJson: Record<string, string>;
 }
 
 /**
- * 勾选合并 → 标准查询文档（AST 式构造：同操作类型多字段拼接为一个 selection set）
- *
- * `query {\n  viewer { login }\n  repository(name: "…") { id name }\n}`
- * - body = **实际勾选的子字段集**（无隐式默认字段/主键——严格「勾选什么写什么」）
- * - 标量 root（无子字段勾选）→ 裸字段调用（无 selection set）
- * - 对象 root 子字段集恒非空（勾选状态机不变量 1 保证，此处仅防御性处理）
- * - 必填参数仍给 `"…"` 内联占位（即点即用，单 tab 完成）
+ * 收集字段参数文本并提取 $var 变量定义（递归遍历时共用 defs/json 累加器）。
+ * - 值为 `$name`（变量引用）→ 变量定义 `name: 参数类型` + JSON 骨架 `name: ""`
+ * - 值为字面量 → 原样输出
  */
-export function gqlSelectionsToQuery(
-  opType: "query" | "mutation",
-  selections: GqlSelection[],
+function collectArgText(
+  field: GqlFieldNode,
+  args: Record<string, string>,
+  defs: Set<string>,
+  json: Record<string, string>,
 ): string {
-  const blocks = selections.map(({ root, children }) => {
-    const args = root.args
-      .filter((a) => a.required)
-      .map((a) => `${a.name}: ${exampleArgValue(a.typeLabel)}`)
-      .join(", ");
-    const argsStr = args ? `(${args})` : "";
-    // 严格勾选驱动：仅写入实际勾选的子字段（标量 → 无 body）
-    const body = children.size > 0 ? ` {\n    ${[...children].join("\n    ")}\n  }` : "";
-    return `  ${root.name}${argsStr}${body}`;
-  });
-  return `${opType} {\n${blocks.join("\n")}\n}`;
+  const parts: string[] = [];
+  for (const [name, value] of Object.entries(args)) {
+    if (value.startsWith("$")) {
+      const varName = value.slice(1);
+      const arg = field.args.find((a) => a.name === name);
+      if (arg) {
+        defs.add(`${varName}: ${arg.typeLabel}`);
+        json[varName] = "";
+      }
+    }
+    parts.push(`${name}: ${value}`);
+  }
+  return parts.join(", ");
+}
+
+/**
+ * 递归生成单个字段的选择文本（AST 式缩进；含变量提取累加）。
+ * `field(args) {\n  child1\n  child2 { ... }\n}`
+ */
+function nodeToQueryText(
+  ctx: GqlSchemaContext,
+  field: GqlFieldNode,
+  node: GqlSelectionNode,
+  indent: number,
+  defs: Set<string>,
+  json: Record<string, string>,
+): string {
+  const argsStr = collectArgText(field, node.args, defs, json);
+  const children = node.children ?? {};
+  const keys = Object.keys(children);
+  let text = `${field.name}${argsStr ? `(${argsStr})` : ""}`;
+  if (keys.length > 0) {
+    const childFields = ctx.fieldsOf(field.ofTypeName) ?? [];
+    const body: string[] = [];
+    for (const [childName, childNode] of Object.entries(children)) {
+      const cf = childFields.find((f) => f.name === childName);
+      if (!cf) continue; // 非 schema 字段（防御）
+      body.push("  ".repeat(indent) + nodeToQueryText(ctx, cf, childNode, indent + 1, defs, json));
+    }
+    text += ` {\n${body.join("\n")}\n${"  ".repeat(indent - 1)}}`;
+  }
+  return text;
+}
+
+/**
+ * 勾选集合 → 查询文档 + 变量定义/JSON 骨架（同操作类型多字段拼接为单个 selection set）。
+ *
+ * `query($owner: String!) {\n  repository(owner: $owner) {\n    id\n  }\n}`
+ * - body = 实际勾选的子字段（无隐式默认字段/主键）
+ * - 必填参数 → `$var` 变量引用（不再内联字面量占位——非法 GraphQL 的根治）
+ */
+export function gqlMapToQueryDetailed(
+  ctx: GqlSchemaContext,
+  map: GqlSelectionMap,
+  opType: "query" | "mutation",
+): GqlQueryResult {
+  const defs = new Set<string>();
+  const json: Record<string, string> = {};
+  const rootTypeName = opType === "query" ? ctx.queryTypeName : ctx.mutationTypeName;
+  const rootFields = ctx.fieldsOf(rootTypeName) ?? [];
+  const blocks: string[] = [];
+  for (const [key, node] of Object.entries(map)) {
+    if (!key.startsWith(`${opType}:`)) continue;
+    const rootName = key.slice(opType.length + 1);
+    const root = rootFields.find((f) => f.name === rootName);
+    if (!root) continue; // 非 schema 字段（防御）
+    blocks.push("  " + nodeToQueryText(ctx, root, node, 2, defs, json));
+  }
+  const varDefStr = defs.size > 0 ? `(${[...defs].map((d) => `$${d}`).join(", ")})` : "";
+  return {
+    query: blocks.length > 0 ? `${opType}${varDefStr} {\n${blocks.join("\n")}\n}` : "",
+    varDefs: [...defs],
+    varJson: json,
+  };
+}
+
+/** 勾选集合 → 查询文本（空选择 → ""；严格「只有勾选才写入」） */
+export function gqlMapToQuery(
+  ctx: GqlSchemaContext,
+  map: GqlSelectionMap,
+  opType: "query" | "mutation",
+): string {
+  return gqlMapToQueryDetailed(ctx, map, opType).query;
 }
 
 /**
  * 从查询文本提取顶层字段选择集（双向同步反向通道：编辑器手写 → 勾选状态）
  *
  * `query { viewer { id login } repository(name: "x") { id } }`
- * → `{ opType: "query", fields: [{ name: "viewer", children: ["id", "login"] },
- *      { name: "repository", children: ["id"] }] }`
+ * → `{ opType: "query", fields: [{ name: "viewer", children: [{ name: "id", ... }] }] }`
+ * - 任意深度递归（Field kind 过滤，fragment/inline fragment 跳过）
+ * - 参数值用 graphql print 原样还原（$var 引用 / 字面量）
  * - 仅取第一个 OperationDefinition（GraphQL 单操作约定）
  * - 语法错误 → null（不反向同步，避免勾选错乱）；空文本 → `{ opType: "query", fields: [] }`
  *   （清空编辑器 → 清空勾选，严格双向同步）
  */
+export interface ParsedField {
+  name: string;
+  /** 参数名 → 值文本（$var 引用或字面量，print 还原） */
+  args: Record<string, string>;
+  children: ParsedField[];
+}
+
+function parseFieldNode(f: FieldNode): ParsedField {
+  const args: Record<string, string> = {};
+  for (const a of f.arguments ?? []) {
+    args[a.name.value] = print(a.value as ValueNode);
+  }
+  return {
+    name: f.name.value,
+    args,
+    children: (f.selectionSet?.selections ?? [])
+      .filter((s): s is FieldNode => s.kind === "Field")
+      .map(parseFieldNode),
+  };
+}
+
 export function parseQueryFieldSelections(
   query: string,
-): { opType: "query" | "mutation"; fields: { name: string; children: string[] }[] } | null {
+): { opType: "query" | "mutation"; fields: ParsedField[] } | null {
   if (!query?.trim()) return { opType: "query", fields: [] };
   try {
     const doc = parse(query);
@@ -368,145 +509,322 @@ export function parseQueryFieldSelections(
     );
     if (!def || !def.selectionSet) return null;
     const opType = def.operation === "mutation" ? "mutation" : "query";
-    const fields = (def.selectionSet.selections ?? [])
-      .filter((s): s is FieldNode => s.kind === "Field")
-      .map((f) => ({
-        name: f.name.value,
-        children: (f.selectionSet?.selections ?? [])
-          .filter((s): s is FieldNode => s.kind === "Field")
-          .map((c) => c.name.value),
-      }));
-    return { opType, fields };
+    return {
+      opType,
+      fields: (def.selectionSet.selections ?? [])
+        .filter((s): s is FieldNode => s.kind === "Field")
+        .map(parseFieldNode),
+    };
   } catch {
     return null;
   }
 }
 
-/* ── 勾选状态机（GqlTree 勾选合并的纯函数核心，UI 无状态逻辑，全量可测） ── */
+/* ── 勾选状态机（嵌套树，纯函数核心，UI 无状态逻辑，全量可测） ── */
 
 /**
- * 勾选条目：同操作类型共享 map；children 恒为「实际勾选的子字段名集」。
+ * 勾选树节点：对象字段 → children 嵌套；标量字段 → 叶。
+ * args = 已设定参数（必填参数勾选时自动提取为 `$name` 变量引用；可选参数用户手填字面量）。
  *
- * 状态不变量（推演基线，toggle/normalize/parse 均维持；测试全量覆盖）：
- * - **不变量 1**：对象类型 root → entry 存在 ⇔ children.size > 0
- *   （勾选父级 = 全选可见子字段；取消最后一个子项 = 移除整个 entry）
- * - **不变量 2**：标量类型 root → children 恒空（无子字段），entry 存在即勾选
- * - **不变量 3**：生成 query 仅含实际勾选内容（无隐式默认字段/主键——不主键区分）
- * - **不变量 4**：父级三态 = 无 entry→unchecked / children 全满→checked /
- *   部分勾选→indeterminate；标量恒 checked（有 entry）
- * - **不变量 5**：正反向收敛——gqlMapToQuery 产物经 parseQueryFieldSelections +
+ * 状态不变量（toggle/normalize/parse 均维持；测试全量覆盖）：
+ * - **不变量 1**：对象字段节点存在 ⇔ children 非空（空 selection 非法查询）
+ *   （勾选对象字段 = 注入默认字段集；取消最后一个子项 → 级联移除父节点）
+ * - **不变量 2**：标量字段节点恒为叶（无 children），存在即勾选
+ * - **不变量 3**：生成 query 严格 = 勾选内容（默认字段集仅在「初次勾选对象字段」时注入一次）
+ * - **不变量 4**：父级三态按子树递归——全满 → checked / 部分 → indeterminate /
+ *   无 → unchecked；标量恒 checked（有节点）
+ * - **不变量 5**：正反向收敛——gqlMapToQueryDetailed 产物经 parseQueryFieldSelections +
  *   buildSelectionsFromParsed 归一后与原 map 相等（循环稳定不抖动）
  */
-export interface GqlSelectionState {
-  opType: "query" | "mutation";
-  root: GqlFieldNode;
-  children: Set<string>;
+export interface GqlSelectionNode {
+  args: Record<string, string>;
+  children?: Record<string, GqlSelectionNode>;
 }
 
-/** 勾选集合：`${opType}:${root.name}` → 勾选条目 */
-export type GqlSelectionMap = Record<string, GqlSelectionState>;
+/** 勾选集合：`${opType}:${root.name}` → 顶层字段的嵌套勾选树 */
+export type GqlSelectionMap = Record<string, GqlSelectionNode>;
 
 const selKey = (opType: "query" | "mutation", rootName: string): string => `${opType}:${rootName}`;
 
+/** 必填参数 → `$name` 变量引用（字段调用需带必填参数；勾选即提取） */
+function requiredArgVars(field: GqlFieldNode): Record<string, string> {
+  const args: Record<string, string> = {};
+  for (const a of field.args) if (a.required) args[a.name] = `$${a.name}`;
+  return args;
+}
+
+/** 默认字段集（fillLeafs 思想）：对象类型默认集 = id + 前 N 个无必填参数的标量字段 */
+const DEFAULT_SCALAR_MAX = 3;
+/** connection 元素递归默认集深度上限（防元素类型循环展开） */
+const DEFAULT_DEPTH_MAX = 4;
+
 /**
- * 勾选/取消顶层字段（父级 checkbox；勾选 = 唯一选中动作）：
- * - 勾选对象 root → children = 全部可见子字段名（**子项全自动勾选**）
- * - 勾选标量 root → children 空（裸字段调用）
- * - 取消 → 删除 entry（子项一并取消）
+ * 勾选对象字段 → 构建默认子树（fillLeafs 思路，克制规模避免查询爆炸）：
+ * - connection 返回 → totalCount + nodes（nodes 递归元素类型默认集）
+ * - 普通对象 → id + 前 3 个无必填参数的标量字段
+ * - args = 必填参数 → `$var` 引用
  */
-export function toggleRootSelection(
-  map: GqlSelectionMap,
-  opType: "query" | "mutation",
-  root: GqlFieldNode,
-): GqlSelectionMap {
-  const key = selKey(opType, root.name);
-  const next = { ...map };
-  if (next[key]) {
-    delete next[key];
+function buildDefaultSubtree(
+  ctx: GqlSchemaContext,
+  field: GqlFieldNode,
+  depth = 0,
+): GqlSelectionNode {
+  const children: Record<string, GqlSelectionNode> = {};
+  const fields = depth < DEFAULT_DEPTH_MAX ? (ctx.fieldsOf(field.ofTypeName) ?? []) : [];
+  if (field.isConnection) {
+    // connection：totalCount + nodes（nodes → 元素类型默认集）
+    const nodesField = fields.find((f) => f.name === "nodes");
+    children.totalCount = { args: {} };
+    if (nodesField) children.nodes = buildDefaultSubtree(ctx, nodesField, depth + 1);
   } else {
-    next[key] = {
-      opType,
-      root,
-      // 对象类型全选可见子字段；标量无子字段（空集）
-      children: new Set((root.typeFields ?? []).map((f) => f.name)),
-    };
+    const id = fields.find((f) => f.name === "id");
+    if (id && !id.args.some((a) => a.required)) children.id = { args: {} };
+    let n = 0;
+    for (const f of fields) {
+      if (n >= DEFAULT_SCALAR_MAX) break;
+      if (f.name === "id" || !f.scalar || f.args.some((a) => a.required)) continue;
+      children[f.name] = { args: {} };
+      n++;
+    }
   }
-  return next;
+  return { args: requiredArgVars(field), children };
+}
+
+function cloneNode(n: GqlSelectionNode): GqlSelectionNode {
+  return {
+    args: { ...n.args },
+    children: n.children
+      ? Object.fromEntries(Object.entries(n.children).map(([k, v]) => [k, cloneNode(v)]))
+      : undefined,
+  };
+}
+
+/** 沿路径取节点（path=[] → 根自身）；路径断裂返回 undefined */
+function nodeAt(root: GqlSelectionNode, path: string[]): GqlSelectionNode | undefined {
+  let cur: GqlSelectionNode | undefined = root;
+  for (const seg of path) {
+    cur = cur?.children?.[seg];
+    if (!cur) return undefined;
+  }
+  return cur;
+}
+
+/** 沿 schema 解析路径处的字段（path=[] → root 自身）；非 schema 路径返回 undefined */
+function fieldAtPath(
+  ctx: GqlSchemaContext,
+  root: GqlFieldNode,
+  path: string[],
+): GqlFieldNode | undefined {
+  let cur: GqlFieldNode = root;
+  for (const seg of path) {
+    const fields = ctx.fieldsOf(cur.ofTypeName);
+    const next = fields?.find((f) => f.name === seg);
+    if (!next) return undefined;
+    cur = next;
+  }
+  return cur;
 }
 
 /**
- * 勾选/取消子字段（子项 checkbox）：
- * - 勾选：entry 不存在则隐式建（仅勾选该子项）；已存在则追加
- * - 取消最后一个子项 → 移除 entry（维持不变量 1，父级随之变 unchecked，
- *   无默认字段兜底——严格「勾选什么写什么」）
+ * 删除路径处节点；若其父 children 变空 → 级联删除父（维持不变量 1）。
+ * 返回是否实际删除（路径断裂返回 false）。
  */
-export function toggleChildSelection(
+function deleteNodeCascade(root: GqlSelectionNode, path: string[]): boolean {
+  if (path.length === 0) return false;
+  const last = path[path.length - 1];
+  const parentPath = path.slice(0, -1);
+  const parent = parentPath.length === 0 ? root : nodeAt(root, parentPath);
+  if (!parent) return false;
+  const children = { ...(parent.children ?? {}) };
+  if (!(last in children)) return false;
+  delete children[last];
+  if (parentPath.length === 0) {
+    root.children = children;
+  } else if (Object.keys(children).length === 0) {
+    deleteNodeCascade(root, parentPath); // 父变空 → 级联删除父
+  } else {
+    parent.children = children;
+  }
+  return true;
+}
+
+/**
+ * 勾选/取消顶层字段（父级 checkbox；path=[]）：
+ * - 勾选对象 root → 注入默认子树（buildDefaultSubtree，非全选可见子字段）
+ * - 勾选标量 root → 叶（args 含必填参数 → $var）
+ * - 取消 → 删除 entry（整棵子树移除）
+ */
+export function toggleRootSelection(
+  ctx: GqlSchemaContext,
   map: GqlSelectionMap,
   opType: "query" | "mutation",
   root: GqlFieldNode,
-  childName: string,
 ): GqlSelectionMap {
+  return toggleFieldSelection(ctx, map, opType, root, []);
+}
+
+/**
+ * 勾选/取消任意深度字段（path 从 root 下一层开始，如 ["issues", "nodes", "title"]）：
+ * - 勾选：目标字段 = 标量叶 / 对象默认子树；父链缺失 → 隐式建（空 children + 必填参数 $var）
+ * - 取消：删除该节点；父 children 变空 → 级联删除父（不变量 1）
+ * - 非 schema 路径 → 原 map 返回（防御）
+ */
+export function toggleFieldSelection(
+  ctx: GqlSchemaContext,
+  map: GqlSelectionMap,
+  opType: "query" | "mutation",
+  root: GqlFieldNode,
+  path: string[],
+): GqlSelectionMap {
+  const field = fieldAtPath(ctx, root, path);
+  if (!field) return map; // 防御：路径无效
   const key = selKey(opType, root.name);
   const next = { ...map };
-  const cur = next[key] ?? { opType, root, children: new Set<string>() };
-  const children = new Set(cur.children);
-  if (children.has(childName)) {
-    children.delete(childName);
-    if (children.size === 0) {
+  const existing = next[key] ? cloneNode(next[key]) : undefined;
+  const target = existing ? nodeAt(existing, path) : undefined;
+  if (target) {
+    // 取消勾选
+    if (path.length === 0) {
       delete next[key];
-    } else {
-      next[key] = { opType, root, children };
+      return next;
     }
-  } else {
-    children.add(childName);
-    next[key] = { opType, root, children };
+    const removed = deleteNodeCascade(existing!, path);
+    if (removed && existing!.children && Object.keys(existing!.children).length === 0) {
+      delete next[key]; // root children 清空 → 移除整个 entry
+    } else {
+      next[key] = existing!;
+    }
+    return next;
   }
+  // 勾选：目标节点 = 标量叶 / 对象默认子树
+  const node = field.scalar ? { args: requiredArgVars(field) } : buildDefaultSubtree(ctx, field);
+  let rootNode: GqlSelectionNode;
+  if (existing) {
+    rootNode = existing;
+  } else if (path.length === 0) {
+    rootNode = node;
+  } else {
+    // 隐式建 root entry（不注入默认集——只勾选子字段时保持父级从简）
+    rootNode = { args: requiredArgVars(root), children: {} };
+  }
+  // 确保父链存在（父缺失 → 隐式建空节点 + 必填参数）
+  let cur = rootNode;
+  for (let i = 0; i < path.length - 1; i++) {
+    const seg = path[i];
+    if (!cur.children?.[seg]) {
+      const pf = fieldAtPath(ctx, root, path.slice(0, i + 1));
+      if (!pf) return map; // 防御
+      const children = { ...(cur.children ?? {}) };
+      children[seg] = pf.scalar
+        ? { args: requiredArgVars(pf) }
+        : { args: requiredArgVars(pf), children: {} };
+      cur.children = children;
+    }
+    cur = cur.children![seg];
+  }
+  // 仅 path 非空时挂载目标字段（path=[] 时 rootNode 已是目标节点，避免 path[-1] 为 undefined 自引用）
+  if (path.length > 0) {
+    const children = { ...(cur.children ?? {}) };
+    children[path[path.length - 1]] = node;
+    cur.children = children;
+  }
+  next[key] = rootNode;
   return next;
 }
 
 /**
  * 手写 query 解析结果 → 归一化勾选集（反向同步入口，维持不变量）：
- * - 仅匹配 schema 顶层字段（非 schema 字段 / 内省字段跳过，不产生勾选）
- * - 对象 root 但 children 空（如手写 `viewer` 无 selection——非法查询）→ 跳过不勾选
- * - 标量 root → children 恒空保留（不变量 2）
+ * - 仅匹配 schema 字段（非 schema 字段 / 内省字段跳过，不产生勾选）
+ * - 对象字段 children 空（如手写 `viewer` 无 selection——非法查询）→ 跳过不勾选
+ * - 标量字段 → args 保留、无 children（不变量 2）
  */
 export function buildSelectionsFromParsed(
+  ctx: GqlSchemaContext,
   opType: "query" | "mutation",
-  fields: { name: string; children: string[] }[],
+  fields: ParsedField[],
   roots: GqlFieldNode[],
 ): GqlSelectionMap {
   const next: GqlSelectionMap = {};
-  for (const { name, children } of fields) {
-    const root = roots.find((f) => f.name === name);
-    if (!root) continue; // 非 schema 顶层字段（内省等）跳过
-    if (!root.scalar && children.length === 0) continue; // 对象无 selection（非法）跳过
-    next[selKey(opType, name)] = { opType, root, children: new Set(children) };
+  for (const f of fields) {
+    const root = roots.find((r) => r.name === f.name);
+    if (!root) continue;
+    if (!root.scalar && f.children.length === 0) continue; // 对象无 selection（非法）跳过
+    const node = parsedToNode(ctx, root, f);
+    if (node) next[selKey(opType, f.name)] = node;
   }
   return next;
 }
 
+/** ParsedField → 勾选树节点（递归；对象空 selection / 非 schema 字段跳过 → undefined） */
+function parsedToNode(
+  ctx: GqlSchemaContext,
+  field: GqlFieldNode,
+  parsed: ParsedField,
+): GqlSelectionNode | undefined {
+  const children: Record<string, GqlSelectionNode> = {};
+  if (!field.scalar) {
+    const fields = ctx.fieldsOf(field.ofTypeName) ?? [];
+    for (const c of parsed.children) {
+      const cf = fields.find((f) => f.name === c.name);
+      if (!cf) continue; // 非 schema 字段跳过
+      const node = parsedToNode(ctx, cf, c);
+      if (node) children[c.name] = node;
+    }
+  }
+  if (!field.scalar && Object.keys(children).length === 0) return undefined; // 对象空 selection（不变量 1）
+  return { args: { ...parsed.args }, children };
+}
+
 /**
  * 父级 checkbox 三态（checked / indeterminate / unchecked）：
- * - 无 entry → unchecked
+ * - 无节点 → unchecked
  * - 对象：children 全满 → checked；部分 → indeterminate
- * - 标量：有 entry → 恒 checked
+ * - 标量：有节点 → 恒 checked
  */
 export function gqlRootCheckState(
+  ctx: GqlSchemaContext,
   map: GqlSelectionMap,
   opType: "query" | "mutation",
   root: GqlFieldNode,
 ): "checked" | "indeterminate" | "unchecked" {
-  const entry = map[selKey(opType, root.name)];
-  if (!entry) return "unchecked";
-  if (root.scalar) return "checked";
-  const total = root.typeFields?.length ?? 0;
-  return entry.children.size >= total ? "checked" : "indeterminate";
+  return gqlFieldCheckState(ctx, map, opType, root, []);
 }
 
-/** 勾选集合 → 查询文本（同操作类型拼接；空选择 → ""；严格「只有勾选才写入」） */
-export function gqlMapToQuery(map: GqlSelectionMap, opType: "query" | "mutation"): string {
-  const selections = Object.values(map)
-    .filter((s) => s.opType === opType)
-    .map(({ root, children }) => ({ root, children }));
-  return selections.length > 0 ? gqlSelectionsToQuery(opType, selections) : "";
+/** 任意深度三态（path 从 root 下一层开始；供深层 UI 展开） */
+export function gqlFieldCheckState(
+  ctx: GqlSchemaContext,
+  map: GqlSelectionMap,
+  opType: "query" | "mutation",
+  root: GqlFieldNode,
+  path: string[],
+): "checked" | "indeterminate" | "unchecked" {
+  const entry = map[selKey(opType, root.name)];
+  if (!entry) return "unchecked";
+  const node = nodeAt(entry, path);
+  if (!node) return "unchecked";
+  const field = fieldAtPath(ctx, root, path);
+  if (!field) return "unchecked";
+  if (field.scalar) return "checked";
+  const total = ctx.fieldsOf(field.ofTypeName)?.length ?? 0;
+  const checkedCount = Object.keys(node.children ?? {}).length;
+  if (checkedCount === 0) return "unchecked";
+  return checkedCount >= total ? "checked" : "indeterminate";
+}
+
+/** 两个勾选集合深比较（key 集 + 每节点 args/children 递归相等）——反向同步防循环抖动 */
+export function gqlMapsEqual(a: GqlSelectionMap, b: GqlSelectionMap): boolean {
+  const ka = Object.keys(a).sort();
+  const kb = Object.keys(b).sort();
+  if (ka.length !== kb.length || ka.some((k, i) => k !== kb[i])) return false;
+  return ka.every((k) => gqlNodesEqual(a[k], b[k]));
+}
+
+function gqlNodesEqual(a: GqlSelectionNode, b: GqlSelectionNode): boolean {
+  const aa = Object.entries(a.args);
+  if (aa.length !== Object.keys(b.args).length) return false;
+  if (aa.some(([k, v]) => b.args[k] !== v)) return false;
+  const ka = Object.keys(a.children ?? {}).sort();
+  const kb = Object.keys(b.children ?? {}).sort();
+  if (ka.length !== kb.length || ka.some((k, i) => k !== kb[i])) return false;
+  return ka.every((k) => gqlNodesEqual(a.children![k], b.children![k]));
 }

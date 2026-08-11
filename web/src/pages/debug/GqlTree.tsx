@@ -29,11 +29,13 @@ import {
   buildGqlFieldTree,
   buildSelectionsFromParsed,
   gqlMapToQuery,
+  gqlMapsEqual,
   gqlRootCheckState,
   parseQueryFieldSelections,
-  toggleChildSelection,
+  toggleFieldSelection,
   toggleRootSelection,
   type GqlFieldNode,
+  type GqlSchemaContext,
   type GqlSchemaTree,
   type GqlSelectionMap,
 } from "@/lib/debug-graphql";
@@ -60,6 +62,8 @@ const INTROSPECTION_PRESETS = [
 interface GqlTreeProps {
   t: (k: string, vars?: Record<string, unknown>) => string;
   schema: GraphQLSchema | null;
+  /** 惰性字段层解析上下文（DebugPage 由 schema 构建；null = schema 未就绪禁用勾选） */
+  gqlCtx: GqlSchemaContext | null;
   /** 当前编辑器 GraphQL 查询文本（反向同步：手写改动 → 自动更新勾选） */
   editorQuery: string;
   loading: boolean;
@@ -74,6 +78,7 @@ interface GqlTreeProps {
 export function GqlTree({
   t,
   schema,
+  gqlCtx,
   editorQuery,
   loading,
   error,
@@ -100,16 +105,18 @@ export function GqlTree({
   /** 提交勾选集合：更新状态 + 立即重建查询填充（勾选即填充，无独立按钮；仅勾选内容写入） */
   const commitSelection = (next: GqlSelectionMap, opType: "query" | "mutation") => {
     setSelected(next);
-    onPickGqlMulti(opType, gqlMapToQuery(next, opType));
+    if (gqlCtx) onPickGqlMulti(opType, gqlMapToQuery(gqlCtx, next, opType));
   };
 
-  /** 勾选顶层字段（父级 checkbox）→ 状态机切换（对象 root 自动全选可见子字段） */
+  /** 勾选顶层字段（父级 checkbox）→ 状态机切换（对象 root 自动注入默认字段集） */
   const toggleRoot = (opType: "query" | "mutation", root: GqlFieldNode) => {
-    commitSelection(toggleRootSelection(selected, opType, root), opType);
+    if (!gqlCtx) return;
+    commitSelection(toggleRootSelection(gqlCtx, selected, opType, root), opType);
   };
   /** 勾选子字段 → 状态机切换（取消最后一个子项 → 父级一并取消） */
   const toggleChild = (opType: "query" | "mutation", root: GqlFieldNode, childName: string) => {
-    commitSelection(toggleChildSelection(selected, opType, root, childName), opType);
+    if (!gqlCtx) return;
+    commitSelection(toggleFieldSelection(gqlCtx, selected, opType, root, [childName]), opType);
   };
 
   /**
@@ -120,24 +127,14 @@ export function GqlTree({
    * 不更新（不变量 5：正反向收敛，循环稳定）。
    */
   useEffect(() => {
-    if (!fieldTree) return;
+    if (!fieldTree || !gqlCtx) return;
     const parsed = parseQueryFieldSelections(editorQuery);
     if (!parsed) return; // 语法错误 → 不反向同步
     const list = parsed.opType === "query" ? fieldTree.query : fieldTree.mutation;
-    const next = buildSelectionsFromParsed(parsed.opType, parsed.fields, list);
-    // 与当前勾选比较：同 key 数 + 每项 children 相等 → 不更新（防循环/无谓渲染）
-    const same =
-      Object.keys(next).length === Object.keys(selected).length &&
-      Object.entries(next).every(([k, v]) => {
-        const cur = selected[k];
-        return (
-          cur !== undefined &&
-          cur.children.size === v.children.size &&
-          [...v.children].every((c) => cur.children.has(c))
-        );
-      });
-    if (!same) setSelected(next);
-  }, [editorQuery, fieldTree, selected]);
+    const next = buildSelectionsFromParsed(gqlCtx, parsed.opType, parsed.fields, list);
+    // 与当前勾选深比较：相等 → 不更新（防循环/无谓渲染；不变量 5 收敛稳定）
+    if (!gqlMapsEqual(next, selected)) setSelected(next);
+  }, [editorQuery, fieldTree, selected, gqlCtx]);
   /** 字段行 title（hover 详情：返回类型 + 参数清单 + desc） */
   const fieldTitle = (f: GqlFieldNode): string => {
     const parts = [`${f.name}: ${f.returnLabel}`];
@@ -213,11 +210,11 @@ export function GqlTree({
                     {fields.map((f) => {
                       const expanded = gqlExpanded[f.name] ?? false;
                       const expandable = !!f.typeFields || !!f.possibleTypes;
-                      const checkState = gqlRootCheckState(selected, key, f);
+                      const checkState = gqlCtx
+                        ? gqlRootCheckState(gqlCtx, selected, key, f)
+                        : "unchecked";
                       const isSel = checkState !== "unchecked";
-                      const childSel = isSel
-                        ? selected[`${key}:${f.name}`].children
-                        : new Set<string>();
+                      const childSel = isSel ? (selected[`${key}:${f.name}`].children ?? {}) : {};
                       return (
                         <div key={f.name}>
                           {/* 字段行：checkbox 勾选（唯一选中动作）+ 点击字段名仅展开 + 右侧展开指示 */}
@@ -291,7 +288,7 @@ export function GqlTree({
                                   className="flex items-center gap-1 rounded px-1.5 py-0.5 hover:bg-accent"
                                 >
                                   <Checkbox
-                                    checked={childSel.has(cf.name)}
+                                    checked={cf.name in childSel}
                                     onCheckedChange={() => toggleChild(key, f, cf.name)}
                                     className="size-3 shrink-0"
                                     aria-label={`${t("gql.selectField")} ${f.name}.${cf.name}`}

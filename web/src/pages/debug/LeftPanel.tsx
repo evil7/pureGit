@@ -22,6 +22,7 @@ import type { HistoryItem } from "@/lib/debug-store";
 import type { DebugProtocol } from "@/lib/debug-api";
 import type { OpenApiEndpoint } from "@/lib/debug-openapi";
 import type { GraphQLSchema } from "graphql";
+import type { GqlSchemaContext } from "@/lib/debug-graphql";
 
 interface LeftPanelProps {
   t: (k: string, vars?: Record<string, unknown>) => string;
@@ -38,6 +39,8 @@ interface LeftPanelProps {
   gqlEditorQuery: string;
   /** GraphQL Schema（受控；DebugPage 统一持有，供 GqlTree 与编辑器补全共用） */
   gqlSchema: GraphQLSchema | null;
+  /** GraphQL 惰性字段层解析上下文（schema 就绪后由 DebugPage 构建，透传 GqlTree） */
+  gqlCtx: GqlSchemaContext | null;
   gqlLoading: boolean;
   gqlError: boolean;
   onGqlReload: () => void;
@@ -56,6 +59,7 @@ export function LeftPanel({
   onPickGqlMulti,
   gqlEditorQuery,
   gqlSchema,
+  gqlCtx,
   gqlLoading,
   gqlError,
   onGqlReload,
@@ -176,6 +180,7 @@ export function LeftPanel({
             <GqlTree
               t={t}
               schema={gqlSchema}
+              gqlCtx={gqlCtx}
               editorQuery={gqlEditorQuery}
               loading={gqlLoading}
               error={gqlError}
