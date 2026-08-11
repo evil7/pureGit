@@ -1,0 +1,24 @@
+# 全平台统一 LF 换行规则（Windows/macOS/Linux 行为一致）
+# - `text=auto`: 文本文件入库（clean）统一转 LF；二进制自动检测、不转换
+# - `eol=lf`: 检出（smudge）强制 LF —— 与项目 oxfmt/oxlint 工具链 LF 约定对齐
+# 优先级高于任何个人级 core.autocrlf / core.eol 配置，随仓库分发、无需各端手动设置
+* text=auto eol=lf
+
+# 显式二进制声明（text=auto 自动检测的兜底强化，防止个别二进制被误判为文本）
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.avif binary
+*.woff binary
+*.woff2 binary
+*.ttf binary
+*.eot binary
+*.otf binary
+*.pdf binary
+*.zip binary
+*.tar binary
+*.gz binary
+*.br binary
