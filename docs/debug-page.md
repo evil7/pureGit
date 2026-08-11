@@ -12,7 +12,7 @@
 
 | 能力 | 说明 |
 |---|---|
-| **查看** | REST 端点集合树（按 tag 分组，点按即用）+ GraphQL Schema 树（query/mutation 顶层字段 → 展开返回类型子字段 + union possibleTypes）+ **端点文档**（未发送时响应面板空状态直接展示：参数表 / 请求体结构 / 响应结构，200 默认展开） |
+| **查看** | REST 端点集合树（按 tag 分组，点按即用）+ GraphQL Schema 树（query/mutation 顶层字段 → 展开返回类型子字段 + union possibleTypes）+ **端点文档**（右侧 Drawer：参数表 / 请求体结构 / 响应结构，200 默认展开） |
 | **补全** | REST：URL 路径参数 + **requestBody 字段级 JSON 补全**；GraphQL：cm6-graphql 字段/参数/枚举补全 + 悬停文档 + 语法诊断（依赖完整 schema） |
 | **测试** | 统一请求面板（GraphQL / REST 共用 DebugRequest 模型），**Params tab（path/query 双向联动）**、请求头 K/V 表格、Body 快速切换（json/form/text）、响应状态/头/体展示、History/Collection 持久化 |
 
@@ -213,7 +213,7 @@ preloadAll(): Promise<void>   // 后台预热：遍历 index.json 全部 tag，�
 ### 10.2 GraphQL：完整 schema 驱动
 
 - 数据：`gql/schema.json` 完整 introspection（含全部 description）→ `buildClientSchema` → 清洗 deprecated 一致性 → 注入 cm6-graphql
-- 能力：字段补全（上下文感知）、参数补全、枚举值补全、**悬停文档**（description 全量）、语法/语义诊断
+- 能力：字段补全（上下文感知）、参数补全、枚举值补全、**悬停文档**（description 全量）、语法/语义诊断（**行内标记 + hover tooltip；不挂 lintGutter**——调试面板 GraphQL 编辑框与 JSON/Raw 编辑框视觉一致：仅行号 + 折叠两列 gutter，诊断不占布局）
 - `sanitizeDeprecatedConsistency`：修复 GitHub schema 自身 8 处 deprecated 一致性违规（接口字段未弃用而实现字段弃用），使 validateSchema 通过、查询诊断生效（此清洗与体积无关，保留）
 
 ## 11. 代码组织：`web/src/pages/debug/` 目录
@@ -230,12 +230,13 @@ web/src/pages/debug/
   LeftPanel.tsx       # History / API 两个 tab（含底部进度条）
   RestTree.tsx        # REST 端点树（消费 index.json + tag 懒加载）
   GqlTree.tsx         # GraphQL Schema 树（受控：schema 由 DebugPage 统一持有）
-  RequestEditor.tsx   # 请求行 + Tabs + Body 编辑器（含补全挂载）
-  ResponsePanel.tsx   # 响应状态条 + Body/Headers + 空状态端点文档
+  RequestEditor.tsx   # 请求行 + Tabs + Body 编辑器（含补全挂载）+ URL 框 book icon 文档触发
+  ResponsePanel.tsx   # 响应状态条 + Body/Headers（空状态等待占位；文档已迁 Drawer）
+  EndpointDocDrawer.tsx # 右侧文档 Drawer（完整端点文档：参数表/请求体/响应结构）
   GraphQLLogo.tsx     # GraphQL 官方 Logo（唯一使用处）
 ```
 
-依赖关系：`index.tsx → DebugPage → {schema-loader, LeftPanel, RequestEditor, ResponsePanel}`；`LeftPanel → {RestTree, GqlTree}`；`RequestEditor → KeyValueTable`；`ResponsePanel → schema-loader（loadResFull）`。schema-loader 独立于 UI（可单测）。
+依赖关系：`index.tsx → DebugPage → {schema-loader, LeftPanel, RequestEditor, ResponsePanel, EndpointDocDrawer}`；`LeftPanel → {RestTree, GqlTree}`；`RequestEditor → KeyValueTable`；`EndpointDocDrawer → schema-loader（loadResFull）`。schema-loader 独立于 UI（可单测）。
 
 ## 12. 构建与分片（codeSplitting）
 
@@ -246,20 +247,24 @@ web/src/pages/debug/
 - `/$debug` 本身已是 `App.tsx` lazy 路由，独立 chunk（~46KB / gzip 13KB），不进首屏
 - 验证：`pnpm --filter web build` 后 debug chunk 保持小、graphql-vendor/codemirror-vendor 独立；>500kB 警告仅剩全站 MarkdownView（@uiw/react-markdown-preview，非 debug 范畴）
 
-## 13. 端点文档（响应面板空状态）
+## 13. 端点文档（右侧 Drawer，URL 框 book icon 触发）
 
-- **触发**：REST 集合树选中端点后、尚未发送时——响应面板空状态直接展示端点文档（替代独立 drawer，Postman 同思路；发送后自动被真实响应覆盖）
-- **内容**：方法徽标 + 路径 + summary/desc → 参数表（name/in/required/type）→ **requestBody 结构**（JSON-schema 树，`oneOf/anyOf` 分支逐层展开）→ **响应状态码列表**
-- **响应结构自动加载**：选中端点即自动 `loadResFull`（IndexedDB 缓存秒开），**默认展开第一个 2xx**（通常 200）——首要呈现正常返回结构；其他状态码点开再展开
-- **联动**：点按集合树端点即填充请求 + 切换文档；GraphQL 侧字段悬停已覆盖文档能力（Schema 树 + 编辑器悬停足够）
+- **展示位置（2026-08-11 迁移）**：文档以**独立右侧 Drawer** 展示当前所指向接口的完整文档，**不再放进返回面板**（返回面板空状态恢复「点击发送」占位；文档查阅与响应结果彻底分离，阅读空间充足）
+- **触发方式**：URL 输入框右侧 `<InputGroupAddon align="inline-end">` 内 **book icon 按钮**——仅当**匹配到正确路径**（endpoint 非空）时显示；点击开/关 Drawer（打开态按钮高亮），未匹配路径自动隐藏并关闭
+- **宽度**：`w-2/3! max-w-none!`（总宽度 2/3；vaul 默认 `w-3/4` + `sm:max-w-sm` 太窄，须同时清 max-width 否则 24rem 卡住）
+- **完整内容**：方法徽标（`text-xs font-bold px-2 py-1`，与 `text-sm` 路径垂直居中协调）+ 路径 + tag + summary/desc → **区段标题统一（`DocSectionTitle` 组件：`text-[11px] uppercase` 无图标 + 可选 hint 后缀）**——参数（含计数）/ 请求体结构（hint=content-type 列表）/ 响应三者结构一致 → **参数表（name/in/type/required/desc 完整五列）** → **requestBody 结构**（JSON-schema 树，`oneOf/anyOf` 分支逐层展开）→ **响应状态码列表**
+- **响应结构自动加载**：Drawer 打开即自动 `loadResFull`（IndexedDB 缓存秒开），**默认展开第一个 2xx**（通常 200）——首要呈现正常返回结构；其他状态码点开再展开
+- **联动**：端点点选/URL 匹配都会实时刷新 Drawer 内容；Drawer 打开时切换端点文档自动更新
 - **数据**：参数/body 来自 req 产物（补全同源），响应结构经 schema-loader.loadResFull 懒加载
+- **组件**：`web/src/pages/debug/EndpointDocDrawer.tsx`（SchemaTree/ResponseSchemas 由原 ResponsePanel 迁入，逻辑不变）
 
 ## 13.1 REST 请求参数（Params tab，path/query 双向联动 + 文档对照）
 
 **权威原则**：URL 是 query 参数的权威源，端点文档是 path 参数与可选参数的权威源。表格行按来源区分 `DebugParam.explicit`：`true` = 已在 URL 显式出现（反向同步/移除、空值也输出裸名）；`false` = 编辑中行（文档填充/手动添加，空值不输出、反向保留）。
 
 - **位置**：REST 请求 Tabs 第一位「参数」；端点选择后自动填充——path 行带 `path[n]` 段位置徽章（split('/') 索引，误删占位可快速定位取值位置），query 行空值待填
-- **参数 tab 显示条件**：仅当匹配到端点文档**且文档含需设定的参数（path/query）**才显示「参数」tab 并**默认选中**；未匹配（自定义 URL）/文档无参数 → 不显示参数 tab，默认选中「请求头」（第一个 tab）
+- **参数 tab 显示条件**：仅当匹配到端点文档**且文档含需设定的参数（path/query）**才显示「参数」tab；未匹配（自定义 URL）/文档无参数 → 不显示参数 tab
+- **默认 tab 优先级（2026-08-11 规范）**：REST **参数 > 请求数据 > 请求头**——有文档参数 → 参数；无参数但有请求数据（POST/PUT 等非 GET/HEAD/OPTIONS）→ 请求数据；否则 → 请求头（第一个 tab）；GraphQL → 查询
 - **正向（参数 → URL）**：`buildUrlFromParams`（lib/debug-params.ts）——path 参数按 `index` 段位置直接覆盖 URL 对应段（值空/占位/段缺失保留；不依赖 `{name}` 占位符）；**段内含 `{name}` 子占位（复合段如 `{base}...{head}`）→ 只替换该子串**（共享 index 的多个 path 参数互不破坏、其余部分保留），否则整体覆盖段；**复合占位分次编辑**（先填 base 段变 `main...{head}` 再填 head 时 `{base}` 子串已消失 → 整体覆盖会毁段）→ **doc 提供模板时复合段直接从模板段重建**（模板永远含全部 `{name}`，缺失参数行子占位保留）；query enabled 即输出——值非空 → `name=value`，值空但显式 → 裸名 `name`（`?aa&bb` 无值 query 循环不丢）；disabled / 空值非显式 → 不输出
 - **反向（URL → 参数）**：`syncParamsFromUrl`——URL 出现的 query key → 行显式同步（value/enabled/explicit）；显式行被 URL 移除 → 表格移除（文档参数自动转 badge）；disabled 行保留；编辑中行（explicit=false）——**提供 doc 时若不在文档 query 参数集则移除**（切换端点清残留，旧端点文档行不属于新端点）、在文档集内保留待填；URL 新 key 补显式行（**重复 key `?a=1&a=2` 只补首个**，表格单 key 模型）。path 按 index 同步段值；提供 doc 模板时 path 行集合完全对齐模板（补缺失/移多余，path 行只能来自端点）；**复合占位段（共享 index）按模板段字面分隔符切分各自子串**（`{base}...{head}` + `main...dev` → base 行 "main"、head 行 "dev"）
 - **表格展示排序**（`syncParamsFromUrl` 返回前统一重排）：path 恒在前按段位置 index 升序（模板顺序）；query 按 URL 出现顺序（parseQuery 保序）——URL 中无此行（disabled 保留 / 文档待填）保持相对顺序排末尾。排序不影响语义（path 按 index、query 按 enabled+value），正向构建 `buildUrlFromParams` 按数组序输出 → 表格序 = URL 序 → 双向循环稳定
@@ -270,12 +275,15 @@ web/src/pages/debug/
 - **query 来源基线**：**非必填 query 不自动列出**——端点匹配（点选）只自动填充 **required query** 行（explicit=false 编辑中，空值不输出 URL、填值后输出）；非必填全部以 badge 呈现由用户自行决定添加。手写 URL 匹配场景下 query（含 required）也以 badge 呈现（URL 是权威源，用户自拼）
 - **query 只 key 无值 / 有值双态**：explicit=true 行空值 → 裸名 `name`（URL `?aaa`）；填值 → `name=value`（URL `?aaa=bbb`）；反向手写 `?aaa` → 显式空值行，正向裸名保持不丢
 - **URL+方法匹配端点 → 自动加载文档（文档权威 + 端点固化）**：DebugPage 防抖 250ms 用 `matchEndpoint`（debug-openapi.ts 段级模板匹配：段数相同、`{name}` 通配、**评分制**——① 静态段数优先（`rule-suites` 不被 `{ruleset_id}` 抢）；② 同静态段数时占位段**字面结构分**（模板自身最高分，其次段内字面片段如 `...` 出现在 URL 段 → `{base}...{head}` 不被排序在前的 `{basehead}` 抢，**不依赖数组顺序**）；空 URL 守卫用 `url.trim()===""`，**根路径 `/`（段数 0）仍可匹配**）匹配 `getAllEndpoints()`（schema-loader 全量索引），**仅当无端点或当前端点与 URL 结构不再匹配时触发**：
-  - 命中 → 加载端点文档（响应面板空状态）+ bodySchema（补全）+ 骨架对齐（path 行对齐模板、query 按文档全集）
+  - 命中 → 加载端点文档（右侧 Drawer 内容）+ bodySchema（补全）+ 骨架对齐（path 行对齐模板、query 按文档全集）
   - 未命中 → 清空文档（转显式行模式）
   - **端点固化**：端点确定后 URL 微编辑（填值/改值，静态段与段数不变）不触发重新匹配——`endpointStillMatches`（方法一致 + 段数相同 + 静态段位置值相等）判定通过即跳过，表格值由 RequestEditor URL onChange（传 doc）即时同步；URL 结构变化（静态段/段数改变）或方法切换 → 判定失败 → 重新匹配换端点/清空。杜绝微编辑端点跳变与匹配失败丢文档
+- **响应区默认折叠 + 发送自动展开（2026-08-11）**：未发送数据时响应区**默认折叠**（`respCollapsed` 初始 true，只留头部一行，请求区全高编辑）；发送返回数据后 **`run()` 内自动 `setRespCollapsed(false)` 展开**（结果到达即展示）
 - **响应区默认 tab**：默认选中第一个 tab「返回头」（与请求区默认「请求头」对称，DebugPage respTab 初始 "headers"）
 - **事件驱动防循环**：参数编辑 onChange 重建 URL、URL 输入框 onChange 反向同步，不经 useEffect 无回写循环；端点匹配只补 path 行/文档，不改 URL
-- **默认请求**：进入页面默认 REST + GET（`EMPTY_REQUEST`，URL 空、placeholder `/repos/{owner}/{repo}`）；GraphQL 模板显式声明 protocol/method
+- **默认请求**：进入页面默认 REST + GET（`EMPTY_REQUEST`，URL 直接 `/` 根路径、placeholder `/repos/{owner}/{repo}` 提示典型模板）；GraphQL 模板显式声明 protocol/method
+- **GraphQL 编辑框空 + placeholder**：切到 GraphQL（query/mutation）时 query 编辑框**默认空内容**，仅 placeholder 显示示例 `query { viewer { login } }` 提示（`EMPTY_REQUEST.query` 为空、方法下拉切 GraphQL 时 `query: ""` 清空）；左栏 Schema 树/模板点按仍主动生成查询填入（用户行为保留）
+- **URL 前缀一致性**：`https://api.github.com` addon 用 `font-mono text-sm leading-none`——与 path 输入框（Input 组件 `md:text-sm` 实际 14px）同字号、`items-center` 垂直居中（leading-none 防 line-height 撑高 InputGroup）
 - **布局与请求头统一**：ParamsTable 照搬 KeyValueTable（请求头）骨架——列结构（checkbox / key / value / 操作）、操作列图标（必填 Lock 占位、选填 X 删除 `Button size="icon" variant="ghost" h-6 w-6`）、添加行同为表格内 colSpan 行（靠左与 checkbox 槽对齐）；差异仅在 key 输入框用 `InputGroup` + `InputGroupAddon align="inline-end"` 内嵌类型胶囊（`path[n]` / `query`）
 - **复合占位段（单 path 段多参数）合并单行**：段模型 `DebugParam.segPos/segCount/segSeparators`（全可选向后兼容；单占位段恒 segCount=1）——① **识别**：`parsePathSeg`（lib/debug-params.ts 导出）统一解析段内占位符 + 字面分隔符（`{base}...{head}` → names=[base,head]、seps=["","...",""]；复杂段 `{aaa}...{bbb}---{ccc}` 自动适配），`endpointToRequest` / `extractPathParams` / `splitCompoundUrlSeg` 三处复用同一模型；② **列出**：ParamsTable 按 index 分组 path 行，`segCount>1` → **合并单行**——key 显示参数名+真实分隔符（`base...head`），value 每参数独立 Input + 中间真实分隔符文本（低对比非可编辑，title 提示「段内字面分隔符」）；③ **设定**：每 input 更新对应参数行（模型仍每参数一行），分次编辑天然正确，复杂段自动扩展 N input + N-1 分隔符；④ **扁平标签**：胶囊仍 `path[n]`（不引入 `·1/2` 层级后缀）；⑤ **排序**：path 按 index 升序 + 同 index 次级 segPos 升序（base 恒在 head 前）
 - **历史 bug（复合段合并依赖段模型）**：`syncParamsFromUrl` 补齐 path 行曾只带 name/index（无段模型）→ 端点匹配后合并失效——补齐/同步分支都须带 segPos/segCount/segSeparators（schema-integration 断言覆盖）

@@ -92,8 +92,10 @@ export interface DebugRequest {
 export const EMPTY_REQUEST: DebugRequest = {
   protocol: "rest",
   method: "GET",
-  url: "",
-  query: "query { viewer { login } }",
+  // 默认路径直接进根路径 `/`（placeholder 仍提示典型端点模板）
+  url: "/",
+  // GraphQL 默认空——仅 placeholder 提示示例（queryPlaceholder），不自动填写
+  query: "",
   variables: "",
   // 默认 Authorization 行（filled 占位）：渲染后由 DebugPage 补 identityLabel
   headers: [{ key: "Authorization", value: "Bearer ••••••••••", enabled: true, token: true }],

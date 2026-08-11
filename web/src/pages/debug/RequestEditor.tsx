@@ -10,11 +10,12 @@
  * - Body：json/text 用 CodeEditor；form 用 KeyValueTable；none 提示
  */
 import { useEffect, useState } from "react";
-import { ChevronDown, List, Save, Send, Wand2 } from "lucide-react";
+import { BookOpen, ChevronDown, List, Save, Send, Wand2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   InputGroup,
   InputGroupAddon,
+  InputGroupButton,
   InputGroupInput,
   InputGroupText,
 } from "@/components/ui/input-group";
@@ -54,6 +55,10 @@ interface RequestEditorProps {
   bodySchema: Record<string, unknown> | null;
   /** 当前匹配的 REST 端点（URL+method 匹配或点选；未匹配为 null）——参数表对照文档 */
   endpoint: OpenApiEndpoint | null;
+  /** 端点文档抽屉是否打开（book icon 按钮高亮态） */
+  docOpen: boolean;
+  /** 端点文档抽屉开关（URL 框右侧 book icon 触发；仅匹配到端点时可用） */
+  onToggleDoc: () => void;
   setFormFile: (i: number, file: File | null) => void;
   running: boolean;
   onRun: () => void;
@@ -73,6 +78,8 @@ export function RequestEditor({
   gqlSchema,
   bodySchema,
   endpoint,
+  docOpen,
+  onToggleDoc,
   setFormFile,
   running,
   onRun,
@@ -89,13 +96,16 @@ export function RequestEditor({
    *  未匹配（自定义 URL）或无参数 → 不显示参数 tab（仅请求头/请求数据） */
   const hasDocParams =
     !!endpoint && (endpoint.op.params ?? []).some((p) => p.in === "path" || p.in === "query");
-  // 默认选中 Tab：协议/方法/端点匹配变化时重置——GraphQL→Query；
-  // REST：有文档参数 → 参数（对照文档填值）；否则 → 请求头（第一个 tab）
+  // 默认选中 Tab：协议/方法/端点匹配变化时重置——GraphQL→查询；
+  // REST 优先级：**参数 > 请求数据 > 请求头**——有文档参数 → 参数（对照文档填值）；
+  // 无参数但有请求数据（POST/PUT 等非 GET/HEAD/OPTIONS）→ 请求数据；否则 → 请求头
   useEffect(() => {
     if (req.protocol === "graphql") {
       setReqTab("query");
     } else if (hasDocParams) {
       setReqTab("params");
+    } else if (!noBodyMethod) {
+      setReqTab("body");
     } else {
       setReqTab("headers");
     }
@@ -211,7 +221,10 @@ export function RequestEditor({
                 GraphQL
               </DropdownMenuLabel>
               {GQL_METHODS.map((m) => (
-                <DropdownMenuItem key={m} onClick={() => set({ method: m, protocol: "graphql" })}>
+                <DropdownMenuItem
+                  key={m}
+                  onClick={() => set({ method: m, protocol: "graphql", query: "" })}
+                >
                   <span className={cn("font-mono text-xs font-semibold", METHOD_COLOR[m])}>
                     {m}
                   </span>
@@ -224,7 +237,11 @@ export function RequestEditor({
               REST 可编辑 path；GraphQL 同样 addon 前缀 + 只读 /graphql（端点固定） */}
         <InputGroup className="h-8 min-w-0 flex-1">
           <InputGroupAddon>
-            <InputGroupText className="font-mono text-xs">{REST_API_BASE}</InputGroupText>
+            {/* 前缀 base 提示：text-sm 与 path 输入框（Input md:text-sm 实际 14px）一致；
+               leading-none 防 line-height 撑高 InputGroup（items-center 垂直居中） */}
+            <InputGroupText className="font-mono text-sm leading-none">
+              {REST_API_BASE}
+            </InputGroupText>
           </InputGroupAddon>
           {req.protocol === "rest" ? (
             <InputGroupInput
@@ -253,6 +270,25 @@ export function RequestEditor({
               readOnly
               className="h-7 cursor-not-allowed font-mono text-xs"
             />
+          )}
+          {/* 端点文档抽屉触发：仅匹配到正确路径（endpoint 非空）时显示在 URL 框右侧 */}
+          {endpoint && (
+            <InputGroupAddon align="inline-end">
+              <InputGroupButton
+                size="icon-xs"
+                variant="ghost"
+                aria-pressed={docOpen}
+                className={cn(
+                  "text-muted-foreground hover:text-foreground",
+                  docOpen && "bg-accent text-foreground",
+                )}
+                onClick={onToggleDoc}
+                title={t("doc.open")}
+                aria-label={t("doc.open")}
+              >
+                <BookOpen className="size-3.5" />
+              </InputGroupButton>
+            </InputGroupAddon>
           )}
         </InputGroup>
         {/* Send（凭据已由 Headers 表格 Authorization 行控制，身份下拉已删） */}

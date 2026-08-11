@@ -39,6 +39,7 @@ import {
 import { LeftPanel } from "./LeftPanel";
 import { RequestEditor } from "./RequestEditor";
 import { ResponsePanel } from "./ResponsePanel";
+import { EndpointDocDrawer } from "./EndpointDocDrawer";
 import { gqlFieldToQuery, gqlChildToQuery, type GqlFieldNode } from "@/lib/debug-graphql";
 import type { GraphQLSchema } from "graphql";
 
@@ -50,8 +51,11 @@ export default function DebugPage() {
 
   // ── 左栏折叠状态 ──
   const [leftHidden, setLeftHidden] = useState(false);
-  // ── 响应区折叠状态 ──
-  const [respCollapsed, setRespCollapsed] = useState(false);
+  // ── 响应区折叠状态：默认折叠（未发送时只留头部一行，请求区全高编辑）；
+  //    发送返回数据后自动展开（run() 内 setRespCollapsed(false)） ──
+  const [respCollapsed, setRespCollapsed] = useState(true);
+  // ── 端点文档抽屉（URL 框 book icon 触发） ──
+  const [docOpen, setDocOpen] = useState(false);
 
   // ── 请求模型 ──
   const [req, setReq] = useState<DebugRequest>(EMPTY_REQUEST);
@@ -171,6 +175,8 @@ export default function DebugPage() {
     try {
       const r = await executeDebug(req, effectiveToken, formFiles);
       setResult(r);
+      // 返回数据到达 → 自动展开响应区（初始折叠态在发送后收起）
+      setRespCollapsed(false);
       if (autoSave) {
         addHistoryItem(req, r, identityLabel);
         setHistory(loadHistory());
@@ -350,6 +356,8 @@ export default function DebugPage() {
             gqlSchema={gqlSchema}
             bodySchema={bodySchema}
             endpoint={endpoint}
+            docOpen={docOpen}
+            onToggleDoc={() => setDocOpen((v) => !v)}
             setFormFile={setFormFile}
             running={running}
             onRun={() => void run()}
@@ -361,11 +369,10 @@ export default function DebugPage() {
           />
         </div>
 
-        {/* ── 下部：响应面板（未发送时展示端点文档） ── */}
+        {/* ── 下部：响应面板（未发送时等待占位；文档已迁至右侧抽屉） ── */}
         <ResponsePanel
           t={t}
           result={result}
-          endpoint={endpoint}
           respCollapsed={respCollapsed}
           setRespCollapsed={setRespCollapsed}
           respTab={respTab}
@@ -375,6 +382,9 @@ export default function DebugPage() {
           appJwt401={appJwt401}
         />
       </div>
+
+      {/* 端点文档抽屉（右侧；当前匹配端点时展示完整文档） */}
+      <EndpointDocDrawer t={t} endpoint={endpoint} open={docOpen} onOpenChange={setDocOpen} />
     </div>
   );
 }

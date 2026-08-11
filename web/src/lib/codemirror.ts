@@ -41,7 +41,7 @@ import { indentWithTab, defaultKeymap, history, historyKeymap } from "@codemirro
 import { autocompletion, completionKeymap } from "@codemirror/autocomplete";
 import { jsonSchemaCompletion } from "@/lib/json-schema-completion";
 import { searchKeymap, highlightSelectionMatches } from "@codemirror/search";
-import { lintKeymap, lintGutter } from "@codemirror/lint";
+import { lintKeymap } from "@codemirror/lint";
 import { javascript } from "@codemirror/lang-javascript";
 import { markdown } from "@codemirror/lang-markdown";
 import { json } from "@codemirror/lang-json";
@@ -64,7 +64,7 @@ import type { HighlightTokens } from "@/lib/code-theme";
  * 缺语言（text 或未收录）回退无高亮纯文本。LanguageSupport 均为 Extension。
  *
  * graphql 语言用官方 cm6-graphql（graphiql 同源）：Lezer 解析高亮 + schema 驱动补全/诊断
- * （补全 = completion，诊断 = 独立 lint 扩展 + lintGutter，两者分离需分别挂载）。
+ * （补全 = completion，诊断 = 独立 lint 扩展，两者分离需分别挂载）。
  * 无 schema 时仅高亮（lint/补全自动降级为空，无噪音）；加载 schema 后补全字段/参数/枚举。
  *
  * showErrorOnInvalidSchema: false —— cm6-graphql 默认 true，会运行 validateSchema 把
@@ -90,10 +90,10 @@ const LANG_SUPPORT: Record<string, (graphqlSchema?: GraphQLSchema | null) => Ext
   php: () => php(),
   graphql: (schema) => [
     cmGraphql(schema ?? undefined, { showErrorOnInvalidSchema: false }),
-    // 语法/语义诊断（非法字段/参数）：gutter 标记 + hover tooltip（docs/debug-page.md §10.2）；
-    // 仅 graphql 语言挂载（其他语言无 lint 源，避免空 gutter）
+    // 语法/语义诊断（非法字段/参数）：仅 hover tooltip + 行内标记展示（docs/debug-page.md §10.2）；
+    // **不挂 lintGutter()**——调试面板 GraphQL 编辑框与 JSON/Raw 编辑框视觉一致
+    // （行号 + 折叠 gutter 两列，不多出诊断 gutter 列）；诊断信息 hover 时可见不占布局
     cmGraphqlLint,
-    lintGutter(),
   ],
 };
 
