@@ -30,6 +30,8 @@
 
 > 两者已列入 `.gitignore`，`git add` 不会纳入；仅本地保留用于开发跟踪。**开发过程不强制记录任务/决策**——临时任务与决策随开发开始和结束自然消亡，最终结果沉淀在代码注释（总结性语义描述，说明代码最终用意）与公开框架文档中；避免临时记录过度堆积导致文档膨胀、关联混乱。
 
+> **质控/审计类临时计划文档**（《质量控制计划》`docs/qc-plan-*.md`、《项目资产评估和改进计划》`docs/asset-audit-*.md`）同样属于内部临时文档（已列入 `.gitignore`，不随仓库公开）：由 `project-qc` / `asset-audit` skill 规范产出、在任务期间驱动整改，**随任务收敛归档**，不留长期文档负担。
+
 ## 二、`.github/` 协作设施（Agent / vibe coding）
 
 > 项目在仓库内固化了一套「Agent 协作设施」，任何 AI 编码助手（Copilot / Cursor / Claude Code 等）可自动上手，无需人工讲解。
@@ -43,6 +45,8 @@
 | `.github/skills/ui-layout` | 全 UI/UX 规范**速查**（权威版指向 `design.md`） | 任何 UI/布局任务 |
 | `.github/skills/cf-worker-auth` | Worker OAuth2 令牌管理（端点/KV 会话/密钥安全） | Worker 鉴权任务 |
 | `.github/skills/cli-git-mirror` | git 镜像端点自动代理（智能 HTTP 协议/转发） | CLI 代理任务 |
+| `.github/skills/project-qc` | **项目质量控制方法论**（宏观 PDCA：第一性原理验收基线、按功能补全测试、覆盖度纠正、变更控制；产出单文件《质量控制计划》`qc-plan-*.md`） | 质量控制/测试补全/覆盖度/验收基线任务 |
+| `.github/skills/asset-audit` | **项目资产清查治理方法论**（宏观 PDCA：过时产物/测试/文档/代码膨胀/安全五维审计、分级评估、产出单文件《项目资产评估和改进计划》`asset-audit-*.md`） | 资产清查/审计/清理/整改任务 |
 
 ## 三、新会话 / 二次开发启动路径（vibe coding 友好）
 
@@ -66,8 +70,9 @@
 - **版本阶段**：**0.0.x 内部开发试错阶段**——可随时开展破坏性、不兼容的重构与尝试，不承诺兼容保留（package.json 版本 0.0.0）
 - **开发进度**：L0~L5 全部实现（浏览/协作/账户/CLI 闭环）；进入**顶层整体优化**阶段（流量排查 / 请求复用集中 / 后端优化 / 文档一致性维护），计划见内部 `plan.md`
 - **文档体系规整（2026-08-10）**：**决策记录机制整体移除**——`decisions.md` 已删除、`architecture.md` 不再保留 ADR 索引表；`tasks.md` 只留需求基线、`plan.md` 只留依赖层级；注释规范为**总结性语义描述**（说明代码最终用意），不引用决策编号
-- **已部署**：Worker `puregit` + 自定义域名 `https://puregit.deepwn.io`（OAuth 回调与 CLI 镜像端点同域）
-- **开发环境**：**`pnpm dev`（双进程，唯一模式）**——纯 vite 前端 5173 + 独立 `wrangler dev` worker 8787，vite proxy 只转发 `/$auth` 与 git 端点；启动自动 `wrangler types`；构建 `pnpm --filter web build`（详见 copilot-instructions.md「构建与测试」）；**提交前门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `pnpm format:check`（oxfmt 格式一致）+ `pnpm test`（vitest 质量门，`/$debug` 相关改动必跑）
+- **已部署**：Worker `puregit` + 自定义域名 `https://git.deepwn.io`（OAuth 回调与 CLI 镜像端点同域）
+- **已知待修复漏洞（持续跟踪）**：`undici` <7.24.0（WebSocket 3 个 CVE）经 `wrangler`/`vitest-pool-workers` → `miniflare` 引入——Cloudflare 工具链内部锁定版本，overrides 会破坏兼容，**等上游发版**；`nth-check` 已通过 `pnpm-workspace.yaml` overrides 修复（GHSA-rp65-9cf3-cjxr）
+- **开发环境**：**`pnpm dev`（双进程，唯一模式）**——纯 vite 前端 5173 + 独立 `wrangler dev` worker 8787，vite proxy 只转发 `/$auth` 与 git 端点；启动自动 `wrangler types`；构建 `pnpm --filter web build`（详见 copilot-instructions.md「构建与测试」）；**提交前门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `pnpm format:check`（oxfmt 格式一致）+ `pnpm test`（vitest 质量门，`/$debug` 相关改动必跑）；**依赖更新**：`pnpm update:all`（递归更新根/web/worker 全部依赖至现有 semver 范围内最新 + 高危漏洞审计；audit 显式走官方 registry `https://registry.npmjs.org`——npmmirror 镜像不提供审计端点，故不可省略 `--registry`）；**high 漏洞处置**：先调研（`pnpm why` 定位引入链、判断生产/工具链影响）→ 查 advisory 安全版本 → 可选 a. `pnpm-workspace.yaml` overrides 强制修复（补丁级兼容）或 b. 代码层缓解（上游未发版时），流程详见 copilot-instructions.md「依赖安全与更新风控」
 - **本地 OAuth 调试**：通用 `local-dev` App（loopback `127.0.0.1` 回调端口可任意），`.dev.vars` 填 `http://127.0.0.1:5173/$auth/callback` + local-dev 凭据
 
 ## 开发环境：Windows / PowerShell 5.1（编码与命令注意事项）

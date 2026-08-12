@@ -15,6 +15,7 @@
     "deploy": "pnpm --filter web build && pnpm --filter worker deploy",
     "clean": "node scripts/clean.mjs --all",
     "clean:cache": "node scripts/clean.mjs",
+    "update:all": "pnpm -r up && pnpm audit --registry https://registry.npmjs.org --audit-level high",
     "update:schemas": "node scripts/update-schemas.mjs"
   },
   "engines": {

@@ -6,10 +6,15 @@
 	"$schema": "node_modules/wrangler/config-schema.json",
 	"name": "puregit",
 	"main": "src/index.ts",
-	"compatibility_date": "2026-03-10",
+	"compatibility_date": "2026-08-10",
+	// 仅保留自定义域名 git.deepwn.io 单一入口（关闭 *.workers.dev）：
+	// OAuth 回调只登记自定义域名，workers.dev 入口无法完整登录，双入口易混淆。
+	"workers_dev": false,
 	"observability": {
 		"enabled": true
 	},
+	// 上传 source map（排障辅助）：配合 observability 把生产错误堆栈还原为 TS 源码；
+	// 非必须（不参与运行时，不影响 Worker 体积限制），0.0.x 试错阶段排障价值高，保留。
 	"upload_source_maps": true,
 	/**
 	 * 本地 dev 固定端口 8787：vite.config.ts 的 server.proxy（/$auth、git 端点）写死转发到
@@ -24,14 +29,21 @@
 	],
 	/**
 	 * 前端静态资产（S53 修复）：指向 web 构建产物 dist/client。
-	 * run_worker_first: true —— 所有请求先进 Worker（/$auth/*、git 代理优先），
-	 * 其余经 env.ASSETS 服务前端 + Worker 内 SPA 回退（见 src/index.ts）。
 	 * 部署前必须先 `pnpm --filter web build`。
+	 *
+	 * run_worker_first 选择性路由（Cloudflare 推荐）：
+	 *   - /assets/**（构建产物）由边缘直接服务，不进 Worker，缓存/性能最优
+	 *   - 其余（/$auth|/$wiki|/$raw|/$healthz、git 端点、SPA 路由）先进 Worker
+	 *     （系统路由判断见 src/index.ts；SPA 深层链接由 Worker 回退 index.html）
+	 *
+	 * not_found_handling 默认 none（不自定义静态 404 模板）：非匹配请求的 404
+	 * 由 Worker 智能分发（见 src/index.ts）——SPA 深层链接回退 index.html →
+	 * 前端 NotFoundPage（animejs 粒子 404）；缺失资源保持纯 404。
 	 */
 	"assets": {
 		"directory": "../web/dist/client",
 		"binding": "ASSETS",
-		"run_worker_first": true
+		"run_worker_first": ["/*", "!/assets/**"]
 	},
 	/**
 	 * OAuth2 与前端配置
@@ -39,9 +51,9 @@
 	 */
 	"vars": {
 		"GITHUB_CLIENT_ID": "Ov23ligtlGVmtMZC2Ilc",
-		"GITHUB_OAUTH_CALLBACK": "https://puregit.deepwn.io/$auth/callback",
+		"GITHUB_OAUTH_CALLBACK": "https://git.deepwn.io/$auth/callback",
 		"SESSION_COOKIE_NAME": "puregit_session",
-		"FRONTEND_URL": "https://puregit.deepwn.io",
+		"FRONTEND_URL": "https://git.deepwn.io",
 		/**
 		 * Proxy 匿名闸（2026-08-09 E12）：true/false。
 		 * true（默认）= 允许匿名使用 /$wiki 与 /$raw 代理（公开内容可读）；
@@ -64,7 +76,7 @@
 		}
 	],
 	/**
-	 * 自定义域名（S52/Q03）：puregit.deepwn.io 作为 Worker 主域。
+	 * 自定义域名（S52/Q03）：git.deepwn.io 作为 Worker 主域。
 	 * 前提：deepwn.io zone 已在同 Cloudflare 账户；custom_domain 会自动创建 DNS 记录与证书。
 	 *
 	 * ⚠️ 他人部署：不使用自定义域名时删除整个 routes 块（默认 *.workers.dev 即可）；
@@ -72,7 +84,7 @@
 	 */
 	"routes": [
 		{
-			"pattern": "puregit.deepwn.io",
+			"pattern": "git.deepwn.io",
 			"custom_domain": true
 		}
 	]

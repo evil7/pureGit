@@ -88,7 +88,7 @@ flowchart LR
   ├── /emails           邮箱                 └── /appearance      外观（本地主题）
 ```
 
-> **路径一致性**：任意 `github.com/owner/repo[/path]` 替换为 `puregit.deepwn.io/owner/repo[/path]` 可访问同级功能页（Q03 已确认域名）。
+> **路径一致性**：任意 `github.com/owner/repo[/path]` 替换为 `git.deepwn.io/owner/repo[/path]` 可访问同级功能页（Q03 已确认域名）。
 
 ### Worker（`worker/`，Cloudflare Pages Worker）
 
@@ -243,3 +243,4 @@ sequenceDiagram
 4. **git 代理协议**：镜像端点须正确处理 `info/refs` 的 `service=` 参数、`Content-Type`、`Transfer-Encoding` 与长连接，push 鉴权经 git 凭据（PAT）透传。
 5. **环境变量**：`GITHUB_CLIENT_ID`、`GITHUB_CLIENT_SECRET`（Secret）、回调地址、KV namespace 绑定等，全部配置于 Worker 环境，前端零密钥。
 6. **CORS**：前端直连 GitHub API 依赖其公开 CORS 支持；Worker 的 OAuth/CLI 端点需处理跨域（前端与 Worker 同域部署可简化）。
+7. **静态资产与 404 分发**：前端构建产物（`web/dist/client`）由 Workers Static Assets 托管——`assets.run_worker_first` 选择性路由：`/assets/**` 由边缘直接服务（缓存/性能最优），其余先进 Worker；非匹配请求统一走**内部 404 体系**（不自定义静态 404 模板，`not_found_handling` 默认 none）：SPA 深层链接由 Worker 回退 `index.html`（未知前端路径由应用内 `NotFoundPage` 呈现，animejs 粒子 404），缺失资源（如 `/foo.js`）保持纯 404 响应。`workers_dev: false` 仅保留自定义域名单一入口（OAuth 回调只登记自定义域名，workers.dev 入口无法完整登录）。

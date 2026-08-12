@@ -139,16 +139,18 @@ export default {
       return handleGitProxy(request);
     }
 
-    // 前端静态资源（vite-plugin 单进程 dev 模式：env.ASSETS 由插件注入，
-    // 提供前端构建产物；独立部署时无 ASSETS 则返回服务信息）
+    // 前端静态资源：env.ASSETS 由 wrangler assets 注入（构建产物 dist/client）。
+    // run_worker_first 路由数组已把 /assets/** 留给边缘直服，其余先进本 Worker。
+    // 独立部署（无 ASSETS binding）时兜底返回服务信息。
     const assets = (env as { ASSETS?: Fetcher }).ASSETS;
     if (assets) {
       let asset = await assets.fetch(request);
       if (asset.status !== 404) return asset;
-      // SPA 回退：返回 index.html 交给前端路由。
-      // - 无文件扩展名的深层路由（/settings/xxx、/owner/repo）→ 总是回退
-      // - 带扩展名的路径（如 blob 文件 /_reset.ts）→ 仅当浏览器以 Accept: text/html
-      //   导航时回退（前端路由页面）；纯资源请求（.js/.css，Accept */*）保持 404
+      // SPA 回退（智能分发）：非匹配请求统一走内部 404 体系（不自定义静态 404）——
+      // - 无文件扩展名的深层路由（/settings/xxx、/owner/repo）→ 返回 index.html
+      //   交给前端路由；未知前端路径由应用内 NotFoundPage（animejs 粒子 404）呈现
+      // - 带扩展名的路径（如缺失的 /foo.js）→ 仅当浏览器以 Accept: text/html
+      //   导航时回退（前端路由页面）；纯资源请求保持 404（not_found_handling 默认 none）
       const accept = request.headers.get("Accept") ?? "";
       const wantsHtml = accept.includes("text/html") || accept.includes("application/xhtml+xml");
       if (request.method === "GET" && (!url.pathname.match(/\.[a-zA-Z0-9]{1,8}$/) || wantsHtml)) {
@@ -160,8 +162,11 @@ export default {
         );
         if (asset.status !== 404) return asset;
       }
+      // 缺失资源：原样返回 ASSETS 的 404 响应
+      return asset;
     }
 
+    // 无 ASSETS binding（纯 worker 独立部署/调试）：返回服务信息
     return new Response(JSON.stringify({ ok: true, service: "PureGit-worker" }), {
       status: 200,
       headers: { "Content-Type": "application/json" },

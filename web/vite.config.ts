@@ -87,6 +87,9 @@ export default defineConfig({
   // 隐式设置，插件移除后需显式声明）。部署前必须 `pnpm --filter web build`。
   build: {
     outDir: 'dist/client',
+    // 懒加载 vendor chunk（graphql/codemirror/markdown 生态）单 chunk 较大属
+    // 正常（按需加载、不进首屏），提高告警阈值避免噪音；首屏 index 仍受约束
+    chunkSizeWarningLimit: 1050,
     rolldownOptions: {
       output: {
         // 重依赖分片（/$debug 懒加载触发时并行加载；docs/debug-page.md §12）：
@@ -106,6 +109,15 @@ export default defineConfig({
             {
               name: 'codemirror-vendor',
               test: /node_modules\/@?(codemirror|lezer|style-mod|w3c-keyname|crelt)\//,
+              priority: 20,
+            },
+            {
+              // Markdown 渲染生态（@uiw/react-markdown-preview + react-markdown +
+              // unified/remark/rehype/hast/micromark/prismjs 全链）：原并进
+              // MarkdownView 单 chunk 达 1.27MB，独立 vendor 后组件与生态分离——
+              // vendor 缓存稳定（组件更新不失效），多入口共享，避免超大单 chunk
+              name: 'markdown-vendor',
+              test: /node_modules\/(@uiw\/(react-markdown-preview|copy-to-clipboard)|react-markdown|remark-|rehype-|hast-|unified|unist-|micromark|mdast-|vfile|bail|trough|is-plain-obj|property-information|comma-separated-tokens|space-separated-tokens|html-void-elements|hastscript|web-namespaces|zwitch|ccount|stringify-entities|character-entities|decode-named-character-reference|parse-entities|trim-lines|longest-streak|markdown-table|devlop|prismjs|refractor|github-slugger|escape-string-regexp|css-selector-parser|nth-check|@babel\/runtime|@types\/)/,
               priority: 20,
             },
           ],
