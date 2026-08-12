@@ -3,7 +3,7 @@
  * Board file. See api.ts barrel & docs/api-compat.md.
  */
 
-import { graphqlRequest, hasGraphQLErrors } from "./api-core";
+import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
 import { SEARCH_REPOS_QUERY, SEARCH_USERS_QUERY, SEARCH_ISSUES_QUERY } from "./graphql";
 import { searchRepositories, searchUsers, searchIssues } from "./rest";
@@ -67,10 +67,22 @@ export async function searchRepositoriesSmart(
           items: resp.data.search.nodes.map(toSearchRepo),
         };
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => searchRepositories(q, 20, token),
+        "searchRepositoriesSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => searchRepositories(q, 20, token),
+        "searchRepositoriesSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return searchRepositories(q, 20, token);
 }
 
@@ -109,10 +121,14 @@ export async function searchUsersSmart(
           })),
         };
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(() => searchUsers(q, 20, token), "searchUsersSmart", resp);
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(() => searchUsers(q, 20, token), "searchUsersSmart", undefined);
     }
   }
+  // 匿名强制 REST
   return searchUsers(q, 20, token);
 }
 
@@ -168,10 +184,14 @@ export async function searchIssuesSmart(
           })),
         };
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(() => searchIssues(q, 20, token), "searchIssuesSmart", resp);
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(() => searchIssues(q, 20, token), "searchIssuesSmart", undefined);
     }
   }
+  // 匿名强制 REST
   return searchIssues(q, 20, token);
 }
 

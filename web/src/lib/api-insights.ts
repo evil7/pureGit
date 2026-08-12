@@ -5,7 +5,7 @@
  * Pulse 统计：GraphQL PULSE_STATS_QUERY 一次请求 6 个 issueCount 首选，失败降级 REST /search/issues 并行 6 个。
  * Top committers：REST commits 聚合（GraphQL 无等价「按作者聚合」端点，REST only）。
  */
-import { graphqlRequest, hasGraphQLErrors } from "./api-core";
+import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
 import { PULSE_STATS_QUERY } from "./graphql";
 import { searchIssues, fetchCommits } from "./rest";
@@ -60,11 +60,31 @@ export async function fetchPulseStatsSmart(
           newIssues: resp.data.newIssues?.issueCount ?? 0,
         };
       }
+      // GraphQL 失败 → 熔断降级 REST（并行 6 个 search，各取 total_count；日志自动 ↪ 前缀）
+      return withRestFallback(
+        async () => restPulse(repoQ, sinceQ, token),
+        "fetchPulseStatsSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => restPulse(repoQ, sinceQ, token),
+        "fetchPulseStatsSmart",
+        undefined,
+      );
     }
   }
-  // REST 降级：并行 6 个 search（各取 total_count）
+  // 匿名强制 REST（并行 6 个 search）
+  return restPulse(repoQ, sinceQ, token);
+}
+
+/** REST 降级：并行 6 个 search（各取 total_count） */
+async function restPulse(
+  repoQ: string,
+  sinceQ: string,
+  token?: string | null,
+): Promise<PulseStats> {
   const queries = [
     ["activePrs", `repo:${repoQ} is:pr is:open`],
     ["activeIssues", `repo:${repoQ} is:issue is:open`],

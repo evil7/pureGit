@@ -324,10 +324,28 @@ export async function fetchIssuesSmart(
           closedCount: repoData.closedCount.totalCount,
         };
       }
+      // GraphQL 失败 → 熔断降级 REST（复用 rest 层 fetchIssues；日志自动 ↪ 前缀）
+      return withRestFallback(
+        async () => {
+          const items = await fetchIssues(owner, repo, state, limit, token);
+          return { items, openCount: null, closedCount: null };
+        },
+        "fetchIssuesSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          const items = await fetchIssues(owner, repo, state, limit, token);
+          return { items, openCount: null, closedCount: null };
+        },
+        "fetchIssuesSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   const items = await fetchIssues(owner, repo, state, limit, token);
   return { items, openCount: null, closedCount: null };
 }
@@ -347,10 +365,22 @@ export async function fetchIssueDetailSmart(
       if (!hasGraphQLErrors(resp) && resp.data?.repository?.issue) {
         return toIssue(resp.data.repository.issue);
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchIssueDetail(owner, repo, number, token),
+        "fetchIssueDetailSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchIssueDetail(owner, repo, number, token),
+        "fetchIssueDetailSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchIssueDetail(owner, repo, number, token);
 }
 
@@ -379,9 +409,47 @@ export async function setIssueSubscriptionSmart(
           token,
         );
         if (!hasGraphQLErrors(mutResp)) return !subscribed;
+        // mutation 失败 → 熔断降级 REST（订阅 PUT / 取消 DELETE）
+        return withRestFallback(
+          async () => {
+            if (subscribed) {
+              await unsubscribeIssue(owner, repo, number, token);
+            } else {
+              await subscribeIssue(owner, repo, number, token);
+            }
+            return !subscribed;
+          },
+          "setIssueSubscriptionSmart",
+          mutResp,
+        );
       }
+      // node id 缺失 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          if (subscribed) {
+            await unsubscribeIssue(owner, repo, number, token);
+          } else {
+            await subscribeIssue(owner, repo, number, token);
+          }
+          return !subscribed;
+        },
+        "setIssueSubscriptionSmart",
+        idResp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          if (subscribed) {
+            await unsubscribeIssue(owner, repo, number, token);
+          } else {
+            await subscribeIssue(owner, repo, number, token);
+          }
+          return !subscribed;
+        },
+        "setIssueSubscriptionSmart",
+        undefined,
+      );
     }
   }
   // REST 兜底：订阅 PUT / 取消 DELETE
@@ -607,10 +675,22 @@ export async function fetchReleasesSmart(
       if (!hasGraphQLErrors(resp) && resp.data?.repository) {
         return resp.data.repository.releases.nodes.map(toRelease);
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchReleases(owner, repo, 20, token),
+        "fetchReleasesSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchReleases(owner, repo, 20, token),
+        "fetchReleasesSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchReleases(owner, repo, 20, token);
 }
 
@@ -632,10 +712,22 @@ export async function fetchLatestReleaseSmart(
         const rel = resp.data.repository.releases;
         return { count: rel.totalCount, latest: rel.nodes[0] ? toRelease(rel.nodes[0]) : null };
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchLatestRelease(owner, repo, token),
+        "fetchLatestReleaseSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchLatestRelease(owner, repo, token),
+        "fetchLatestReleaseSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchLatestRelease(owner, repo, token);
 }
 
@@ -654,10 +746,22 @@ export async function fetchReleaseDetailSmart(
       if (!hasGraphQLErrors(resp) && resp.data?.repository?.release) {
         return toRelease(resp.data.repository.release);
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchReleaseDetail(owner, repo, tag, token),
+        "fetchReleaseDetailSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchReleaseDetail(owner, repo, tag, token),
+        "fetchReleaseDetailSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchReleaseDetail(owner, repo, tag, token);
 }
 
@@ -696,10 +800,22 @@ export async function fetchIssueCommentsSmart(
       if (!hasGraphQLErrors(resp) && resp.data?.repository?.issue) {
         return resp.data.repository.issue.comments.nodes.map(toIssueComment);
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchIssueComments(owner, repo, number, token),
+        "fetchIssueCommentsSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchIssueComments(owner, repo, number, token),
+        "fetchIssueCommentsSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchIssueComments(owner, repo, number, token);
 }
 
@@ -711,6 +827,12 @@ export async function addIssueCommentSmart(
   body: string,
   token: string,
 ): Promise<IssueComment> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      () => addIssueComment(owner, repo, number, body, token),
+      "addIssueCommentSmart",
+      gqlResp,
+    );
   try {
     // 先查 issue node id（addComment 需要 subjectId）
     const idResp: GraphQLResponse<{
@@ -723,11 +845,15 @@ export async function addIssueCommentSmart(
       }> = await graphqlRequest(ADD_COMMENT_MUTATION, { subjectId: id, body }, token);
       const node = mutResp.data?.addComment?.commentEdge?.node;
       if (node && !hasGraphQLErrors(mutResp)) return toIssueComment(node);
+      // mutation 失败 → 熔断降级 REST
+      return fromRest(mutResp);
     }
+    // node id 缺失 → 熔断降级 REST
+    return fromRest(idResp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return addIssueComment(owner, repo, number, body, token);
 }
 
 /** GraphQL 评审评论节点 → REST ReviewComment（side 由 position/originalPosition 推断；线程 id/解决状态透传） */
@@ -793,10 +919,22 @@ export async function fetchPullReviewCommentsSmart(
         }
         return out;
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchPullReviewComments(owner, repo, number, token),
+        "fetchPullReviewCommentsSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchPullReviewComments(owner, repo, number, token),
+        "fetchPullReviewCommentsSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchPullReviewComments(owner, repo, number, token);
 }
 
@@ -867,11 +1005,27 @@ export async function addPullReviewCommentSmart(
           side: params.side,
         };
       }
+      // mutation 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => addPullReviewComment(owner, repo, number, params, token),
+        "addPullReviewCommentSmart",
+        mutResp,
+      );
     }
+    // pullRequest node id 缺失 → 熔断降级 REST
+    return withRestFallback(
+      () => addPullReviewComment(owner, repo, number, params, token),
+      "addPullReviewCommentSmart",
+      pidResp,
+    );
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return withRestFallback(
+      () => addPullReviewComment(owner, repo, number, params, token),
+      "addPullReviewCommentSmart",
+      undefined,
+    );
   }
-  return addPullReviewComment(owner, repo, number, params, token);
 }
 
 /** 智能获取仓库分支：GraphQL repository.refs 首选，失败降级 REST。 */
@@ -894,10 +1048,22 @@ export async function fetchBranchesSmart(
           commit: { sha: r.target.oid },
         }));
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchBranches(owner, repo, 100, token),
+        "fetchBranchesSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchBranches(owner, repo, 100, token),
+        "fetchBranchesSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchBranches(owner, repo, 100, token);
 }
 
@@ -922,10 +1088,22 @@ export async function fetchRepoLabelsSmart(
           description: l.description ?? null,
         }));
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchRepoLabels(owner, repo, token),
+        "fetchRepoLabelsSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchRepoLabels(owner, repo, token),
+        "fetchRepoLabelsSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchRepoLabels(owner, repo, token);
 }
 
@@ -946,10 +1124,22 @@ export async function fetchRepoAssigneesSmart(
           avatar_url: u.avatarUrl,
         }));
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchRepoAssignees(owner, repo, token),
+        "fetchRepoAssigneesSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchRepoAssignees(owner, repo, token),
+        "fetchRepoAssigneesSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchRepoAssignees(owner, repo, token);
 }
 
@@ -975,10 +1165,30 @@ export async function fetchIssueDetailWithCommentsSmart(
       if (!hasGraphQLErrors(resp) && g) {
         return { issue: toIssue(g), comments: g.comments.nodes.map(toIssueComment) };
       }
+      // GraphQL 失败 → 熔断降级 REST 分步（复用 rest 层；日志自动 ↪ 前缀）
+      return withRestFallback(
+        async () => {
+          const issue = await fetchIssueDetail(owner, repo, number, token);
+          const comments = await fetchIssueComments(owner, repo, number, token ?? null);
+          return { issue, comments };
+        },
+        "fetchIssueDetailWithCommentsSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST 分步
+      // 网络层错误 → 熔断降级 REST 分步
+      return withRestFallback(
+        async () => {
+          const issue = await fetchIssueDetail(owner, repo, number, token);
+          const comments = await fetchIssueComments(owner, repo, number, token ?? null);
+          return { issue, comments };
+        },
+        "fetchIssueDetailWithCommentsSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST 分步
   const issue = await fetchIssueDetail(owner, repo, number, token);
   const comments = await fetchIssueComments(owner, repo, number, token ?? null);
   return { issue, comments };
@@ -1006,10 +1216,30 @@ export async function fetchPullDetailWithCommentsSmart(
       if (!hasGraphQLErrors(resp) && g) {
         return { pr: toPull(g), comments: g.comments.nodes.map(toIssueComment) };
       }
+      // GraphQL 失败 → 熔断降级 REST 分步（复用 rest 层；日志自动 ↪ 前缀）
+      return withRestFallback(
+        async () => {
+          const pr = await fetchPullDetail(owner, repo, number, token);
+          const comments = await fetchIssueComments(owner, repo, number, token ?? null);
+          return { pr, comments };
+        },
+        "fetchPullDetailWithCommentsSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST 分步
+      // 网络层错误 → 熔断降级 REST 分步
+      return withRestFallback(
+        async () => {
+          const pr = await fetchPullDetail(owner, repo, number, token);
+          const comments = await fetchIssueComments(owner, repo, number, token ?? null);
+          return { pr, comments };
+        },
+        "fetchPullDetailWithCommentsSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST 分步
   const pr = await fetchPullDetail(owner, repo, number, token);
   const comments = await fetchIssueComments(owner, repo, number, token ?? null);
   return { pr, comments };
@@ -1085,11 +1315,46 @@ export async function fetchPullReviewSummarySmart(
             .map((x) => ({ login: x.login!, avatarUrl: x.avatarUrl ?? "" })),
         };
       }
+      // GraphQL 失败 → 熔断降级 REST（reviews 列表 + reviewDecision 由最新非 COMMENTED 评审推断）
+      return withRestFallback(
+        async () => {
+          const reviews = await fetchPullReviews(owner, repo, number, token);
+          const latest = reviews.find(
+            (r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED",
+          );
+          return {
+            pullRequestId: "",
+            reviewDecision: latest ? (latest.state as PullReviewSummary["reviewDecision"]) : null,
+            mergeable: null,
+            reviews,
+            reviewRequests: [],
+          };
+        },
+        "fetchPullReviewSummarySmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          const reviews = await fetchPullReviews(owner, repo, number, token);
+          const latest = reviews.find(
+            (r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED",
+          );
+          return {
+            pullRequestId: "",
+            reviewDecision: latest ? (latest.state as PullReviewSummary["reviewDecision"]) : null,
+            mergeable: null,
+            reviews,
+            reviewRequests: [],
+          };
+        },
+        "fetchPullReviewSummarySmart",
+        undefined,
+      );
     }
   }
-  // REST 降级：reviews 列表 + reviewDecision 由最新非 COMMENTED 评审推断（REST 无 reviewDecision 字段）
+  // 匿名强制 REST（reviewDecision 由最新非 COMMENTED 评审推断；REST 无 reviewDecision 字段）
   const reviews = await fetchPullReviews(owner, repo, number, token);
   const latest = reviews.find((r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED");
   return {
@@ -1146,11 +1411,27 @@ export async function submitPullReviewSmart(
           submitted_at: r.submittedAt ?? undefined,
         };
       }
+      // mutation 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => createPullReview(owner, repo, number, { event, body }, token),
+        "submitPullReviewSmart",
+        mutResp,
+      );
     }
+    // pullRequest node id 缺失 → 熔断降级 REST
+    return withRestFallback(
+      () => createPullReview(owner, repo, number, { event, body }, token),
+      "submitPullReviewSmart",
+      pidResp,
+    );
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return withRestFallback(
+      () => createPullReview(owner, repo, number, { event, body }, token),
+      "submitPullReviewSmart",
+      undefined,
+    );
   }
-  return createPullReview(owner, repo, number, { event, body }, token);
 }
 
 /** 智能合并 PR：GraphQL mergePullRequest 首选，失败降级 REST pulls/merge。 */
@@ -1175,10 +1456,22 @@ export async function mergePullRequestSmart(
       if (!hasGraphQLErrors(mutResp) && m) {
         return { merged: m.mergedAt != null || m.state === "MERGED", message: "" };
       }
+      // mutation 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => mergePullRequest(owner, repo, number, method, token),
+        "mergePullRequestSmart",
+        mutResp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => mergePullRequest(owner, repo, number, method, token),
+        "mergePullRequestSmart",
+        undefined,
+      );
     }
   }
+  // pullRequestId 缺失 → REST
   return mergePullRequest(owner, repo, number, method, token);
 }
 
@@ -1213,11 +1506,31 @@ export async function requestReviewersSmart(
         const mutResp: GraphQLResponse<{ requestReviews: { pullRequest: { id: string } } }> =
           await graphqlRequest(REQUEST_REVIEWS_MUTATION, { pullRequestId, userIds }, token);
         if (!hasGraphQLErrors(mutResp) && mutResp.data?.requestReviews) return;
+        // mutation 失败 → 熔断降级 REST
+        await withRestFallback(
+          () => requestReviewers(owner, repo, number, reviewers, token),
+          "requestReviewersSmart",
+          mutResp,
+        );
+        return;
       }
+      // 用户 node id 全部缺失 → 熔断降级 REST
+      await withRestFallback(
+        () => requestReviewers(owner, repo, number, reviewers, token),
+        "requestReviewersSmart",
+        undefined,
+      );
+      return;
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      await withRestFallback(
+        () => requestReviewers(owner, repo, number, reviewers, token),
+        "requestReviewersSmart",
+        undefined,
+      );
     }
   }
+  // 无 pullRequestId / 匿名 → REST
   await requestReviewers(owner, repo, number, reviewers, token);
 }
 
@@ -1276,10 +1589,28 @@ export async function setPullLockedSmart(
         token,
       );
       if (!hasGraphQLErrors(mutResp)) return;
+      // mutation 失败 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          if (locked) await lockPullRequest(owner, repo, number, token);
+          else await unlockPullRequest(owner, repo, number, token);
+        },
+        "setPullLockedSmart",
+        mutResp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          if (locked) await lockPullRequest(owner, repo, number, token);
+          else await unlockPullRequest(owner, repo, number, token);
+        },
+        "setPullLockedSmart",
+        undefined,
+      );
     }
   }
+  // 无 pullRequestId → REST
   if (locked) await lockPullRequest(owner, repo, number, token);
   else await unlockPullRequest(owner, repo, number, token);
 }

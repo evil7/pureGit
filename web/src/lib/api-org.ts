@@ -3,7 +3,7 @@
  * Board file. See api.ts barrel & docs/api-compat.md.
  */
 
-import { graphqlRequest, hasGraphQLErrors } from "./api-core";
+import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
 import {
   USER_PROFILE_QUERY,
@@ -187,6 +187,76 @@ export async function fetchProfileSmart(
   login: string,
   token?: string | null,
 ): Promise<ProfileResult> {
+  // REST 熔断降级（复用 rest 层 fetchUser/fetchOrg…；日志自动 ↪ 前缀）
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      async (): Promise<ProfileResult> => {
+        // REST /users/{login} 对组织也返回 200（type: "Organization"）
+        const user = await fetchUser(login, token);
+        if (user.type === "Organization") {
+          const [org, repos] = await Promise.all([
+            fetchOrg(login, token),
+            fetchOrgRepos(login, 20, token),
+          ]);
+          return {
+            kind: "org",
+            data: {
+              login: org.login,
+              name: org.name ?? null,
+              avatarUrl: org.avatar_url ?? null,
+              bio: org.description ?? null,
+              company: null,
+              location: org.location ?? null,
+              websiteUrl: org.blog ?? null,
+              publicRepos: org.public_repos,
+              totalRepos: org.public_repos,
+              followers: 0,
+              following: 0,
+              status: null,
+              pronouns: null,
+              organizations: [],
+              members: 0,
+              viewerIsFollowing: null,
+              viewerCanAdminister: false,
+              starCount: null,
+              repos,
+              pinned: [],
+            },
+          };
+        }
+        const [repos, starCount] = await Promise.all([
+          fetchUserRepos(login, 20, token),
+          fetchUserStarsCount(login, token),
+        ]);
+        return {
+          kind: "user",
+          data: {
+            login: user.login,
+            name: user.name ?? null,
+            avatarUrl: user.avatar_url ?? null,
+            bio: user.bio ?? null,
+            company: user.company ?? null,
+            location: user.location ?? null,
+            websiteUrl: user.blog ?? null,
+            publicRepos: user.public_repos,
+            totalRepos: user.public_repos,
+            followers: user.followers,
+            following: user.following,
+            status: null,
+            pronouns: null,
+            organizations: [],
+            members: 0,
+            viewerIsFollowing: null,
+            viewerCanAdminister: false,
+            starCount,
+            repos,
+            pinned: [],
+          },
+        };
+      },
+      "fetchProfileSmart",
+      gqlResp,
+    );
   // GraphQL 首选（需 token；匿名直接 REST）
   if (token) {
     try {
@@ -203,7 +273,8 @@ export async function fetchProfileSmart(
         };
       }
     } catch {
-      // 试组织
+      // 网络层错误 → 熔断降级 REST
+      return fromRest(undefined);
     }
     try {
       const resp: GraphQLResponse<{ organization: GraphQLProfile | null }> = await graphqlRequest(
@@ -218,72 +289,15 @@ export async function fetchProfileSmart(
           data: toProfileData(o, o.publicRepos?.totalCount ?? o.repositories.nodes.length),
         };
       }
+      // 双查询均失败（非 user 非 org）→ 熔断降级 REST
+      return fromRest(resp);
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return fromRest(undefined);
     }
   }
-  // REST 降级：/users/{login} 对组织也返回 200（type: "Organization"）
-  const user = await fetchUser(login, token);
-  if (user.type === "Organization") {
-    const [org, repos] = await Promise.all([
-      fetchOrg(login, token),
-      fetchOrgRepos(login, 20, token),
-    ]);
-    return {
-      kind: "org",
-      data: {
-        login: org.login,
-        name: org.name ?? null,
-        avatarUrl: org.avatar_url ?? null,
-        bio: org.description ?? null,
-        company: null,
-        location: org.location ?? null,
-        websiteUrl: org.blog ?? null,
-        publicRepos: org.public_repos,
-        totalRepos: org.public_repos,
-        followers: 0,
-        following: 0,
-        status: null,
-        pronouns: null,
-        organizations: [],
-        members: 0,
-        viewerIsFollowing: null,
-        viewerCanAdminister: false,
-        starCount: null,
-        repos,
-        pinned: [],
-      },
-    };
-  }
-  const [repos, starCount] = await Promise.all([
-    fetchUserRepos(login, 20, token),
-    fetchUserStarsCount(login, token),
-  ]);
-  return {
-    kind: "user",
-    data: {
-      login: user.login,
-      name: user.name ?? null,
-      avatarUrl: user.avatar_url ?? null,
-      bio: user.bio ?? null,
-      company: user.company ?? null,
-      location: user.location ?? null,
-      websiteUrl: user.blog ?? null,
-      publicRepos: user.public_repos,
-      totalRepos: user.public_repos,
-      followers: user.followers,
-      following: user.following,
-      status: null,
-      pronouns: null,
-      organizations: [],
-      members: 0,
-      viewerIsFollowing: null,
-      viewerCanAdminister: false,
-      starCount,
-      repos,
-      pinned: [],
-    },
-  };
+  // 匿名强制 REST（GraphQL 恒 403，硬约束非降级）
+  return fromRest(undefined);
 }
 
 /**
@@ -311,10 +325,28 @@ export async function fetchUserStarsSmart(
           repos: resp.data.user.starredRepositories.nodes.map((n) => toProfileRepo(n, login)),
         };
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          const repos = await fetchUserStars(login, 20, token);
+          return { totalCount: repos.length, repos };
+        },
+        "fetchUserStarsSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          const repos = await fetchUserStars(login, 20, token);
+          return { totalCount: repos.length, repos };
+        },
+        "fetchUserStarsSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   const repos = await fetchUserStars(login, 20, token);
   return { totalCount: repos.length, repos };
 }
@@ -328,6 +360,8 @@ export async function fetchUserStarsSmart(
  * → REST /orgs/{org} 降级。
  */
 export async function fetchOrgDetailSmart(org: string, token: string): Promise<OrgDetail> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(() => fetchOrgDetail(org, token), "fetchOrgDetailSmart", gqlResp);
   try {
     const resp: GraphQLResponse<{
       organization: {
@@ -387,10 +421,12 @@ export async function fetchOrgDetailSmart(org: string, token: string): Promise<O
         ...permPatch,
       };
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return fetchOrgDetail(org, token);
 }
 
 /**
@@ -428,6 +464,19 @@ export async function updateOrganizationSmart(
         | "none",
     });
   }
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      () =>
+        updateOrganization(org, token, {
+          name: fields.name,
+          description: fields.description,
+          blog: fields.websiteUrl,
+          location: fields.location,
+          email: fields.email,
+        }),
+      "updateOrganizationSmart",
+      gqlResp,
+    );
   try {
     const detail = await fetchOrgDetailSmart(org, token);
     if (!detail.node_id) throw new Error("no node_id");
@@ -472,16 +521,12 @@ export async function updateOrganizationSmart(
         node_id: o.id,
       };
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return updateOrganization(org, token, {
-    name: fields.name,
-    description: fields.description,
-    blog: fields.websiteUrl,
-    location: fields.location,
-    email: fields.email,
-  });
 }
 
 // ===== A 类整改 smart 包装（双端点 API 全部接入 smart 层） =====
@@ -507,10 +552,14 @@ export async function fetchOrgMembersSmart(
           html_url: m.url,
         }));
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(() => fetchOrgMembers(org, token), "fetchOrgMembersSmart", resp);
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(() => fetchOrgMembers(org, token), "fetchOrgMembersSmart", undefined);
     }
   }
+  // 匿名强制 REST
   return fetchOrgMembers(org, token);
 }
 

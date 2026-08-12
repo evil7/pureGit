@@ -3,7 +3,7 @@
  * Board file. See api.ts barrel & docs/api-compat.md.
  */
 
-import { graphqlRequest, hasGraphQLErrors } from "./api-core";
+import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
 import {
   VIEWER_QUERY,
@@ -66,6 +66,27 @@ interface GraphQLViewer {
  * 供账户设置（Profile/Account 页）使用。
  */
 export async function fetchViewerSmart(token: string): Promise<ViewerProfile> {
+  // REST 熔断降级（复用 rest 层 fetchCurrentUser；日志自动 ↪ 前缀）
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      async () => {
+        const u = await fetchCurrentUser(token);
+        return {
+          login: u.login,
+          name: u.name ?? null,
+          avatarUrl: u.avatar_url ?? null,
+          bio: u.bio ?? null,
+          company: u.company ?? null,
+          location: u.location ?? null,
+          websiteUrl: u.blog ?? null,
+          email: u.email ?? null,
+          plan: u.plan?.name ?? null,
+          pronouns: u.pronouns ?? null,
+        };
+      },
+      "fetchViewerSmart",
+      gqlResp,
+    );
   try {
     const resp: GraphQLResponse<{ viewer: GraphQLViewer }> = await graphqlRequest(
       VIEWER_QUERY,
@@ -86,22 +107,12 @@ export async function fetchViewerSmart(token: string): Promise<ViewerProfile> {
         pronouns: v.pronouns ?? null,
       };
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误（graphqlRequest 已触发 cooldown）→ 熔断降级 REST
+    return fromRest(undefined);
   }
-  const u = await fetchCurrentUser(token);
-  return {
-    login: u.login,
-    name: u.name ?? null,
-    avatarUrl: u.avatar_url ?? null,
-    bio: u.bio ?? null,
-    company: u.company ?? null,
-    location: u.location ?? null,
-    websiteUrl: u.blog ?? null,
-    email: u.email ?? null,
-    plan: u.plan?.name ?? null,
-    pronouns: u.pronouns ?? null,
-  };
 }
 
 /** 智能获取当前用户（含 REST 字段），供头像/顶栏等简单场景使用 */
@@ -150,6 +161,20 @@ export interface UserOrgItem {
 
 /** 智能获取当前用户组织列表（GraphQL viewer.organizations 首选 + REST /user/orgs 降级） */
 export async function fetchUserOrgsSmart(token: string): Promise<UserOrgItem[]> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      async () => {
+        const orgs = await fetchUserOrgs(token);
+        return orgs.map((o) => ({
+          login: o.login,
+          name: o.name ?? null,
+          avatarUrl: o.avatar_url ?? null,
+          description: null,
+        }));
+      },
+      "fetchUserOrgsSmart",
+      gqlResp,
+    );
   try {
     const resp: GraphQLResponse<{
       viewer: { organizations: { nodes: UserOrgItem[] } };
@@ -157,20 +182,18 @@ export async function fetchUserOrgsSmart(token: string): Promise<UserOrgItem[]> 
     if (!hasGraphQLErrors(resp) && resp.data?.viewer?.organizations?.nodes) {
       return resp.data.viewer.organizations.nodes;
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  const orgs = await fetchUserOrgs(token);
-  return orgs.map((o) => ({
-    login: o.login,
-    name: o.name ?? null,
-    avatarUrl: o.avatar_url ?? null,
-    description: null,
-  }));
 }
 
 /** 智能获取当前用户仓库（GraphQL viewer.repositories 首选 + REST /user/repos 降级） */
 export async function fetchMyReposSmart(token: string): Promise<Repository[]> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(() => fetchMyRepos(token), "fetchMyReposSmart", gqlResp);
   try {
     const resp: GraphQLResponse<{
       viewer: { repositories: { nodes: GraphQLRepository[] } };
@@ -178,10 +201,12 @@ export async function fetchMyReposSmart(token: string): Promise<Repository[]> {
     if (!hasGraphQLErrors(resp) && resp.data?.viewer?.repositories?.nodes) {
       return resp.data.viewer.repositories.nodes.map((g) => toRepository(g, g.owner?.login ?? ""));
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return fetchMyRepos(token);
 }
 
 /** 更新当前用户公开资料（GraphQL updateUser 首选 + REST PATCH /user 降级） */
@@ -196,6 +221,32 @@ export async function updateUserProfileSmart(
     pronouns?: string;
   },
 ): Promise<ViewerProfile> {
+  // REST 熔断降级（PATCH /user；日志自动 ↪ 前缀）
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      async () => {
+        const u = await updateUserProfile(token, {
+          name: fields.name,
+          bio: fields.bio,
+          company: fields.company,
+          location: fields.location,
+          blog: fields.websiteUrl,
+          pronouns: fields.pronouns,
+        });
+        return {
+          login: u.login,
+          name: u.name ?? null,
+          avatarUrl: u.avatar_url ?? null,
+          bio: u.bio ?? null,
+          company: u.company ?? null,
+          location: u.location ?? null,
+          websiteUrl: u.blog ?? null,
+          pronouns: u.pronouns ?? null,
+        };
+      },
+      "updateUserProfileSmart",
+      gqlResp,
+    );
   try {
     const resp: GraphQLResponse<{
       updateUser: { user: GraphQLViewer };
@@ -226,30 +277,17 @@ export async function updateUserProfileSmart(
         pronouns: u.pronouns ?? null,
       };
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  const u = await updateUserProfile(token, {
-    name: fields.name,
-    bio: fields.bio,
-    company: fields.company,
-    location: fields.location,
-    blog: fields.websiteUrl,
-    pronouns: fields.pronouns,
-  });
-  return {
-    login: u.login,
-    name: u.name ?? null,
-    avatarUrl: u.avatar_url ?? null,
-    bio: u.bio ?? null,
-    company: u.company ?? null,
-    location: u.location ?? null,
-    websiteUrl: u.blog ?? null,
-    pronouns: u.pronouns ?? null,
-  };
 }
 
 export async function fetchSshKeysSmart(token: string): Promise<SSHKey[]> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(() => fetchSSHKeys(token), "fetchSshKeysSmart", gqlResp);
   try {
     const resp: GraphQLResponse<{
       viewer: {
@@ -277,14 +315,18 @@ export async function fetchSshKeysSmart(token: string): Promise<SSHKey[]> {
         last_used: null,
       }));
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return fetchSSHKeys(token);
 }
 
 /** 智能新增 SSH key：GraphQL createSshKey 首选，失败降级 REST。 */
 export async function addSshKeySmart(token: string, title: string, key: string): Promise<SSHKey> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(() => addSSHKey(token, title, key), "addSshKeySmart", gqlResp);
   try {
     const resp: GraphQLResponse<{
       createSshKey: {
@@ -311,10 +353,12 @@ export async function addSshKeySmart(token: string, title: string, key: string):
         last_used: null,
       };
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return addSSHKey(token, title, key);
 }
 
 /** 智能删除 SSH key：GraphQL deleteSshKey 首选（需 node id），失败降级 REST。 */
@@ -338,6 +382,8 @@ export async function deleteSshKeySmart(token: string, keyId: number): Promise<v
 
 /** 智能查询是否已关注：GraphQL user.viewerIsFollowing 首选，失败降级 REST。 */
 export async function isFollowingSmart(token: string, login: string): Promise<boolean> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(() => isFollowing(token, login), "isFollowingSmart", gqlResp);
   try {
     const resp: GraphQLResponse<{
       user: { viewerIsFollowing: boolean } | null;
@@ -345,10 +391,12 @@ export async function isFollowingSmart(token: string, login: string): Promise<bo
     if (!hasGraphQLErrors(resp) && resp.data?.user) {
       return resp.data.user.viewerIsFollowing;
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return isFollowing(token, login);
 }
 
 /** 智能关注/取关：GraphQL followUser/unfollowUser 首选（需 userId），失败降级 REST。 */
@@ -357,6 +405,8 @@ export async function setFollowingSmart(
   login: string,
   follow: boolean,
 ): Promise<void> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(() => setFollowing(token, login, follow), "setFollowingSmart", gqlResp);
   try {
     const idResp: GraphQLResponse<{ user: { id: string } | null }> = await graphqlRequest(
       USER_ID_QUERY,
@@ -371,11 +421,15 @@ export async function setFollowingSmart(
         token,
       );
       if (!hasGraphQLErrors(mutResp)) return;
+      // mutation 失败 → 熔断降级 REST
+      return fromRest(mutResp);
     }
+    // userId 缺失（GraphQL 查询失败/用户不存在）→ 熔断降级 REST
+    return fromRest(idResp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  await setFollowing(token, login, follow);
 }
 
 /** 智能获取仓库主题：GraphQL repositoryTopics 首选，失败降级 REST。 */

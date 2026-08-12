@@ -20,10 +20,14 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/api-core", () => ({
-  graphqlRequest: vi.fn(),
-  hasGraphQLErrors: (resp: { errors?: unknown[] } | undefined) => Boolean(resp?.errors?.length),
-}));
+vi.mock("@/lib/api-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-core")>();
+  return {
+    ...actual,
+    graphqlRequest: vi.fn(),
+    hasGraphQLErrors: (resp: { errors?: unknown[] } | undefined) => Boolean(resp?.errors?.length),
+  };
+});
 
 vi.mock("@/lib/rest", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/rest")>();

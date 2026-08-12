@@ -3,7 +3,7 @@
  * Board file. See api.ts barrel & docs/api-compat.md.
  */
 
-import { graphqlRequest, hasGraphQLErrors } from "./api-core";
+import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
 import {
   REPOSITORY_QUERY,
@@ -106,21 +106,46 @@ export async function createRepositorySmart(
       const r = resp.data.createRepository.repository;
       return { name: r.name, full_name: r.nameWithOwner };
     }
+    // GraphQL 失败 → 熔断降级 REST（复用 rest 层 createRepository；日志自动 ↪ 前缀）
+    return withRestFallback(
+      async () => {
+        const r = await createRepository(
+          token,
+          {
+            name: opts.name,
+            description: opts.description,
+            private: opts.private,
+            auto_init: opts.autoInit,
+            owner: opts.owner,
+          },
+          login,
+        );
+        return { name: r.name, full_name: r.full_name };
+      },
+      "createRepositorySmart",
+      resp,
+    );
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return withRestFallback(
+      async () => {
+        const r = await createRepository(
+          token,
+          {
+            name: opts.name,
+            description: opts.description,
+            private: opts.private,
+            auto_init: opts.autoInit,
+            owner: opts.owner,
+          },
+          login,
+        );
+        return { name: r.name, full_name: r.full_name };
+      },
+      "createRepositorySmart",
+      undefined,
+    );
   }
-  const r = await createRepository(
-    token,
-    {
-      name: opts.name,
-      description: opts.description,
-      private: opts.private,
-      auto_init: opts.autoInit,
-      owner: opts.owner,
-    },
-    login,
-  );
-  return { name: r.name, full_name: r.full_name };
 }
 /** GraphQL 仓库节点（按需字段） */
 export interface GraphQLRepository {
@@ -236,14 +261,44 @@ export async function fetchRepositorySmart(
         }
         return { data: toRepository(g, owner), langs };
       }
-      // GraphQL 返回 errors → 落入 REST
+      // GraphQL 失败 → 熔断降级 REST（复用 rest 层；日志自动 ↪ 前缀）
+      return withRestFallback(
+        async () => {
+          // pulls 计数精确补查（REST open_issues_count 含 PRs，不能拆分；pulls?state=open 独立精确）
+          const [data, langs, pullsCount] = await Promise.all([
+            fetchRepository(owner, name, token),
+            fetchLanguages(owner, name, token).catch(() => ({})),
+            fetchOpenPullsCount(owner, name, token),
+          ]);
+          return {
+            data: pullsCount != null ? { ...data, open_pulls_count: pullsCount } : data,
+            langs,
+          };
+        },
+        "fetchRepositorySmart",
+        resp,
+      );
     } catch {
-      // GraphQL 不可达/超时 → 落入 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          const [data, langs, pullsCount] = await Promise.all([
+            fetchRepository(owner, name, token),
+            fetchLanguages(owner, name, token).catch(() => ({})),
+            fetchOpenPullsCount(owner, name, token),
+          ]);
+          return {
+            data: pullsCount != null ? { ...data, open_pulls_count: pullsCount } : data,
+            langs,
+          };
+        },
+        "fetchRepositorySmart",
+        undefined,
+      );
     }
   }
 
-  // ---- 降级 REST ----
-  // pulls 计数精确补查（REST open_issues_count 含 PRs，不能拆分；pulls?state=open 独立精确）
+  // ---- 匿名强制 REST（GraphQL 恒 403，硬约束非降级）----
   const [data, langs, pullsCount] = await Promise.all([
     fetchRepository(owner, name, token),
     fetchLanguages(owner, name, token).catch(() => ({})),
@@ -304,11 +359,22 @@ export async function createIssueSmart(
       if (!hasGraphQLErrors(resp) && resp.data?.createIssue) {
         return resp.data.createIssue.issue.number;
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        async () => (await createIssue(token, owner, repo, body)).number,
+        "createIssueSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => (await createIssue(token, owner, repo, body)).number,
+        "createIssueSmart",
+        undefined,
+      );
     }
   }
-  // ---- 降级 REST ----
+  // ---- 降级 REST（node id 查询失败）----
   const issue = await createIssue(token, owner, repo, body);
   return issue.number;
 }
@@ -340,11 +406,28 @@ export async function setStarredSmart(
       if (!hasGraphQLErrors(resp) && starrable) {
         return starrable.stargazerCount;
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          await setStarred(token, owner, repo, starred);
+          return null;
+        },
+        "setStarredSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          await setStarred(token, owner, repo, starred);
+          return null;
+        },
+        "setStarredSmart",
+        undefined,
+      );
     }
   }
-  // ---- 降级 REST ----
+  // ---- 降级 REST（node id 查询失败）----
   await setStarred(token, owner, repo, starred);
   return null;
 }
@@ -386,10 +469,22 @@ export async function fetchReleasesCountSmart(
       if (!hasGraphQLErrors(resp) && resp.data?.repository) {
         return resp.data.repository.releases.totalCount;
       }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchReleasesCount(owner, repo, token),
+        "fetchReleasesCountSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchReleasesCount(owner, repo, token),
+        "fetchReleasesCountSmart",
+        undefined,
+      );
     }
   }
+  // 匿名强制 REST
   return fetchReleasesCount(owner, repo, token);
 }
 
@@ -439,11 +534,22 @@ export async function fetchRepoTopicsSmart(
       if (!hasGraphQLErrors(resp) && resp.data?.repository) {
         return resp.data.repository.repositoryTopics.nodes.map((t) => t.topic.name);
       }
+      // GraphQL 失败 → 熔断降级 REST（fetchRepoTopics 签名要求 string token）
+      return withRestFallback(
+        () => fetchRepoTopics(owner, repo, token),
+        "fetchRepoTopicsSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchRepoTopics(owner, repo, token),
+        "fetchRepoTopicsSmart",
+        undefined,
+      );
     }
   }
-  // REST 降级需 token（fetchRepoTopics 签名要求 string）
+  // 匿名强制 REST（需 token，无则空）
   if (token) return fetchRepoTopics(owner, repo, token);
   return [];
 }
@@ -455,6 +561,12 @@ export async function replaceRepoTopicsSmart(
   token: string,
   names: string[],
 ): Promise<string[]> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      () => replaceRepoTopics(owner, repo, token, names),
+      "replaceRepoTopicsSmart",
+      gqlResp,
+    );
   try {
     const idResp: GraphQLResponse<{
       repository: { id: string } | null;
@@ -472,11 +584,15 @@ export async function replaceRepoTopicsSmart(
       );
       const topics = mutResp.data?.updateRepositoryTopics?.repositoryTopics?.nodes;
       if (topics && !hasGraphQLErrors(mutResp)) return topics.map((t) => t.topic.name);
+      // mutation 失败 → 熔断降级 REST
+      return fromRest(mutResp);
     }
+    // node id 缺失 → 熔断降级 REST
+    return fromRest(idResp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return replaceRepoTopics(owner, repo, token, names);
 }
 
 /** 智能查询仓库订阅状态：GraphQL viewerSubscription（REPOSITORY_QUERY）首选，失败降级 REST。 */
@@ -485,6 +601,12 @@ export async function fetchRepoSubscriptionSmart(
   repo: string,
   token: string,
 ): Promise<RepoSubscription> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      () => fetchRepoSubscription(owner, repo, token),
+      "fetchRepoSubscriptionSmart",
+      gqlResp,
+    );
   try {
     const resp: GraphQLResponse<{
       repository: { viewerSubscription: string | null } | null;
@@ -496,10 +618,12 @@ export async function fetchRepoSubscriptionSmart(
         ignored: s === "IGNORED",
       };
     }
+    // GraphQL 失败 → 熔断降级 REST
+    return fromRest(resp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return fetchRepoSubscription(owner, repo, token);
 }
 
 /** 智能设置仓库订阅：GraphQL updateSubscription 首选（需 repositoryId），失败降级 REST。 */
@@ -509,6 +633,12 @@ export async function setRepoSubscriptionSmart(
   token: string,
   body: { subscribed?: boolean; ignored?: boolean },
 ): Promise<RepoSubscription> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      () => setRepoSubscription(owner, repo, token, body),
+      "setRepoSubscriptionSmart",
+      gqlResp,
+    );
   try {
     const idResp: GraphQLResponse<{
       repository: { id: string } | null;
@@ -527,11 +657,15 @@ export async function setRepoSubscriptionSmart(
           ignored: state === "IGNORED",
         };
       }
+      // mutation 失败 → 熔断降级 REST
+      return fromRest(mutResp);
     }
+    // node id 缺失 → 熔断降级 REST
+    return fromRest(idResp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  return setRepoSubscription(owner, repo, token, body);
 }
 
 /** 最近推送分支（GraphQL refs committedDate 排序；仅登录查询，失败/匿名静默返回空——提示条非核心，参照 ForkInfoBar 静默先例）。 */
@@ -566,6 +700,8 @@ export async function deleteRepositorySmart(
   repo: string,
   token: string,
 ): Promise<void> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(() => deleteRepository(owner, repo, token), "deleteRepositorySmart", gqlResp);
   try {
     const idResp: GraphQLResponse<{
       repository: { id: string } | null;
@@ -578,11 +714,15 @@ export async function deleteRepositorySmart(
         token,
       );
       if (!hasGraphQLErrors(mutResp)) return;
+      // mutation 失败 → 熔断降级 REST
+      return fromRest(mutResp);
     }
+    // node id 缺失 → 熔断降级 REST
+    return fromRest(idResp);
   } catch {
-    // 降级 REST
+    // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
   }
-  await deleteRepository(owner, repo, token);
 }
 
 // ===== D1 Security 安全公告（REST only——GraphQL 无 security advisory 通道，不可抗力 §4.14；smart 层统一入口）=====
