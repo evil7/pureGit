@@ -16,8 +16,13 @@ export default defineConfig({
       "@": fileURLToPath(new URL("./src", import.meta.url)),
     },
   },
+  // React 19 新 JSX Transform：esbuild 默认 classic 会要求 React 在作用域内 → 指定 automatic
+  esbuild: {
+    jsx: "automatic",
+  },
   test: {
     environment: "node",
-    include: ["test/**/*.spec.ts"],
+    include: ["test/**/*.spec.ts", "test/**/*.spec.tsx"],
+    setupFiles: ["test/setup.ts"],
   },
 });

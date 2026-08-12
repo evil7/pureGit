@@ -19,9 +19,8 @@ import { getDeviceId } from "@/lib/session";
 import { WORKER_BASE } from "@/lib/worker-base";
 import { setPrefsAuth, syncPrefsFromCloud } from "@/lib/prefs-sync";
 import { computeMissingScopes } from "@/lib/scopes";
+import { readCache, writeCache, clearCache } from "@/lib/session-cache";
 
-/** session 缓存键（sessionStorage，标签页级） */
-const SESSION_CACHE_KEY = "puregit_session_cache";
 /** 缓存提前失效余量（ms）：接近过期即视为失效，避免边界竞态 */
 const CACHE_SKEW = 60_000;
 
@@ -30,44 +29,6 @@ interface AuthUser {
   avatarUrl?: string;
   /** GitHub 用户数字 ID（worker /$auth/session 返回；偏好云同步等稳定定位用） */
   userId?: number;
-}
-
-/** session 缓存结构（与 worker /$auth/session 返回对齐） */
-interface SessionCache {
-  token: string;
-  user?: AuthUser;
-  scopes?: LoginScopes;
-  /** GitHub 实际授予的 scope（重新授权后为准；旧缓存可能缺失） */
-  grantedScopes?: string[];
-  expiresAt: number;
-}
-
-function readCache(): SessionCache | null {
-  try {
-    const raw = sessionStorage.getItem(SESSION_CACHE_KEY);
-    if (!raw) return null;
-    const c = JSON.parse(raw) as SessionCache;
-    if (!c.token || typeof c.expiresAt !== "number") return null;
-    return c;
-  } catch {
-    return null;
-  }
-}
-
-function writeCache(c: SessionCache) {
-  try {
-    sessionStorage.setItem(SESSION_CACHE_KEY, JSON.stringify(c));
-  } catch {
-    /* 隐私模式等写入失败时忽略，回退为每次请求 worker */
-  }
-}
-
-function clearCache() {
-  try {
-    sessionStorage.removeItem(SESSION_CACHE_KEY);
-  } catch {
-    /* ignore */
-  }
 }
 
 /** 登录权限选择（与 worker/src/auth.ts LoginScopes 同构） */

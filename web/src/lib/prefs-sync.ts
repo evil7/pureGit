@@ -45,8 +45,8 @@ export function getPrefsToken(): string | null {
   return authToken;
 }
 
-/** 收集本地全部偏好（打包为可上传对象） */
-function collectLocalPrefs(): Record<string, string> {
+/** 收集本地全部偏好（打包为可上传对象；非法值忽略、localStorage 不可用 → 空对象） */
+export function collectLocalPrefs(): Record<string, string> {
   const out: Record<string, string> = {};
   try {
     const t = localStorage.getItem(THEME_KEY);

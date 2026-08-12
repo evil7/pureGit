@@ -99,6 +99,9 @@ export function parseSearchSyntax(raw: string): SearchFilters {
   return f;
 }
 
+/** 类型词（is:pr 等，与 type: 等价） */
+const TYPE_WORDS = ["pr", "issue", "discussion", "gist"];
+
 /**
  * 构建 GitHub 搜索端点 query 串（GraphQL search / REST /search）。
  * @param raw 用户输入（可为空）
@@ -115,11 +118,13 @@ export function buildSearchQuery(
   const parts: string[] = [];
   const f = parseSearchSyntax(raw);
   if (f.query) parts.push(f.query);
-  // 类型限定（is:pr/is:issue 与 type: 等价，不重复加）
-  const hasTypeInIs = f.is.some((v) => ["pr", "issue", "discussion", "gist"].includes(v));
+  // 类型限定（is:pr/is:issue 与 type: 等价，不重复加）：is 中的类型词直接原样输出，
+  // 避免「已含类型词但被状态词过滤 + type 因等价不加」导致类型限定丢失
+  const hasTypeInIs = f.is.some((v) => TYPE_WORDS.includes(v));
   if (opts.type && !hasTypeInIs) parts.push(`type:${opts.type}`);
+  for (const v of f.is) if (TYPE_WORDS.includes(v)) parts.push(`is:${v}`);
   // is: 状态词
-  const stateWords = f.is.filter((v) => !["pr", "issue", "discussion", "gist"].includes(v));
+  const stateWords = f.is.filter((v) => !TYPE_WORDS.includes(v));
   if (stateWords.length === 0 && opts.defaultState) {
     parts.push(`is:${opts.defaultState}`);
   } else {

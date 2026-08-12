@@ -30,7 +30,7 @@
 
 > 两者已列入 `.gitignore`，`git add` 不会纳入；仅本地保留用于开发跟踪。**开发过程不强制记录任务/决策**——临时任务与决策随开发开始和结束自然消亡，最终结果沉淀在代码注释（总结性语义描述，说明代码最终用意）与公开框架文档中；避免临时记录过度堆积导致文档膨胀、关联混乱。
 
-> **质控/审计类临时计划文档**（《质量控制计划》`docs/qc-plan-*.md`、《项目资产评估和改进计划》`docs/asset-audit-*.md`）同样属于内部临时文档（已列入 `.gitignore`，不随仓库公开）：由 `project-qc` / `asset-audit` skill 规范产出、在任务期间驱动整改，**随任务收敛归档**，不留长期文档负担。
+> **质控/审计类临时计划文档**（《质量控制计划》`tmp/qc-plan-*.md`、《项目资产评估和改进计划》`tmp/asset-audit-*.md`）为任务期临时实施指导，生成于 `tmp/`（即用即删，已被 `.gitignore` 排除，不随仓库公开）：由 `project-qc` / `asset-audit` skill 规范产出、在任务期间驱动整改，**随任务收敛归档**，不留长期文档负担。
 
 ## 二、`.github/` 协作设施（Agent / vibe coding）
 
@@ -72,7 +72,7 @@
 - **文档体系规整（2026-08-10）**：**决策记录机制整体移除**——`decisions.md` 已删除、`architecture.md` 不再保留 ADR 索引表；`tasks.md` 只留需求基线、`plan.md` 只留依赖层级；注释规范为**总结性语义描述**（说明代码最终用意），不引用决策编号
 - **已部署**：Worker `puregit` + 自定义域名 `https://git.deepwn.io`（OAuth 回调与 CLI 镜像端点同域）
 - **已知待修复漏洞（持续跟踪）**：`undici` <7.24.0（WebSocket 3 个 CVE）经 `wrangler`/`vitest-pool-workers` → `miniflare` 引入——Cloudflare 工具链内部锁定版本，overrides 会破坏兼容，**等上游发版**；`nth-check` 已通过 `pnpm-workspace.yaml` overrides 修复（GHSA-rp65-9cf3-cjxr）
-- **开发环境**：**`pnpm dev`（双进程，唯一模式）**——纯 vite 前端 5173 + 独立 `wrangler dev` worker 8787，vite proxy 只转发 `/$auth` 与 git 端点；启动自动 `wrangler types`；构建 `pnpm --filter web build`（详见 copilot-instructions.md「构建与测试」）；**提交前门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `pnpm format:check`（oxfmt 格式一致）+ `pnpm test`（vitest 质量门，`/$debug` 相关改动必跑）；**依赖更新**：`pnpm update:all`（递归更新根/web/worker 全部依赖至现有 semver 范围内最新 + 高危漏洞审计；audit 显式走官方 registry `https://registry.npmjs.org`——npmmirror 镜像不提供审计端点，故不可省略 `--registry`）；**high 漏洞处置**：先调研（`pnpm why` 定位引入链、判断生产/工具链影响）→ 查 advisory 安全版本 → 可选 a. `pnpm-workspace.yaml` overrides 强制修复（补丁级兼容）或 b. 代码层缓解（上游未发版时），流程详见 copilot-instructions.md「依赖安全与更新风控」
+- **开发环境**：**`pnpm dev`（双进程，唯一模式）**——纯 vite 前端 5173 + 独立 `wrangler dev` worker 8787，vite proxy 只转发 `/$auth` 与 git 端点；启动自动 `wrangler types`；构建 `pnpm --filter web build`（详见 copilot-instructions.md「构建与测试」）；**提交前门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `pnpm format:check`（oxfmt 格式一致）+ `pnpm test`（vitest 质量门——**node 纯函数 + happy-dom 组件双层**：node 层覆盖 API 封装/smart 降级/工具纯函数，组件层（`@testing-library/react`，文件级 `// @vitest-environment happy-dom`）覆盖 Pager/FileTree/CommentsSection 等核心组件与 UI 一致性，`/$debug` 相关改动必跑）；**依赖更新**：`pnpm update:all`（递归更新根/web/worker 全部依赖至现有 semver 范围内最新 + 高危漏洞审计；audit 显式走官方 registry `https://registry.npmjs.org`——npmmirror 镜像不提供审计端点，故不可省略 `--registry`）；**high 漏洞处置**：先调研（`pnpm why` 定位引入链、判断生产/工具链影响）→ 查 advisory 安全版本 → 可选 a. `pnpm-workspace.yaml` overrides 强制修复（补丁级兼容）或 b. 代码层缓解（上游未发版时），流程详见 copilot-instructions.md「依赖安全与更新风控」
 - **本地 OAuth 调试**：通用 `local-dev` App（loopback `127.0.0.1` 回调端口可任意），`.dev.vars` 填 `http://127.0.0.1:5173/$auth/callback` + local-dev 凭据
 
 ## 开发环境：Windows / PowerShell 5.1（编码与命令注意事项）

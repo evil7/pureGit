@@ -39,6 +39,3 @@ tmp/
 # 内部开发记录（不公开；本地保留）
 docs/tasks.md
 docs/plan.md
-# 质控/审计任务临时计划（内部临时文档，随任务收敛归档）
-docs/qc-plan-*.md
-docs/asset-audit-*.md

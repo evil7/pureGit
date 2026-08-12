@@ -1,9 +1,14 @@
 {
   "compilerOptions": {
+    "jsx": "react-jsx",
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
-    "types": ["node"],
+    /* 注：jest-dom 的 vitest matchers 类型由 test/setup.ts 的
+       import "@testing-library/jest-dom/vitest" 显式提供（扩展 vitest Assertion<T>）；
+       此处 types 数组**不要**列 @testing-library/jest-dom——主入口是 jest 版
+       （namespace jest），对 vitest 的 Assertion<T> 无效且干扰 IDE 类型解析 */
+    "types": ["node", "vite/client"],
     "skipLibCheck": true,
     "paths": {
       "@/*": ["./src/*"]
@@ -23,5 +28,5 @@
     "erasableSyntaxOnly": true,
     "noFallthroughCasesInSwitch": true
   },
-  "include": ["test", "vitest.config.mts"]
+  "include": ["test", "vitest.config.mts", "src/types"]
 }

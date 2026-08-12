@@ -77,6 +77,7 @@ import {
   type ReadmeInfo,
 } from "@/lib/rest";
 import { fetchFileContentSmart } from "@/lib/api";
+import { parseTreePath } from "@/lib/repo-path";
 import { WORKER_BASE } from "@/lib/worker-base";
 import { useAuth } from "@/hooks/useAuth";
 import { useDateFormat } from "@/hooks/useDateFormat";
@@ -562,7 +563,7 @@ export default function RepoCode({ children }: { children: ReactNode }) {
   // 文件树折叠（官方 Collapse file tree：折叠后仅 Expand + 分支 + Go to file 一行，内容全宽）
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const treeRoot = useRepoTree(tree);
-  const path = useMemoPath(pathname);
+  const path = parseTreePath(pathname);
 
   useEffect(() => {
     let cancelled = false;
@@ -627,12 +628,6 @@ export default function RepoCode({ children }: { children: ReactNode }) {
       )}
     </div>
   );
-}
-
-/** 从路径中提取当前文件/目录路径（tree/blob 段） */
-function useMemoPath(pathname: string): string {
-  const match = pathname.match(/\/(?:tree|blob)\/[^/]+(?:\/(.+))?$/);
-  return match?.[1] ?? "";
 }
 
 // ===== Code 首页（GitHub 风格：操作栏 + 根文件列表 + README）=====
