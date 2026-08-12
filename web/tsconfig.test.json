@@ -2,6 +2,7 @@
   "compilerOptions": {
     "jsx": "react-jsx",
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "incremental": true,
     "target": "es2023",
     "lib": ["ES2023", "DOM"],
     /* 注：jest-dom 的 vitest matchers 类型由 test/setup.ts 的
