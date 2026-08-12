@@ -85,6 +85,19 @@
 - Worker 测试：`pnpm --filter worker test`（vitest）
 - 根目录全量构建：`pnpm build`（web 构建 + worker 构建）
 
+## 依赖安全与更新风控（必须遵守）
+
+> 依赖基线：`pnpm-lock.yaml`（锁文件提交）；`pnpm-workspace.yaml` 含 `overrides`（pnpm 11 配置位置在 workspace 文件，**不在 package.json 的 `pnpm` 字段**）。
+
+1. **日常更新**：`pnpm update:all`——递归更新根/web/worker 全部依赖至**现有 semver 范围内**最新（`pnpm -r up`，不改写依赖声明范围）+ 高危漏洞审计（`pnpm audit --registry https://registry.npmjs.org --audit-level high`，npmmirror 不提供审计端点，必须显式 `--registry`）。
+2. **high 漏洞处置流程**（audit 报告 high 及以上时，**先调研再处置，禁止无脑 `--latest` 全量升级**）：
+   - **① 调研具体影响**：`pnpm why <包>` 定位引入链（直接依赖/传递依赖、哪些子项受影响）；判断是否影响**生产运行时**（worker 部署代码 / 前端产物）还是仅本地工具链（wrangler/vitest 等）。
+   - **② 了解缓解方案或安全版本**：查阅 advisory（`pnpm audit` 输出的 GHSA 链接）确认 Patched versions 与漏洞性质（ReDoS/DoS/RCE…）。
+   - **③ 评估可操作性后选择维护方式**：
+     - **a. 强制修复到安全版本**：`pnpm-workspace.yaml` 加 `overrides: { "<包>": "^安全版本" }`——仅当安全版本为**补丁/次版本兼容**（API 无破坏）；overrides 附注释说明原因与 advisory 编号，之后 `pnpm install` 生效并验证。
+     - **b. 自行加强代码相关内容缓解**：上游未发版 / 强制升级会破坏兼容（如 Cloudflare 工具链内部锁定版本）时，评估漏洞实际暴露面，必要时在代码层缓解（如输入校验），并在 docs 记录处置依据；`update:all` 会在每次审计时持续提醒，待上游修复后升级。
+3. **升级后必须全量门禁**：`pnpm format:check` + `pnpm lint`（零警告）+ `pnpm test`（web vitest）+ `pnpm --filter worker test` + `pnpm --filter web build`，确认依赖升级无破坏后再提交。
+
 ## Windows / PowerShell 终端注意事项（必须遵守）
 
 > **开发环境 = Windows + PowerShell 5.1**（非 bash / 非 PS7）。所有终端命令按 PS 语法书写；以下为已验证的血泪教训（曾因此损坏 2 个源文件）。
