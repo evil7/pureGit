@@ -2,7 +2,7 @@
 
 > 权威文档 · API 实施指导
 > 目的：**一页审计全部 API 的实现方式**；新增 API / 新页面接入时的**唯一实施指导**。
-> 配套：`architecture.md`（架构设计）。本文档为 API 策略（Octokit 统一封装 + 用户可选主模式）的**执行落地表单**。
+> 配套：`architecture.md`（架构设计）。本文档为 API 策略（**GraphQL 唯一主通道 + REST 熔断降级**）的**执行落地表单**。
 
 ---
 
@@ -13,14 +13,14 @@
    │  只允许 import "@/lib/api"（smart 层）—— 例外见 §5
    ▼
 web/src/lib/api.ts ─── 桶（barrel，17 行）：re-export api 板块 + rest 全量
-   ├─ api-core.ts       graphqlRequest 模式包装 + 日志/熔断工具 + hasGraphQLErrors/GraphQLResponse
+   ├─ api-core.ts       graphqlRequest GraphQL 唯一通道包装 + 日志/熔断工具 + hasGraphQLErrors/GraphQLResponse
    ├─ api-user.ts       viewer/账户/邮箱/组织列表/SSH/关注
    ├─ api-repo.ts       仓库详情/创建/star/fork/主题/订阅/删除/计数
    ├─ api-org.ts        用户/组织主页 + 组织详情/更新/成员
   ├─ api-issue.ts      issue/PR + 评论/评审 + 页面级合并查询
   ├─ api-discussions.ts Discussions
   └─ api-search.ts     搜索
-web/src/lib/rest.ts ── 桶（17 行）：re-export rest 板块（REST 全量）
+web/src/lib/rest.ts ── 桶（17 行）：re-export rest 板块（REST 全量，匿名直连 + 保留 REST 路由）
    ├─ rest-core.ts      底层（restRequest/githubFetch/typedRequest/ApiError/通用类型）
    ├─ rest-account.ts   账户（emails/SSH/GPG/blocked/saved-replies）
    ├─ rest-user-org.ts  用户主页 + 关注 + 组织
@@ -29,31 +29,31 @@ web/src/lib/rest.ts ── 桶（17 行）：re-export rest 板块（REST 全量
    ├─ rest-user-nav.ts  用户导航（Gist/通知/邀请/Feed/搜索）
    ├─ rest-actions.ts   Actions 全家
    └─ rest-discussions.ts Discussions 类型
-web/src/lib/graphql.ts ── GraphQL 查询/变更模板（常量，板块可直接 import）
-web/src/lib/octokit.ts ── SDK 统一入口（额度跟踪 / 模式熔断 / 响应缓存 / 去重）
+web/src/lib/graphql.ts ── GraphQL 请求模板库（模板常量 + 路径参数变量组装，集中管理）
+web/src/lib/octokit.ts ── SDK 统一入口（额度跟踪 / 熔断 cooldown / 响应缓存 / 去重）
 web/src/lib/wiki.ts ── Wiki（唯一 selfcode_fetch → worker /$wiki 代理）
 worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 ```
 
-**三条铁律**：
-1. **所有请求都经 octokit SDK**（REST `@octokit/rest`、GraphQL `@octokit/graphql`）——自动额度跟踪；唯一绕过 SDK 的是 `wiki.ts`（worker 代理，不可抗力）。**REST 固定端点一律 `typedRequest` + `octokit.rest.*` 类型化方法**（URL 模板/参数编码/返回类型由 SDK 生成代码保证）；仅特殊语义端点（raw Accept / base64 解码 / Link 头分页 / Octokit 无类型化方法的端点）保留 `githubFetch`/`fetchWithTimeout`（`octokit.request` 底层，注释说明理由），**禁止新增手拼 URL 调用**。
-2. **双端点（GraphQL+REST 都有）的 API 一律 smart 包装**：页面从 `@/lib/api` import `fetchXxxSmart`。
-3. **单端点 API 走 SDK 标准调用**；特殊语义（204/raw Accept/Link 头）集中在 `rest-*.ts` 内注释说明，不扩散到页面。
+**三条铁律（v0.0.1 设计调整版）**：
+1. **登录态全部经 GraphQL**（`@octokit/graphql`）——smart 层 GraphQL 唯一主通道；**GraphQL 失败 → `withRestFallback` 熔断降级 REST**（复用 rest 层现有实现，日志 `↪` 标记，见 `architecture.md`「API 模式」）。**匿名强制 REST**（GraphQL 匿名恒 403）——匿名时 smart 层短路走 `rest-*.ts`（REST 数据层保留的核心原因）。
+2. **REST 固定端点一律 `typedRequest` + `octokit.rest.*` 类型化方法**（URL 模板/参数编码/返回类型由 SDK 生成代码保证）；仅特殊语义端点（raw Accept / base64 解码 / Link 头分页 / Octokit 无类型化方法的端点）保留 `githubFetch`/`fetchWithTimeout`（`octokit.request` 底层，注释说明理由），**禁止新增手拼 URL 调用**。
+3. **双端点 API 一律 smart 包装**：页面从 `@/lib/api` import `fetchXxxSmart`；smart 函数 = **GraphQL 请求模板 + 路径参数变量**（模板在 `graphql.ts` 集中管理），匿名短路 REST 数据层。
 
 **文件组织**：
 - 原 `github.ts`（2829 行）/ `api.ts`（2362 行）按业务板块拆分为「板块文件 + 桶」；桶 re-export 全部符号，**页面 import 面零改动**。
-- **命名**：REST 数据层 = `rest.ts` + `rest-*.ts`（原 `github.ts`/`github-*.ts`，改名消除「github 前缀 = 一切 GitHub 相关」歧义）；smart 层 = `api.ts` + `api-*.ts`；模板 = `graphql.ts`；SDK 基础设施 = `octokit.ts`。
-- 新增 API 归属：数据层函数放对应 `rest-*.ts`，smart 包装放对应 `api-*.ts`，GraphQL 模板放 `graphql.ts`。
+- **命名**：REST 数据层 = `rest.ts` + `rest-*.ts`（匿名直连 + 保留 REST 路由）；smart 层 = `api.ts` + `api-*.ts`；GraphQL 请求模板 = `graphql.ts`；SDK 基础设施 = `octokit.ts`。
+- 新增 API 归属：**GraphQL 模板放 `graphql.ts`（模板 + 变量组装）**，smart 包装放对应 `api-*.ts`，匿名/保留 REST 放对应 `rest-*.ts`，REST 熔断降级（GraphQL 定型后）补写在对应 `rest-*.ts` 并标注路由关联。
 - 板块文件 >800 行时再拆（`api-issue.ts` 已拆出 `api-discussions.ts`/`api-search.ts`）。
 
 ---
 
 ## 2. 全量 API 兼容性对照表单
 
-> 列含义：`octokit_graphQL`=有 GraphQL 端点且已接入；`octokit_rest`=有 REST 端点（经 SDK）；`selfcode_fetch`=原生 fetch 绕过 SDK；`worker_proxy`=走 Cloudflare Worker 代理；`already_smart_now`=已做 GraphQL 首选+REST 降级包装。
+> 列含义：`octokit_graphQL`=有 GraphQL 端点且已接入（**主通道**）；`octokit_rest`=有 REST 端点（经 SDK，**匿名直连 / 熔断降级复用 / 保留 REST 路由**）；`selfcode_fetch`=原生 fetch 绕过 SDK；`worker_proxy`=走 Cloudflare Worker 代理；`already_smart_now`=已做 **GraphQL 唯一主通道 + REST 熔断降级（withRestFallback）** 包装（v0.0.1 新定义）。
 > `✅`=已实现　`✗`=无此通道　`—`=不适用　`❌`=应做未做（禁）　`⚠️`=有通道但合理保留 REST（理由见 §4）
 
-### 2.1 智能封装层（smart，GraphQL 首选 + REST 降级）—— ✅ 全部就绪
+### 2.1 智能封装层（smart，GraphQL 唯一主通道 + REST 熔断降级）—— ✅ 全部就绪
 
 | API 名（smart 入口） | octokit_graphQL | octokit_rest | selfcode_fetch | worker_proxy | already_smart_now |
 |---|---|---|---|---|---|
@@ -152,10 +152,10 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 
 ## 3. smart 包装实施模板（新增双端点 API 时照抄）
 
-在 `graphql.ts` 加模板 → `api.ts` 加 smart 函数（GraphQL 首选 try/catch + REST 降级）→ 页面从 `@/lib/api` import。
+**v0.0.1 新路径（GraphQL 唯一主通道 + REST 熔断降级）**：在 `graphql.ts` 加模板（路径参数 → 变量）→ `api.ts` 加 smart 函数（**GraphQL 唯一实现 + withRestFallback 降级**）→ 页面从 `@/lib/api` import。
 
 ```ts
-// graphql.ts —— 模板
+// graphql.ts —— 请求模板（路径参数 :owner/:repo → 变量 $owner/$name）
 export const XXX_QUERY = /* GraphQL */ `
   query Xxx($owner: String!, $name: String!) {
     repository(owner: $owner, name: $name) {
@@ -164,26 +164,27 @@ export const XXX_QUERY = /* GraphQL */ `
   }
 `;
 
-// api.ts —— smart 函数（模式照抄 fetchIssuesSmart）
+// api.ts —— smart 函数（GraphQL 唯一主通道；匿名短路 REST；失败 withRestFallback 降级）
 export async function fetchXxxSmart(
   owner: string, repo: string, token?: string | null
 ): Promise<Xxx[]> {
-  if (token) {                       // GraphQL 需认证；未登录直接 REST
-    try {
-      const resp: GraphQLResponse<{ repository: {...} | null }> =
-        await graphqlRequest(XXX_QUERY, { owner, name: repo }, token);
-      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
-        return resp.data.repository... // 类型映射（toXxx）
-      }
-    } catch { /* 网络错误 → 降级 REST */ }
+  if (!token) {
+    // 匿名强制 REST（GraphQL 匿名恒 403）——REST 数据层保留的唯一原因
+    return fetchXxx(owner, repo, token);
   }
-  return fetchXxx(owner, repo, token); // rest.ts REST 底层
+  const resp: GraphQLResponse<{ repository: { ... } | null }> =
+    await graphqlRequest(XXX_QUERY, { owner, name: repo }, token);
+  if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+    return resp.data.repository...; // 类型映射（toXxx）
+  }
+  // GraphQL 失败 → withRestFallback 熔断降级 REST（复用 rest 层；日志 ↪ 标记）
+  return withRestFallback(() => fetchXxx(owner, repo, token), "fetchXxxSmart", resp);
 }
 ```
 
 **Mutation 模式**（GraphQL mutation 需 node id 前置查询，见 `setIssueSubscriptionSmart`）：
 1. 先 `REPOSITORY_ID_QUERY` / `ISSUE_ID_QUERY` / `USER_ID_QUERY` 查 node id
-2. 再发 mutation；失败 `catch` → REST 兜底
+2. 再发 mutation；失败 → `withRestFallback` 降级 REST（复用 rest 层）
 
 ---
 
@@ -209,26 +210,27 @@ export async function fetchXxxSmart(
 | 4.15 | Dependabot / Code scanning / Secret scanning | 需 `security_events` scope（OAuth 未授）+ 高级安全功能；仅 Security 核心（SECURITY.md + advisories）实现，告警 tab 去杂项。 |
 | 4.16 | Top committers 聚合 | GraphQL **无「按作者聚合提交数」端点**；`fetchTopCommittersSmart` REST `GET /commits` 分页 2 页抽样聚合（官方 Highcharts 全量统计，简版抽样 top 10 够用，阶段 I1）。 |
 | 4.17 | 组织管理（成员角色/2FA、邀请、团队） | GraphQL 无等价（membersWithRole 无角色/2FA；无 members 写 mutation；无 invitations/teams 查询）；仓库创建权限字段 **REST-only**（`Organization` 上 `defaultRepositoryPermission`/`membersAllowedRepositoryCreationType`/`membersCanCreatePublicRepositories`/`membersCanCreatePrivateRepositories` 四候选名均 undefinedField 实测）；REST 实际值含 `"public"`（文档过时仅列 all/private/none）；组织重命名无公开 API（官方 UI 内部端点）。 |
-| 4.17 | Pulse 统计卡（GraphQL 可行，smart 双通道） | `fetchPulseStatsSmart` **GraphQL 首选**（`PULSE_STATS_QUERY` 一次请求 6 个 search.issueCount）+ REST `/search/issues` 并行降级——双端点存在，按 smart 规范走 GraphQL。 |
+| 4.17 | Pulse 统计卡（GraphQL 可行） | `fetchPulseStatsSmart` **GraphQL 主通道**（`PULSE_STATS_QUERY` 一次请求 6 个 search.issueCount）；REST `/search/issues` 并行降级（withRestFallback）——双端点存在，按新方案走 GraphQL 主通道 + REST 熔断降级。 |
 
 ---
 
 ## 5. 新增 API / 新页面接入 CheckList
 
-1. **查本表**：目标数据在 2.1（直接用 smart）还是 2.2（REST + 理由）？新增功能先对照 §4 找不可抗力。
-2. **双端点** → 走 §3 模板：graphql.ts 模板 + api.ts smart + 页面 `@/lib/api` import。**禁止**页面直接 `@/lib/rest`。
-3. **单端点/不可抗力** → `@/lib/rest`：**固定端点一律 `typedRequest` + `octokit.rest.*` 类型化方法**（URL 模板/参数编码 SDK 保证，禁止手拼 URL 的 `githubFetch`/`fetchWithTimeout`）；仅特殊语义端点（raw Accept / base64 解码 / Link 头分页 / Octokit 无类型化方法）可保留底层通道并注释理由。**类型化方法名查证**：`node_modules/.pnpm/@octokit+plugin-rest-endpoi_*/node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/generated/endpoints.js`（或类型定义 method-types.d.ts）grep 端点路径 → 方法名。
+1. **查本表**：目标数据在 2.1（直接用 smart，GraphQL 主通道）还是 2.2（REST + 理由）？新增功能先对照 §4 找不可抗力。
+2. **双端点** → 走 §3 模板：**graphql.ts 请求模板（路径参数 → 变量）+ api.ts smart（GraphQL 唯一实现 + withRestFallback 降级）** + 页面 `@/lib/api` import。**禁止**页面直接 `@/lib/rest`。
+3. **匿名/单端点/不可抗力** → `@/lib/rest`：**固定端点一律 `typedRequest` + `octokit.rest.*` 类型化方法**（URL 模板/参数编码 SDK 保证，禁止手拼 URL 的 `githubFetch`/`fetchWithTimeout`）；仅特殊语义端点（raw Accept / base64 解码 / Link 头分页 / Octokit 无类型化方法）可保留底层通道并注释理由。**类型化方法名查证**：`node_modules/.pnpm/@octokit+plugin-rest-endpoi_*/node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/generated/endpoints.js`（或类型定义 method-types.d.ts）grep 端点路径 → 方法名。
 4. **204 空响应体**：`typedRequest`/`githubFetch` 已自动处理（空 body 返回 undefined），**无需**再手写 fetchWithTimeout 判定。
-5. **Mutation 需 node id**：先查 id（REPOSITORY_ID_QUERY 等）再 mutation，失败降级 REST。
+5. **Mutation 需 node id**：先查 id（REPOSITORY_ID_QUERY 等）再 mutation，失败 → `withRestFallback` 降级 REST（复用 rest 层）。
 6. **类型映射**：GraphQL 节点 → REST 结构统一在 api.ts 内 `toXxx()` 完成；页面只见 REST 形态。REST 类型化方法返回较宽时用 `typedRequest<T>` 泛型收窄（`as T` 桥接，调用方接口负责语义）。
 7. **构建校验**：`pnpm --filter web build`（tsc 全量类型检查）。
-8. **文档同步**：新 API 若属「双端点未 smart」或新增不可抗力，更新本表 §2/§4。
+8. **文档同步**：新 API 若属「双端点未 smart」或新增不可抗力，更新本表 §2/§4；REST 熔断降级（withRestFallback）覆盖情况同步标注。
 
 ---
 
 ## 6. 审计速查
 
-- **页面 import 卫生**：grep `from "@/lib/rest"`（页面文件）——只应出现类型 import 与不可抗力函数（§4 清单内）。
+- **页面 import 卫生**：grep `from "@/lib/rest"`（页面文件）——只应出现类型 import、匿名直连与不可抗力函数（§4 清单内）。
 - **smart 覆盖率**：grep `fetch\w+Smart`（api.ts）对照 §2.1 清单。
 - **裸 fetch**：grep `fetch(`（web/src）——只允许 `wiki.ts`（worker 代理）与 octokit 内部。
+- **REST 降级覆盖**：grep `withRestFallback`（api-*.ts）——对照 §2.1 清单确认降级链覆盖度；未覆盖的路由补 withRestFallback。
 - **legacy 端点**：改版前先 curl 实测端点存活（教训：`/repos/{o}/{r}/projects` 已随官方移除公告下线返回 404，页面请求无意义）。

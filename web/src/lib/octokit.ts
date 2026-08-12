@@ -1,23 +1,20 @@
 /**
  * Octokit SDK 统一入口
  *
- * 架构：
- * - REST 客户端：@octokit/rest（Octokit，Bearer token）
- * - GraphQL 客户端：@octokit/graphql（graphql()，同 token）
+ * 架构（v0.0.1 设计调整：GraphQL 唯一主通道 + REST 熔断降级复用 rest 层）：
+ * - GraphQL 客户端：@octokit/graphql（graphql()，登录态主通道）
+ * - REST 客户端：@octokit/rest（Octokit，匿名直连 + 熔断降级复用 + 保留 REST 路由：fork/趋势/文件树/语言）
  * - 页面/组件一律经 lib 封装函数调用，不直接接触本模块（保持导入面稳定）
- *
- * API 模式（用户偏好，偏好设置页切换）：
- * - `rest`：主用 REST，GraphQL 仅作兜底（REST 耗尽/失败时）
- * - `graphql`：主用 GraphQL，REST 兜底（GraphQL 点数耗尽/不可达时）
- * - 默认 `graphql`（未登录 token 为 null 时自动 REST）
  *
  * 额度跟踪（响应头 x-ratelimit-*）：
  * - REST 与 GraphQL 各自独立计数（官方文档确认，GET /rate_limit 返回 resources.core 与 resources.graphql）
- * - 某模式 remaining===0 时触发自动切换至另一模式（熔断 60s），不改变用户设置
+ * - 熔断框架保留（cooldown 60s / 额度耗尽）：GraphQL 不可用 → withRestFallback 降级 REST（复用 rest 层现有实现，日志 ↪ 标记）；
+ *   匿名（无 token）时强制 REST 数据层（GraphQL 匿名恒 403）
  */
 import { Octokit } from "@octokit/rest";
 import { graphql as gql } from "@octokit/graphql";
 import { notifyModeFallback } from "./toast";
+import { logMainRequest } from "./api-log";
 
 export type ApiMode = "graphql" | "rest";
 
@@ -314,14 +311,13 @@ function trackedFetch(
         path = String(url);
       }
       if (!(mode === "graphql" && path === "/graphql")) {
-        const label = mode === "graphql" ? "GraphQL" : "REST";
-        // 异步读取 clone 文本取大小（不消耗原响应流）；失败忽略
+        // 统一日志（api-log.ts）：GraphQL 主通道请求 / REST fallback（自动 ↪ 前缀）自动标注协议
         res
           .clone()
           .text()
           .then((t) => {
-            apiLog(
-              label,
+            logMainRequest(
+              mode,
               `${method} ${path}`,
               res.status,
               Math.round(performance.now() - started),
@@ -329,7 +325,12 @@ function trackedFetch(
             );
           })
           .catch(() => {
-            apiLog(label, `${method} ${path}`, res.status, Math.round(performance.now() - started));
+            logMainRequest(
+              mode,
+              `${method} ${path}`,
+              res.status,
+              Math.round(performance.now() - started),
+            );
           });
       }
       const headers: Record<string, string> = {};
@@ -380,21 +381,4 @@ export function createGraphqlClient(token?: string | null): typeof gql {
         trackedFetch(url, init, "graphql"),
     },
   });
-}
-
-/** API 请求日志（dev 模式；格式同旧 lib 层，保持终端/控制台可读性） */
-function apiLog(
-  kind: "REST" | "GraphQL",
-  detail: string,
-  status: number | string,
-  ms: number,
-  size?: number,
-): void {
-  if (!import.meta.env.DEV) return;
-  const sizeStr = size != null ? ` ${fmtSize(size)}` : "";
-  console.log(`[PureGit API] [${kind}] ${detail} ${status} ${ms}ms${sizeStr}`);
-}
-
-function fmtSize(bytes: number): string {
-  return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)}KB` : `${bytes}B`;
 }

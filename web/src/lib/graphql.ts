@@ -1,9 +1,11 @@
 /**
- * GitHub GraphQL 客户端（@octokit/graphql · 重构）
+ * GitHub GraphQL 请求模板库 + 客户端（@octokit/graphql · v0.0.1 设计调整）
  *
- * 架构：主模式用户可选（GraphQL 优先 / REST 优先，默认 GraphQL），
- * 由 api-core.ts 模式包装决策；本模块只负责 GraphQL 请求本身（query/mutation），经 SDK 发出：
- * - 自动标准请求头 + 响应头额度跟踪（octokit.ts）
+ * 架构：**GraphQL 唯一主通道**（登录态全部经 GraphQL；失败 → withRestFallback 熔断降级 REST）。
+ * 本模块职责：
+ * - **请求模板库**：查询/变更模板常量（路径参数 → 变量，如 PULLS_QUERY + {owner, name, states...}），
+ *   板块（api-*.ts）直接 import 模板名，不手拼查询字符串
+ * - **客户端**：graphqlRequest<T> 经 SDK 发出（自动标准请求头 + 响应头额度跟踪 octokit.ts）
  * - 保持 GraphQLResponse / hasGraphQLErrors 契约（api.ts 依赖）
  * - 匿名强制 REST：token 为空时由 api-core.ts 短路，本模块不发出 GraphQL
  */

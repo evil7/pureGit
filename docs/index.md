@@ -15,7 +15,7 @@
 | [vision.md](./vision.md) | **中心思想与产品定位（最高纲领，v0.0.1 全量复刻新概念）**：项目做什么、为什么存在、功能取舍判据 | 任何新功能/新页面**动手前**；方向性取舍时 | 功能是否入范围判据，先读 |
 | [design.md](./design.md) | **UI/UX 设计规范（Design System）**：框架层级/单双三栏模板/组件定义/响应式/动画/验收清单 | 写任何 UI/布局/组件**之前** | 对照验收清单自查；`ui-layout` skill 是其速查版 |
 | [architecture.md](./architecture.md) | 架构设计：前端 / Worker / CLI 镜像代理、数据流、职责边界、关键技术约束 | 涉及跨层改动、API 数据流、新增端点时 | 先读总体架构图与组件职责边界再动手 |
-| [api-compat.md](./api-compat.md) | **API 兼容性对照表单与实施指导**：全量 API 实现方式一览（GraphQL/REST/selfcode fetch/worker 代理/smart 状态）+ 不可抗力清单 + 新增 API CheckList | **新增 API / 新页面接入前必读**；审计 API 实现方式时 | 先查 §2 对照表定通道；双端点走 §3 smart 模板；不可抗力查 §4 |
+| [api-compat.md](./api-compat.md) | **API 兼容性对照表单与实施指导**：全量 API 实现方式一览（**GraphQL 唯一主通道 / REST 匿名直连与保留路由 / selfcode fetch / worker 代理 / smart 状态**）+ 不可抗力清单 + 新增 API CheckList | **新增 API / 新页面接入前必读**；审计 API 实现方式时 | 先查 §2 对照表定通道；双端点走 §3 smart 模板；不可抗力查 §4 |
 | [debug-page.md](./debug-page.md) | **`/$debug` API 调试页技术架构与开发文档（独立自包含）**：octokit 双库零下载转录、req/res 三层产物、体积实测、智能请求器（缓存/SWR/预热）、骨架屏 + 底部缓存进度条、补全设计、目录拆分、codeSplitting | 开发 / 修改 `/$debug` 页面（页面组件、schema 数据、加载缓存策略、补全）时 | 先读总体架构与产物契约再动手；数据产物由 `scripts/update-schemas.mjs` 生成，前端消费结构见 §11/§15 |
 | [debug-graphql-redesign.md](./debug-graphql-redesign.md) | **`/$debug` GraphQL 能力重构设计 + 实施记录**：D1–D8 决策、勾选树/variables 校验/分页方案、里程碑实施状态（M1–M6 已完成与偏离项）、复合数组编辑器调研（StructuredTable 方案）、功能特性清单 F1–F13 完成情况 | 继续 GraphQL 调试能力开发时 | 先读 §0 实施状态（已完成/偏离），再接 §10 计划里程碑 |
 | [debug-rest-redesign.md](./debug-rest-redesign.md) | **`/$debug` REST 能力强化再造设计 + 实施记录（反哺对照文档）**：GraphQL 强化成果 ↔ REST 现状逐维对照差异分析、R 系列任务清单（R1 搜索 / R2 body 结构化 / R3 自动刷新 / R4 hover 对齐）、统一协调项——目标使双协议面板对齐、模块化共享、可扩展 | 继续 REST 调试能力开发 / 双协议统一协调时 | 先读 §2 对照差异表，再接 §4 任务清单与 §5 实施顺序 |
@@ -56,6 +56,7 @@
 | `.github/skills/shadcn-ui` | shadcn/ui 组件添加流程、目录约定、主题定制 | 任务关键词匹配时自动加载 |
 | `.github/skills/replica-workflow` | **官方页面复刻工作流**（6 步：调研/评估/讨论/实施/升华/文档同步） | 复刻/改造官方页面的任务 |
 | `.github/skills/ui-layout` | 全 UI/UX 规范**速查**（权威版指向 `design.md`） | 任何 UI/布局任务 |
+| `.github/skills/api-strategy` | **API 策略速查**（v0.0.1 新方案：GraphQL 唯一主通道 + REST 熔断降级复用 rest 层；权威版指向 `architecture.md`「API 模式」与 `api-compat.md`） | 新增/修改 API 接入、smart 封装、GraphQL 模板、REST 降级逻辑 |
 | `.github/skills/cf-worker-auth` | Worker OAuth2 令牌管理（端点/KV 会话/密钥安全） | Worker 鉴权任务 |
 | `.github/skills/cli-git-mirror` | git 镜像端点自动代理（智能 HTTP 协议/转发） | CLI 代理任务 |
 | `.github/skills/project-qc` | **项目质量控制方法论**（宏观 PDCA：第一性原理验收基线、按功能补全测试、覆盖度纠正、变更控制；产出单文件《质量控制计划》`qc-plan-*.md`） | 质量控制/测试补全/覆盖度/验收基线任务 |
@@ -67,7 +68,7 @@
 2. 读本文件（`docs/index.md`）→ 确认文档层级
 3. 新功能/方向取舍 → 先读 `vision.md`；涉及 UI → `design.md` + `ui-layout` skill
 4. **复刻/改造官方页面 → 加载 `replica-workflow` skill（6 步标准流程）**
-5. 涉及 API 数据获取 → 先读 `api-compat.md`（对照表定通道 + 实施指导）
+5. 涉及 API 数据获取 → 先读 `api-compat.md`（对照表定通道 + 实施指导）＋加载 `api-strategy` skill（GraphQL 唯一主通道 + REST 熔断降级）
 6. 动手后：**修正关键框架文档**（vision/design/architecture/api-compat 等公开文档），保持代码与文档同步
 
 ## 三·五、调研档案（`docs/research/`）导航

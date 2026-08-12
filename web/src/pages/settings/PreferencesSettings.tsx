@@ -42,21 +42,16 @@ import {
 } from "@/components/ui/alert-dialog";
 
 /** 示例代码（代码配色预览用） */
-const SAMPLE_CODE = `import { Octokit } from "@octokit/rest";
+const SAMPLE_CODE = `import { graphql } from "@octokit/graphql";
 
-// 自动切换：GraphQL 优先，耗尽降级 REST
-export async function fetchRepo(owner: string, name: string) {
-  const octokit = new Octokit({ auth: token });
-  try {
-    const { data } = await octokit.repos.get({ owner, repo: name });
-    return data;
-  } catch (err) {
-    console.error("fallback to REST:", err.message);
-    return null;
-  }
+// GraphQL 唯一主通道：登录态全部经 GraphQL，匿名走 REST 数据层
+export async function fetchRepo(owner: string, name: string, token?: string | null) {
+  if (!token) return restFetch(owner, name); // 匿名强制 REST（GraphQL 匿名恒 403）
+  const resp = await graphql(REPO_QUERY, { owner, name }, { headers: { authorization: \`bearer \${token}\` } });
+  return resp.repository;
 }`;
 
-/** 接口状态按钮：接口名 + 内嵌额度进度条（REST/GraphQL 独立配额，smart 按需自动消耗，无主备之分） */
+/** 接口状态按钮：接口名 + 内嵌额度进度条（REST/GraphQL 独立配额；GraphQL 为主通道，REST 匿名/降级用） */
 function ApiStatusCard({
   title,
   icon: Icon,

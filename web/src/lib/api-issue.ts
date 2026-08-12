@@ -8,7 +8,7 @@
  * Board file. See api.ts barrel & docs/api-compat.md.
  */
 
-import { graphqlRequest, hasGraphQLErrors } from "./api-core";
+import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
 import {
   ISSUES_QUERY,
@@ -432,6 +432,15 @@ function graphqlPullOrderDir(sort?: string): string {
 }
 
 /** 智能获取仓库 PR 列表：GraphQL repository.pullRequests 首选，失败降级 REST。 */
+/**
+ * 智能获取仓库 PR 列表（v0.0.1 设计调整：GraphQL 唯一主通道）
+ *
+ * 通道决策：
+ * - 分页（page>1）→ REST（GraphQL 列表分页需游标，首屏 first:30 内翻页由前端滚动加载，非分页参数场景）
+ * - 过滤条件（author/labels/milestone/assignee/q）→ search GraphQL（searchIssuesSmart；REST /pulls 无便捷过滤）
+ * - 登录态 → GraphQL 唯一主通道（PULLS_QUERY 模板 + 变量）；GraphQL 失败 → withRestFallback 降级 REST
+ * - 匿名 → REST 数据层（GraphQL 匿名恒 403，硬约束）
+ */
 export async function fetchPullsSmart(
   owner: string,
   repo: string,
@@ -523,15 +532,32 @@ export async function fetchPullsSmart(
           closedCount: repoData.closedCount.totalCount,
         };
       }
+      // GraphQL 失败 → 熔断降级 REST（复用 rest 层 fetchPulls；日志自动 ↪ 前缀）
+      return withRestFallback(
+        async () => {
+          const items = await fetchPulls(owner, repo, state, 30, token, 1, restSort, direction);
+          return { items, openCount: null, closedCount: null };
+        },
+        "fetchPullsSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      // 网络层错误（graphqlRequest 已触发 cooldown）→ 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          const items = await fetchPulls(owner, repo, state, 30, token, 1, restSort, direction);
+          return { items, openCount: null, closedCount: null };
+        },
+        "fetchPullsSmart",
+        undefined,
+      );
     }
   }
   const items = await fetchPulls(owner, repo, state, 30, token, 1, restSort, direction);
   return { items, openCount: null, closedCount: null };
 }
 
-/** 智能获取 PR 详情：GraphQL pullRequest(number) 首选，失败降级 REST。 */
+/** 智能获取 PR 详情：GraphQL pullRequest(number) 主通道 + REST 熔断降级（匿名走 REST 硬约束）。 */
 export async function fetchPullDetailSmart(
   owner: string,
   repo: string,
@@ -546,8 +572,18 @@ export async function fetchPullDetailSmart(
       if (!hasGraphQLErrors(resp) && resp.data?.repository?.pullRequest) {
         return toPull(resp.data.repository.pullRequest);
       }
+      // GraphQL 失败 → 熔断降级 REST（复用 rest 层 fetchPullDetail；日志自动 ↪ 前缀）
+      return withRestFallback(
+        () => fetchPullDetail(owner, repo, number, token),
+        "fetchPullDetailSmart",
+        resp,
+      );
     } catch {
-      // 降级 REST
+      return withRestFallback(
+        () => fetchPullDetail(owner, repo, number, token),
+        "fetchPullDetailSmart",
+        undefined,
+      );
     }
   }
   return fetchPullDetail(owner, repo, number, token);

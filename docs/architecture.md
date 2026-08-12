@@ -33,7 +33,7 @@ flowchart LR
 
 - 纯 UI 与交互，无业务后端逻辑
 - **全部功能**（浏览、搜索、issue/PR、star/fork、私有仓库）均由 OAuth **access token** 完成，请求**直连 GitHub API**（`Authorization: Bearer <token>`）；未登录时公开数据匿名直连
-- **API 策略**：**Octokit SDK 统一封装**（`@octokit/rest` + `@octokit/graphql`，入口 `web/src/lib/octokit.ts`）；**主模式由用户在偏好设置切换**（GraphQL 优先 / REST 优先，默认 GraphQL）；统一经 `web/src/lib/api.ts` 智能封装层（详见下方「API 模式」）
+- **API 策略**：**Octokit SDK 统一封装**（`@octokit/graphql` + `@octokit/rest`，入口 `web/src/lib/octokit.ts`）；**登录态 GraphQL 唯一主通道**，smart 函数 = GraphQL 请求模板 + 路径参数变量（模板集中 `graphql.ts`）；**GraphQL 失败 → `withRestFallback` 熔断降级 REST**（复用 rest 层，日志 `↪` 标记；详见下方「API 模式」）
 - 登录态：token 仅存**内存变量**（刷新页面后经 Worker `/$auth/session` 恢复）；**不写入 localStorage 明文**
 - **未登录访问策略**：仅开放仓库 Code 浏览（根/tree/blob/new/edit）；其余仓库 tab 在 `RepoLayout.RepoContent` 拦截 → LoginPrompt 登录墙（聚光灯指引右上角登录，URL 驱动登录后回落）；About 侧栏同条件隐藏（省匿名配额）。首页/搜索/用户主页保持匿名可浏览。
 - **未登录全强制 REST**：GitHub GraphQL 端点匿名请求**恒 403**（实测）；`graphql.ts` 原始 `graphqlRequest` 与 `api-core.ts` smart 层 `graphqlRequest` 均加**匿名守卫**——token 为空直接短路返回 errors → smart 函数自动降级 REST（不消耗配额、不产生 403 噪音），任何调用方（api-*.ts / repo-raw.ts）匿名时**绝不再发 GraphQL**；匿名 REST 配额 60/h 耗尽（403，错误响应无 CORS 头 → 浏览器报 CORS 错误）时，仓库目录页等显示**限流提示**（登录解锁 5000/h），不再误报「目录为空」
@@ -119,64 +119,91 @@ git config --global url.https://<worker域名>/.insteadOf https://github.com/
 - `handleGitProxy(request)`：URL 重写为 `https://github.com<path>`，透传 method/body/关键 headers（Content-Type、Accept、Authorization），移除 host/content-length 由 fetch 重算；响应原样透传状态与头
 - 接入文档：`docs/cli-setup.md`（insteadOf 配置、PAT 凭据、验证命令）
 
-## API 模式（Octokit + 用户可选模式）
+## API 模式（GraphQL 唯一主通道 + REST 熔断降级）
 
-> 从「GraphQL 首选 + REST 降级」升级为 **Octokit SDK 统一封装 + 用户可切换主模式**（破坏性、非兼容更新）。协议标准与 API 跟进由 SDK 保证，不再手写 fetch 胶水层。
+> **v0.0.1 设计调整（2026-08-12）**：从「GraphQL 首选 + REST 降级、用户可切主模式」升级为 **GraphQL 唯一主通道 + REST 熔断降级（复用现有 REST 层）**（破坏性、非兼容更新）。
+>
+> **为什么**：GraphQL → REST 实际是**一对多**——一个 GraphQL 复合查询聚合的字段，往往对应 2~5 个 REST 端点。旧方案在每个 smart 函数里并重维护 GraphQL 首选 + REST 降级两套实现，REST 降级写得太早：GraphQL 模板未定型（聚合边界、字段集未知）时写的 REST 降级必然是拍脑袋的多请求拼装，维护成本翻倍且易失真。
+>
+> **新路径（三步走）**：
+> 1. **GraphQL 唯一主通道**：双端点 API 以 GraphQL 为唯一实现（smart 函数 = GraphQL 请求模板 + 变量映射）；熔断机制框架保留（额度跟踪/cooldown/去重）。
+> 2. **全量迁移至 GraphQL + 立即设计 REST 熔断**：按页面聚合程度调优复合查询（一个路由一次 GraphQL 查询聚合所需字段）；路径参数（`:owner/:repo/:number` 等）映射为**功能通用的请求模板 + 变量**（如 `PULLS_QUERY` + `{owner, name: repo, states, first, orderField, orderDir}`），模板在 `graphql.ts` 集中管理。**GraphQL 通道定型后立即**补 REST 熔断降级——**现有 rest 层代码不废弃**，复用并按聚合边界优化（GraphQL 聚合了哪些 REST 端点 → 降级链按此拆解，多请求并行优于串行），统一经 `withRestFallback` 包装。
+> 3. **REST 降级链排序**：GraphQL→REST 一对多映射清晰后，降级按「先核心数据再附属数据、多请求并行」排序实现并验证。
+>
+> 实施状态：**第 1~2 步进行中**（smart 层改造为 GraphQL 唯一通道 + REST 降级链；REST 数据层保留供匿名直连与降级复用）。
 
 ### 策略
 
 ```mermaid
 flowchart TD
-    A[页面组件] --> B[api.ts smart 层]
-    B --> C{主模式可用?<br/>未耗尽 / 未熔断 / 未报错}
-    C -->|是| D[主模式请求<br/>GraphQL 优先: api.github.com/graphql<br/>REST 优先: api.github.com/...]
-    C -->|否| E[冗余切换另一模式]
-    D --> F[返回数据]
-    E --> F
-    E -.->|不改变设置项| B
+    A[页面组件] --> B[api.ts smart 层<br/>GraphQL 唯一主通道]
+    B --> C{GraphQL 可用?<br/>未耗尽 / 未熔断 / 未报错}
+    C -->|是| D[GraphQL 请求模板<br/>graphql.ts 模板 + 路径参数变量]
+    C -->|否| E[熔断框架：cooldown / 额度耗尽]
+    E --> F[withRestFallback 降级链<br/>复用 rest 层现有实现 + ↪ 日志]
+    D --> G[返回数据]
+    F --> G
 ```
 
-- **主模式**：用户在偏好设置页切换（`GraphQL 优先` / `REST 优先`，localStorage `puregit_api_mode`，默认 GraphQL）；仅两态，无子 tabs。
-- **冗余切换**：主模式不可达 / 超时 / 报错 / 额度耗尽（熔断）时，自动改走另一模式完成本次请求，**不改写用户设置**；额度恢复后主模式自动恢复优先。
-- **双额度**：GitHub 官方 `/rate_limit` 对 REST core 与 GraphQL **分开计数**（认证 REST 5000/时、GraphQL 5000 点/时、search 独立）；偏好页展示两种额度进度条，footer 常驻简写显示；一种额度耗尽即触发上述自动冗余。
+- **GraphQL 唯一主通道**：登录态全部功能经 GraphQL（`api.github.com/graphql`）；无「REST 优先」模式选项。
+- **熔断机制框架保留**：额度跟踪（REST core / GraphQL 双桶）、cooldown（网络错误 60s）、in-flight 去重、响应缓存——与「双通道」时期一致；**降级目标 = 立即经 `withRestFallback` 走 REST 降级链**（复用 rest 层现有实现）。
+- **匿名强制 REST**（硬约束非降级）：GitHub GraphQL 匿名恒 403（实测），匿名时 smart 层短路直接走 REST 数据层（`rest-*.ts`，公开数据匿名可用）。**这是保留 REST 数据层的核心原因**（另一原因是熔断降级复用）。
+- **路径参数 → 请求模板变量**：路由参数（owner/repo/number/login 等）不做字符串拼查询，统一映射为 GraphQL 模板的变量对象（模板集中 `graphql.ts`，变量由 smart 函数组装）。
+- **双额度**：REST core 与 GraphQL 分开计数（认证 REST 5000/时、GraphQL 5000 点/时）；footer/偏好页展示。
+
+### 熔断日志（api-log.ts 统一工具）
+
+主请求与熔断降级链日志**视觉层级区分**（时间戳含毫秒 / 协议自动标注 / fallback `↪` 前空 2 格 / GraphQL vars + error 详情行）：
+
+```
+YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | vars: {"aa":"bb","cc":11}  500  123KB  32ms   ← 主请求异常
+YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | error: {....}                             ← 报错详情（单独行）
+YYYY-MM-DD 12:23:34:123   ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms              ← fallback（每请求一行）
+```
+
+实现：`web/src/lib/api-log.ts`（`logMainRequest`/`logGraphqlMain`/`logGraphqlError`/`beginFallback`/`inFallback`）；`withRestFallback`（api-core.ts）内部调 `beginFallback` 使降级链日志自动带 `↪`；日志仅 DEV 输出（测试 `setApiLogDev(true)` 开启）。
 
 ### 覆盖范围
 
-| 数据 | 首选（GraphQL） | 降级（REST） | 现状 |
-|------|----------------|-------------|------|
-| 仓库信息/详情 | ✅ 按需字段 | `/repos/:owner/:repo` | ✅ 已接入（fetchRepositorySmart，含登录态 token） |
-| 当前用户画像 | ✅ viewer | `/user` | ✅ 已接入（fetchViewerSmart） |
-| 用户/组织主页 | ✅ user(login)/organization | `/:login`、`/orgs/:org` | ✅ 已接入（fetchUserProfileSmart/fetchOrgProfileSmart） |
-| issue 列表/详情 | ✅ repository.issues / issue(number) | `/repos/.../issues` | ✅ 已接入（fetchIssuesSmart/fetchIssueDetailSmart，GraphQL 天然排除 PR） |
-| PR 列表/详情 | ✅ repository.pullRequests / pullRequest(number) | `/repos/.../pulls` | ✅ 已接入（fetchPullsSmart/fetchPullDetailSmart，MERGED 映射 closed+merged_at） |
-| Releases 列表/详情 | ✅ repository.releases / release(tagName) | `/repos/.../releases` | ✅ 已接入（fetchReleasesSmart/fetchReleaseDetailSmart） |
-| 仓库/用户/issue 搜索 | ✅ search(query, type) | `/search/*` | ✅ 已接入（searchRepositoriesSmart/searchUsersSmart/searchIssuesSmart） |
-| 创建 issue | ✅ createIssue mutation | POST `/repos/.../issues` | ✅ 已接入（createIssueSmart） |
-| star/unstar | ✅ addStar/removeStar mutation | PUT/DELETE `/user/starred` | ✅ 已接入（setStarredSmart） |
-| 已 star 检测 | ⚠️ viewerHasStarred 可迁移 | GET `/user/starred/:o/:r`（204 判定） | REST（isStarredSmart，判定简单够用） |
-| fork / 创建 PR | ⚠️ GraphQL 无/繁琐 | POST `/forks`、POST `/pulls` | REST 直连（fork 无 mutation；PR 需多步取 id） |
-| 仓库列表（趋势） | ⚠️ search 无趋势语义 | `/search/repositories?q=created:>` | REST 直连（趋势本身为 hack 模拟） |
-| 文件树/内容 | ⚠️ 复杂（无游标分页） | `/git/trees`、`/contents`（raw） | REST 直连 |
-| 语言统计 | ⚠️ 繁琐 | `/repos/.../languages` | REST 直连 |
+| 数据 | 主通道（GraphQL） | REST 熔断降级 | 现状 |
+|------|------------------|--------------|------|
+| 仓库信息/详情 | ✅ 按需字段 | ✅ withRestFallback | ✅ 已接入（fetchRepositorySmart） |
+| 当前用户画像 | ✅ viewer | ✅ withRestFallback | ✅ 已接入（fetchViewerSmart） |
+| 用户/组织主页 | ✅ user(login)/organization | ✅ withRestFallback | ✅ 已接入（fetchUserProfileSmart/fetchOrgProfileSmart） |
+| issue 列表/详情 | ✅ repository.issues / issue(number) | ✅ withRestFallback | ✅ 已接入（fetchIssuesSmart/fetchIssueDetailSmart，GraphQL 天然排除 PR） |
+| PR 列表/详情 | ✅ repository.pullRequests / pullRequest(number) | ✅ withRestFallback | ✅ 已接入（fetchPullsSmart/fetchPullDetailSmart，MERGED 映射 closed+merged_at） |
+| Releases 列表/详情 | ✅ repository.releases / release(tagName) | ✅ withRestFallback | ✅ 已接入（fetchReleasesSmart/fetchReleaseDetailSmart） |
+| 仓库/用户/issue 搜索 | ✅ search(query, type) | ✅ withRestFallback | ✅ 已接入（searchRepositoriesSmart/searchUsersSmart/searchIssuesSmart） |
+| 创建 issue | ✅ createIssue mutation | ✅ withRestFallback | ✅ 已接入（createIssueSmart） |
+| star/unstar | ✅ addStar/removeStar mutation | ✅ withRestFallback | ✅ 已接入（setStarredSmart） |
+| fork / 创建 PR | ⚠️ GraphQL 无/繁琐 | REST 直连 | REST（fork 无 mutation；PR 需多步取 id，保留 REST） |
+| 仓库列表（趋势） | ⚠️ search 无趋势语义 | REST 直连 | REST（趋势本身为 hack 模拟） |
+| 文件树/内容 | ⚠️ 复杂（无游标分页） | REST 直连 | REST |
+| 语言统计 | ⚠️ 繁琐 | REST 直连 | REST |
 
-> ⚠️ = GraphQL 支持但查询繁琐/无对应能力，当前直接走 REST，后续可迁移。
-> **未登录高可用**：GraphQL 强制要求认证（匿名 401），smart 层在无 token 时跳过 GraphQL 直接 REST（公开数据匿名可用）；未登录 REST core 限 60 次/时（按 IP），已通过 `ApiError.isRateLimit` 识别并展示「限流请稍后刷新」提示。
+> ⚠️ = GraphQL 支持但查询繁琐/无对应能力，保留 REST 直连，不纳入熔断降级范围。
+> **匿名强制 REST**：GraphQL 强制要求认证（匿名 401/403），匿名时 smart 层直接走 REST 数据层（公开数据匿名可用）——REST 数据层保留的核心原因；匿名 REST core 限 60 次/时（按 IP），通过 `ApiError.isRateLimit` 识别并展示「限流请稍后刷新」。
 
-### 冗余判定（主模式不可用 → 切换另一模式）
+### 熔断判定（GraphQL 不可用 → withRestFallback 降级 / 匿名走 REST）
 
-1. 主模式 HTTP 非 2xx / 网络错误（触发熔断 cooldown）
+1. GraphQL HTTP 非 2xx / 网络错误（触发 cooldown 60s）
 2. 响应 `errors` 字段非空（GraphQL 字段级错误亦然）
 3. 请求超时（Octokit request timeout 8s）
-4. 主模式额度耗尽（`isExhausted`：remaining ≤ 0）
-5. 未携带 token 且目标数据需认证 → 直接 REST（匿名）
+4. GraphQL 额度耗尽（`isExhausted`：remaining ≤ 0）
+5. 未携带 token → 匿名直接 REST 数据层（非降级，硬约束）
+
+> **1~4 命中 → `withRestFallback` 熔断降级 REST**（复用 rest 层现有实现；日志自动 `↪` 前缀）；
+> 仅 5（匿名）是硬约束直接走 REST。GraphQL 主请求日志含 vars + error 详情行（api-log.ts）。
 
 ### 实现载体
 
-- `web/src/lib/octokit.ts`：**Octokit SDK 统一入口**——`@octokit/rest`（`createRestClient`，request.fetch 钩子注入日志+额度跟踪）与 `@octokit/graphql`（`createGraphqlClient`）；`ApiMode`（graphql/rest）状态 + **统一 limit 缓存**（每次响应头 `x-ratelimit-*` 写入全局 usage，缺失头保留原值防清零）+ 熔断（cooldown）；`shouldUseGraphQL/shouldUseRest` 供 smart 层决策；**订阅机制**（`subscribeUsageChange`/`getApiUsage`/`hasApiUsageData`/`setApiUsage`）——footer 与偏好页订阅缓存实时刷新，替代独立轮询 `/rate_limit`（缓存为空时才一次兜底回填）
-- `web/src/lib/api.ts`：smart 封装层——按主模式决策，主模式不可用返回 `{errors}` 触发冗余，网络错误触发 cooldown；页面组件**只调用 `api.ts`**，不感知具体协议
-- `web/src/lib/rest.ts`：REST 数据层（桶 + `rest-*.ts` 板块）——**固定端点全部经 `typedRequest` + `octokit.rest.*` 类型化方法**（URL 模板/参数编码/返回类型由 @octokit 生成代码保证，不再手拼 URL）；特殊语义端点（raw Accept/base64/Link 头分页/Octokit 无类型化方法）保留 `octokit.request` 底层并注释理由；调用方签名零改动
-- `web/src/lib/graphql.ts`：GraphQL 客户端经 `@octokit/graphql`（`graphqlRequest<T>`，保留 `{data, errors}` 契约）
-- 页面组件**只调用 `api.ts`**，不感知具体走 GraphQL 还是 REST
+- `web/src/lib/octokit.ts`：**Octokit SDK 统一入口**——`@octokit/graphql`（`createGraphqlClient`）+ `@octokit/rest`（`createRestClient`，匿名直连与降级用）；**统一 limit 缓存**（响应头 `x-ratelimit-*` 写入全局 usage）+ 熔断（cooldown）+ 去重 + 响应缓存；`shouldUseGraphQL` 决策；**订阅机制**（`subscribeUsageChange`/`getApiUsage`/`hasApiUsageData`/`setApiUsage`）——footer 与偏好页实时刷新
+- `web/src/lib/api-core.ts`：**graphqlRequest（GraphQL 唯一主通道包装）+ withRestFallback（熔断降级链）**——GraphQL 失败日志（vars/error 行）+ 降级链 `↪` 标记
+- `web/src/lib/api-log.ts`：**熔断日志工具**——`logMainRequest`/`logGraphqlMain`/`logGraphqlError`/`beginFallback`/`inFallback`（层级缩进/fallback 标记/毫秒时间戳；DEV 输出，测试 `setApiLogDev`）
+- `web/src/lib/api.ts`：smart 封装层 barrel——**GraphQL 唯一主通道**；匿名短路 REST 数据层；GraphQL 失败 → `withRestFallback` 降级
+- `web/src/lib/graphql.ts`：**GraphQL 请求模板库（集中管理）**——查询/变更模板常量 + 路径参数变量组装；页面/组件只 import 模板名，不手拼查询
+- `web/src/lib/rest.ts`：REST 数据层（桶 + `rest-*.ts` 板块）——**匿名直连** + **熔断降级复用** + **保留 REST 路由**（fork/趋势/文件树/语言）；固定端点全部 `typedRequest` + `octokit.rest.*` 类型化方法
+- 页面组件**只调用 `api.ts`**，不感知具体协议
 
 ## 数据流示例
 
@@ -200,19 +227,22 @@ sequenceDiagram
     W-->>B: 返回 access token → 前端存内存
 ```
 
-### 全部前端功能（携带 token 直连 GitHub API，主模式可切换）
+### 全部前端功能（携带 token 直连 GitHub GraphQL；匿名走 REST 数据层）
 
 ```mermaid
 sequenceDiagram
     participant B as 前端
     participant G as GitHub GraphQL
     participant R as GitHub REST
-    B->>G: POST /graphql query(仓库信息)（Bearer token）
-    G-->>B: 数据（按需字段）
+    B->>G: POST /graphql query(仓库信息)（Bearer token，模板+变量）
+    G-->>B: 数据（按需字段聚合）
     B->>G: POST /graphql mutation(star 仓库)
     G-->>B: 结果
-    Note over B,G: GraphQL 不可达/报错时
-    B->>R: GET /repos/owner/repo（降级）
+    Note over B,G: GraphQL 不可达/报错/耗尽时（熔断）
+    B->>R: withRestFallback 降级链（复用 rest 层，日志 ↪ 标记）
+    R-->>B: 数据
+    Note over B,G: 匿名时（GraphQL 恒 403）
+    B->>R: GET /repos/owner/repo（匿名 REST 数据层，硬约束）
     R-->>B: 数据
     B->>B: 渲染 / 更新 UI
 ```

@@ -4,20 +4,20 @@
  */
 
 /**
- * GitHub API 智能封装层（Octokit + 用户可选主模式）
+ * GitHub API 智能封装层（v0.0.1 设计调整：GraphQL 唯一主通道）
  *
- * 策略：主模式由用户偏好设置（GraphQL 优先 / REST 优先，默认 GraphQL）；
- * 统一经本模块 smart 函数调用，页面组件不感知具体协议。
- * - 匿名强制 REST：GraphQL 匿名恒 403（实测），token 为空直接短路 → smart 函数降级 REST
- * - 主模式 graphql：GraphQL 首选，不可达/超时/熔断/耗尽时自动冗余切换 REST（不改设置项）
- * - 主模式 rest：直接走 REST（GraphQL 不用）
+ * 策略：登录态全部功能经 GraphQL；统一经本模块 smart 函数调用，页面组件不感知具体协议。
+ * - 匿名强制 REST：GraphQL 匿名恒 403（实测），token 为空直接短路 → smart 函数走 REST 数据层
+ * - GraphQL 耗尽/不可达/报错 → 熔断降级 REST（现有 REST 代码复用，按新思路优化为降级链，
+ *   日志经 api-log 自动打 `↪` fallback 标记）；GraphQL 主请求失败日志含 vars + error 详情行
  * - REST core 与 GraphQL 双额度分开计数（octokit.ts 统一跟踪，footer/设置页展示）
  *
- * 当前状态：REST 已全面可用（rest.ts），GraphQL 查询模板已就绪（graphql.ts）。
- * 双端点 API 一律 smart 包装（见 docs/api-compat.md §2）；单端点走 REST 数据层。
+ * 当前状态：第 1~2 步实施中——smart 层 GraphQL 唯一主通道 + REST 熔断降级（复用现有 rest 层）；
+ * GraphQL 请求模板逐步定型（路径参数 → 变量），模板聚合边界确定后 REST 降级链同步补全。
  */
 
 import { shouldUseGraphQL, triggerGqlCooldown } from "./octokit";
+import { beginFallback, logGraphqlError, logGraphqlMain, logMainRequest } from "./api-log";
 import {
   graphqlRequest as rawGraphqlRequest,
   hasGraphQLErrors,
@@ -27,36 +27,19 @@ import {
 export { hasGraphQLErrors };
 export type { GraphQLResponse };
 
-// ===== API 模式熔断：主模式 + 自动切换）=====
+// ===== API 熔断框架（GraphQL 唯一主通道 + REST 熔断降级链）=====
 
 /**
- * 主模式 graphql（默认）：GraphQL 首选，耗尽/不可达/熔断时自动降级 REST（60s 冷却）。
- * 主模式 rest：直接走 REST（GraphQL 不用）。
- * 均不改变用户设置（偏好设置页开关），仅运行时决策。
+ * v0.0.1 设计调整：GraphQL 唯一主通道。
+ * - 登录态全部功能经 GraphQL；GraphQL 耗尽/不可达/报错 → withRestFallback 熔断降级 REST（复用 rest 层，日志 ↪ 标记）
+ * - 匿名强制 REST（GraphQL 匿名恒 403——REST 数据层保留的核心原因）
+ * 熔断机制框架保留：cooldown（网络错误 60s）/ 额度跟踪 / 去重 / 响应缓存（octokit.ts）。
  */
 
 /**
- * API 请求日志（dev 模式输出，格式同 rest.ts 的 [PureGit API]）。
- * 便于本地排障：一眼看出请求走了 GraphQL 还是 REST、耗时、状态、返回大小。
+ * API 请求日志（dev 模式输出，统一 api-log.ts 工具）。
+ * 格式：[Graph]/[Rest] + 状态 + 大小 + 耗时；熔断降级链中自动加 `↪` 前缀（api-log 管理层级）。
  */
-function apiLog(
-  kind: "REST" | "GraphQL",
-  detail: string,
-  status: number | string,
-  ms: number,
-  size?: number,
-  err?: unknown,
-): void {
-  if (!import.meta.env.DEV) return;
-  const sizeStr = size != null ? ` ${fmtSize(size)}` : "";
-  const errStr = err ? ` ${err instanceof Error ? err.message : String(err)}` : "";
-  console.log(`[PureGit API] [${kind}] ${detail} ${status} ${ms}ms${sizeStr}${errStr}`);
-}
-
-function fmtSize(bytes: number): string {
-  return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)}KB` : `${bytes}B`;
-}
-
 /** 从 query 提取操作名（query Xxx / mutation Xxx → Xxx） */
 function queryName(query: string): string {
   const m = query.match(/(?:query|mutation)\s+(\w+)/);
@@ -72,9 +55,40 @@ function isNetworkError(e: unknown): boolean {
 }
 
 /**
- * 带模式判断的 GraphQL 请求（替代原 graphqlRequest；调用方签名不变）。
- * - 主模式 rest / GraphQL 耗尽 / 熔断 → 短路返回 errors（smart 函数自然降级 REST）
- * - 主模式 graphql → 尝试 GraphQL，网络层失败触发熔断
+ * 熔断降级链包装：GraphQL 主请求失败 → 执行 REST 降级（复用 rest 层现有实现）。
+ *
+ * 用法（smart 函数）：
+ * ```ts
+ * const resp = await graphqlRequest(XXX_QUERY, vars, token);
+ * if (!hasGraphQLErrors(resp) && resp.data?.repository) return toXxx(resp.data.repository);
+ * return withRestFallback(() => fetchXxx(owner, repo, token), "fetchXxx", resp);
+ * ```
+ * - beginFallback() 使降级链中的 REST 日志自动打 `↪` 前缀（api-log 层级标记）
+ * - 支持嵌套降级链（fallback 内再 fallback → 深度递增）
+ */
+export async function withRestFallback<T>(
+  restFn: () => Promise<T>,
+  detail: string,
+  gqlResp?: GraphQLResponse<unknown>,
+): Promise<T> {
+  // GraphQL 失败原因 → 日志（若调用方未打 error 详情，这里兜底打一行）
+  if (gqlResp?.errors?.length) {
+    logGraphqlError(detail, gqlResp.errors[0].message ?? "unknown", "rest-fallback");
+  }
+  const end = beginFallback();
+  try {
+    return await restFn();
+  } finally {
+    end();
+  }
+}
+
+/**
+ * 带熔断框架的 GraphQL 请求（GraphQL 唯一主通道；调用方签名不变）。
+ * - 匿名（无 token）→ 短路返回 errors（smart 函数走匿名 REST 数据层，硬约束非降级）
+ * - GraphQL 耗尽/熔断 → 返回 errors（smart 层经 withRestFallback 降级 REST，不静默切 REST）
+ * - 网络层失败 → 触发 cooldown，返回 errors
+ * 日志：主请求走 logGraphqlMain（含 vars）；失败/网络错误追加 logGraphqlError 详情行。
  */
 export async function graphqlRequest<T>(
   query: string,
@@ -83,15 +97,15 @@ export async function graphqlRequest<T>(
 ): Promise<GraphQLResponse<T>> {
   const name = queryName(query);
   // 匿名强制 REST（GitHub GraphQL 匿名恒 403，实测 ）：
-  // 未登录 token 为空 → 直接短路，smart 函数自然降级 REST（不消耗配额、不产生 403 噪音）
+  // 未登录 token 为空 → 直接短路，smart 函数走 REST 数据层（不消耗配额、不产生 403 噪音）
   if (!token) {
-    apiLog("GraphQL", name, "skip→REST(anonymous)", 0);
+    logMainRequest("graphql", `${name} skip→REST(anonymous)`, "skip", 0);
     return { errors: [{ message: "GraphQL requires auth (anonymous → REST)" }] };
   }
-  // 非 GraphQL 主模式（rest / 耗尽 / 熔断）→ 短路，smart 函数降级 REST
+  // GraphQL 耗尽/熔断 → 不静默切 REST，返回 errors 由 smart 层 withRestFallback 处理
   if (!shouldUseGraphQL()) {
-    apiLog("GraphQL", name, "skip→REST", 0);
-    return { errors: [{ message: "GraphQL skipped (mode/cooldown/exhausted)" }] };
+    logMainRequest("graphql", `${name} skip→REST(fallback)`, "skip", 0);
+    return { errors: [{ message: "GraphQL skipped (cooldown/exhausted)" }] };
   }
   const started = performance.now();
   try {
@@ -99,14 +113,12 @@ export async function graphqlRequest<T>(
     const ms = Math.round(performance.now() - started);
     const size = JSON.stringify(resp).length;
     const errCount = resp.errors?.length ?? 0;
-    apiLog(
-      "GraphQL",
-      name,
-      errCount ? `error(${errCount})` : 200,
-      ms,
-      size,
-      errCount ? resp.errors?.[0].message : undefined,
-    );
+    if (errCount) {
+      logGraphqlMain(name, variables, `error(${errCount})`, ms, size);
+      logGraphqlError(name, resp.errors?.[0]?.message ?? "unknown", "graphql-errors");
+    } else {
+      logGraphqlMain(name, variables, 200, ms, size);
+    }
     return resp;
   } catch (e) {
     const ms = Math.round(performance.now() - started);
@@ -115,7 +127,8 @@ export async function graphqlRequest<T>(
     if (degraded) {
       triggerGqlCooldown();
     }
-    apiLog("GraphQL", name, degraded ? "network-error→REST" : "error", ms, undefined, e);
+    logGraphqlMain(name, variables, degraded ? "network-error→TODO" : "error", ms);
+    logGraphqlError(name, e, degraded ? "network-error" : "http-error");
     return { errors: [{ message: String(e) }] };
   }
 }

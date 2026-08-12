@@ -1,17 +1,19 @@
 /**
  * ============================================================================
- * api-issue smart 降级决策 单元测试 —— issue/PR/订阅 通路质量门
+ * api-issue smart 决策 单元测试 —— issue/PR/订阅 通路质量门
  * ============================================================================
  *
  * 【本文件针对的验收基线（第一性原理，勿降断言）】
  * api-issue 是 issue/PR/评论/订阅/Release 的 smart 层，决策比 api-repo 更复杂：
  * - fetchIssuesSmart / fetchPullsSmart：**三级决策**——
  *   ① 分页(page>1)或含过滤条件 → 直 REST（GraphQL 分页需游标，非首页统一 REST）；
- *   ② 过滤含 q/@me → search API（REST /issues 不支持 @me/q）；③ 其余 → GraphQL 首选 + 降级 REST
+ *   ② 过滤含 q/@me → search API（REST /issues 不支持 @me/q）；
+ *   ③ 其余 → **GraphQL 唯一主通道 + REST 熔断降级**（v0.0.1：withRestFallback 统一降级链，
+ *      复用 rest 层现有实现，日志自动打 `↪` fallback 标记）
  * - setIssueSubscriptionSmart：**双步 GraphQL**（先查 issue node id，再 updateSubscription mutation）
  *   + REST PUT/DELETE 兜底；**订阅语义反转**——subscribed=true → UNSUBSCRIBED mutation /
  *   unsubscribeIssue REST（目标是变为未订阅），返回 !subscribed（订阅后的状态）
- * - fetchIssueDetailSmart / fetchPullDetailSmart：GraphQL 首选 + 降级
+ * - fetchIssueDetailSmart / fetchPullDetailSmart：GraphQL 主通道 + REST 熔断降级
  * - toIssue/toPull 转换经 GraphQL 成功路径间接验证（state 小写 / MERGED→closed+merged_at /
  *   head.label="owner:ref" / author 缺失→ghost）
  *
@@ -20,10 +22,14 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/api-core", () => ({
-  graphqlRequest: vi.fn(),
-  hasGraphQLErrors: (resp: { errors?: unknown[] } | undefined) => Boolean(resp?.errors?.length),
-}));
+vi.mock("@/lib/api-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-core")>();
+  return {
+    ...actual,
+    graphqlRequest: vi.fn(),
+    hasGraphQLErrors: (resp: { errors?: unknown[] } | undefined) => Boolean(resp?.errors?.length),
+  };
+});
 
 vi.mock("@/lib/api-search", () => ({
   searchIssuesSmart: vi.fn(),
@@ -371,7 +377,7 @@ describe("fetchPullsSmart（三级决策：分页 REST / 过滤 search / GraphQL
     expect(p.assignees).toEqual([]);
   });
 
-  it("GraphQL errors / 异常 → 降级 REST", async () => {
+  it("GraphQL errors / 异常 → 熔断降级 REST（withRestFallback 统一降级链）", async () => {
     mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
     expect((await fetchPullsSmart("evil7", "puregit", "open", "gho_x")).items[0].id).toBe(2);
     mockGraphql.mockRejectedValue(new Error("net"));
@@ -395,7 +401,7 @@ describe("fetchPullDetailSmart（GraphQL 首选 + 降级）", () => {
     expect(r.number).toBe(7);
   });
 
-  it("GraphQL errors / 异常 → 降级 REST", async () => {
+  it("GraphQL errors / 异常 → 熔断降级 REST（withRestFallback 统一降级链）", async () => {
     mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
     expect((await fetchPullDetailSmart("evil7", "puregit", 7, "gho_x")).id).toBe(2);
     mockGraphql.mockRejectedValue(new Error("net"));
