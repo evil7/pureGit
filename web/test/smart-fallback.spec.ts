@@ -31,6 +31,7 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     ...actual,
     fetchRepository: vi.fn(),
     fetchLanguages: vi.fn(),
+    fetchOpenPullsCount: vi.fn(),
     createRepository: vi.fn(),
     createIssue: vi.fn(),
   };
@@ -45,6 +46,7 @@ import { graphqlRequest } from "@/lib/api-core";
 import {
   fetchRepository,
   fetchLanguages,
+  fetchOpenPullsCount,
   createRepository,
   createIssue,
   type Repository,
@@ -53,6 +55,7 @@ import {
 const mockGraphql = vi.mocked(graphqlRequest);
 const mockFetchRepository = vi.mocked(fetchRepository);
 const mockFetchLanguages = vi.mocked(fetchLanguages);
+const mockFetchOpenPullsCount = vi.mocked(fetchOpenPullsCount);
 const mockCreateRepository = vi.mocked(createRepository);
 const mockCreateIssue = vi.mocked(createIssue);
 
@@ -118,6 +121,8 @@ beforeEach(() => {
   mockGraphql.mockResolvedValue({ data: {} } as never);
   mockFetchRepository.mockResolvedValue(restRepo);
   mockFetchLanguages.mockResolvedValue({});
+  // 默认 null（REST 降级时 data 保持 restRepo 原样，`toBe(restRepo)` 断言不受影响）
+  mockFetchOpenPullsCount.mockResolvedValue(null);
   mockCreateRepository.mockResolvedValue(createdRepo);
   mockCreateIssue.mockResolvedValue({ number: 101 } as never);
 });
@@ -128,16 +133,30 @@ describe("fetchRepositorySmart（仓库信息 GraphQL 首选 + REST 降级）", 
     expect(mockGraphql).not.toHaveBeenCalled();
     expect(mockFetchRepository).toHaveBeenCalledWith("evil7", "puregit", undefined);
     expect(mockFetchLanguages).toHaveBeenCalled();
+    // REST 降级补查 pulls 计数（open_issues_count 含 PRs 不能拆分）
+    expect(mockFetchOpenPullsCount).toHaveBeenCalledWith("evil7", "puregit", undefined);
     expect(r.data).toBe(restRepo);
   });
 
-  it("GraphQL 成功 → 返回 GraphQL 结果（REST 不调用）", async () => {
-    mockGraphql.mockResolvedValue(gqlOk as never);
+  it("GraphQL 成功 → 返回 GraphQL 结果（REST 不调用），含 tab 计数", async () => {
+    mockGraphql.mockResolvedValue({
+      ...gqlOk,
+      data: {
+        repository: {
+          ...gqlOk.data.repository,
+          openIssues: { totalCount: 5 },
+          openPullRequests: { totalCount: 3 },
+        },
+      },
+    } as never);
     const r = await fetchRepositorySmart("evil7", "puregit", "gho_x");
     expect(mockFetchRepository).not.toHaveBeenCalled();
     expect(r.data.id).toBe(123);
     expect(r.data.full_name).toBe("evil7/puregit");
     expect(r.langs).toEqual({ TypeScript: 900 });
+    // tab 计数（openIssues/openPullRequests totalCount → open_*_count）
+    expect(r.data.open_issues_count).toBe(5);
+    expect(r.data.open_pulls_count).toBe(3);
   });
 
   it("GraphQL 返回 errors → 降级 REST", async () => {

@@ -1,6 +1,6 @@
 # PureGit 架构设计
 
-> **中心思想**：全面复刻简版 GitHub（详见 [vision.md](./vision.md)）。本架构服务于该定位——前端承载全部业务（浏览/搜索/管理），Worker 只做身份与 CLI 代理，数据一律来自官方 API。
+> **中心思想**：全量复刻 GitHub 前端（详见 [vision.md](./vision.md)，v0.0.1 新概念）。本架构服务于该定位——前端承载全部业务（浏览/搜索/管理/协作），Worker 只做身份与 CLI 代理，数据一律来自官方 API。
 
 ## 总体架构
 
@@ -40,7 +40,7 @@ flowchart LR
 - **路由架构（data router）**：`App.tsx` 由 declarative `<BrowserRouter><Routes>` 迁移 **`createBrowserRouter` + `RouterProvider`**（React Router v7 data router）——根 layout route（`AppLayout`：Nav + main/Suspense/Outlet + Footer）携带 **`errorElement={<RouteErrorPage/>}`**；页面级整页致命错误（404/限流/5xx）render 中 throw `ApiError` → 冒泡至 errorElement 分类渲染全局错误页；`path="*"` → `NotFoundPage`（未知路径兜底）。**错误分层**：整页级（仓库/用户/详情/列表页加载失败）→ 全局错误页（`ErrorPages.tsx`：`NotFoundPage`/`RateLimitPage`/`ErrorPage`，`ApiError` 携带 `rawBody/parsed` 供错误页 `<details>` 展开原始 JSON）；局部区块（表单/评论/列表子区）→ `InlineError` + toast
 - 使用 shadcn/ui 组件体系，禁止手写重复基础组件
 - **仓库页布局**（仿 GitHub 简化版）：RepoHeader 全 tab（**官方顺序**：Code/Issues/Pull requests/Discussions/Actions/Projects/Wiki/Security/Insights/Releases/Settings，Features 开关联动显隐）+ About 右侧栏（描述/语言/star/fork/topics/license）；Code tab 提供树状文件树 + **CodeMirror 6 代码高亮/编辑**（全面迁移，Shiki 移除）
-- **删减原则**：去杂项（仅 Packages 不实现；Actions/Security/Insights/Wiki 经用户研讨转已实现，vision.md 修订），回归代码版本管理本源
+- **复刻原则**：功能做全（对齐官方页面，按 tasks.md 分批路线图推进，深度功能如评审工作流/Webhooks/Packages/Pages 分批纳入）、呈现做简（官方布局骨架 + shadcn/ui + 一步直达交互）
 - **技术限制**：Discussions/Projects 无公开 REST API（仅 GraphQL 需认证）
 - **布局（对齐官方 2026 新版 code view）**：内容区 `max-w-7xl`（1280px）；仓库名行 = 头像 + 名称 + Public/Private 标签 + Star/Fork（行最右侧，对应官方 `repo-header-actions`）；tabs 独立一行；blob 页面包屑横跨全宽（左树右内容之上）；代码带行号（CSS counter）+ 文件头显示 branch/commit 信息；操作栏含分支计数（`N branch`）；About 侧栏含 About 标题 + stars/forks 文本统计（无"更新于"）
 

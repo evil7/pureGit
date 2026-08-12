@@ -2,8 +2,6 @@ import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   ArrowLeft,
-  Bell,
-  BellRing,
   CheckCircle2,
   CircleDashed,
   CircleX,
@@ -15,7 +13,6 @@ import {
   GitPullRequestDraft,
   MessageSquare,
   Minus,
-  Milestone,
   Plus,
   SlidersHorizontal,
   User,
@@ -41,6 +38,10 @@ import {
   fetchPullsSmart,
   setIssueSubscriptionSmart,
   fetchPullDetailWithCommentsSmart,
+  fetchPullReviewSummarySmart,
+  fetchPullTimelineSmart,
+  requestReviewersSmart,
+  updatePullRequestStateSmart,
 } from "@/lib/api";
 import {
   apiErrorMessage,
@@ -53,18 +54,28 @@ import {
   type PullCommit,
 } from "@/lib/rest";
 import type { PullRequest, IssueComment, PullFile } from "@/lib/rest";
+import type { PullReviewSummary, PullTimelineEvent } from "@/lib/api";
 import { CommentsSection } from "@/components/CommentsSection";
+import { PullTimeline } from "@/components/PullTimeline";
 import { MarkdownView } from "@/components/MarkdownView";
 import { RepoSearchInput } from "@/components/RepoSearchInput";
 import { repoRawBase } from "@/lib/repo-raw";
 import { UserAvatar } from "@/components/UserAvatar";
 import { DiffView } from "@/components/DiffView";
+import {
+  ReviewersSidebar,
+  ReviewChangesDialog,
+  MergePanel,
+  ReviewStateBadge,
+} from "@/components/PullReviewPanel";
+import { COPILOT_AVATAR, isCopilotLogin } from "@/lib/copilot";
+import { PullMetadataSidebar } from "@/components/PullMetadataSidebar";
 import { getLabelStyle } from "@/lib/label-color";
 import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/format";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import PageLayout from "@/components/PageLayout";
-import { toastError } from "@/lib/toast";
+import { toastError, toastSuccess } from "@/lib/toast";
 
 type PullState = "open" | "closed" | "all";
 
@@ -430,13 +441,17 @@ export function PullDetailPage() {
     number: string;
   }>();
   const { token } = useAuth();
-  const isDark = useIsDark();
   const { fmt } = useDateFormat();
   const [pr, setPr] = useState<PullRequest | null>(null);
   const [comments, setComments] = useState<IssueComment[] | null>(null);
   const [files, setFiles] = useState<PullFile[] | null>(null);
   const [commits, setCommits] = useState<PullCommit[] | null>(null);
   const [checks, setChecks] = useState<CheckRunsSummary | null | undefined>(undefined); // undefined=加载中 null=无checks
+  const [reviewSummary, setReviewSummary] = useState<PullReviewSummary | null | undefined>(
+    undefined,
+  );
+  // 时间线（GraphQL timelineItems；null=查询失败降级回退三段式渲染）
+  const [timeline, setTimeline] = useState<PullTimelineEvent[] | null | undefined>(undefined);
   const [tab, setTab] = useState<"conversation" | "commits" | "checks" | "files">("conversation");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
@@ -447,11 +462,19 @@ export function PullDetailPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    Promise.all([fetchPullDetailWithCommentsSmart(owner!, repo!, Number(number), token)])
-      .then(([{ pr: data, comments: cs }]) => {
+    Promise.all([
+      fetchPullDetailWithCommentsSmart(owner!, repo!, Number(number), token),
+      token
+        ? fetchPullReviewSummarySmart(owner!, repo!, Number(number), token)
+        : Promise.resolve(null),
+      token ? fetchPullTimelineSmart(owner!, repo!, Number(number), token) : Promise.resolve(null),
+    ])
+      .then(([{ pr: data, comments: cs }, summary, tl]) => {
         if (!cancelled) {
           setPr(data);
           setComments(cs);
+          setReviewSummary(summary);
+          setTimeline(tl);
           // 订阅状态（GraphQL viewerSubscription）
           if (data.subscription) {
             setSubscribed(data.subscription !== "UNSUBSCRIBED");
@@ -505,6 +528,25 @@ export function PullDetailPage() {
     };
   }, [tab, files, owner, repo, number, token]);
 
+  // 新评论即时追加：评论列表计数 + 时间线事件（官方发表评论后立即出现在 Conversation）
+  const appendTimelineComment = (c: IssueComment) => {
+    setComments((prev) => [...(prev ?? []), c]);
+    setTimeline((prev) =>
+      prev
+        ? [
+            ...prev,
+            {
+              kind: "comment",
+              id: String(c.id),
+              author: { login: c.user.login, avatarUrl: c.user.avatar_url ?? null },
+              createdAt: c.created_at,
+              body: c.body ?? "",
+            } satisfies PullTimelineEvent,
+          ]
+        : prev,
+    );
+  };
+
   // 订阅切换（GraphQL 首选）
   const toggleSubscribe = async () => {
     if (!token) return;
@@ -551,14 +593,23 @@ export function PullDetailPage() {
   // 整页级致命错误（PR 不存在/限流/5xx）→ 路由 errorElement 全局错误页
   if (error || !pr) throw error ?? new ApiError(404);
 
-  // 参与者 = 作者 + 指派人 + 评论者（去重，官方同源聚合）
+  // 参与者 = 作者 + 指派人 + 评论者 + 评审作者（去重，官方同源聚合——Copilot 评审也计入）
   const participants = Array.from(
     new Map(
-      [pr.user, ...(pr.assignees ?? []), ...(comments ?? []).map((c) => c.user)]
+      [
+        pr.user,
+        ...(pr.assignees ?? []),
+        ...(comments ?? []).map((c) => c.user),
+        ...(reviewSummary?.reviews ?? []).map((r) => r.user),
+      ]
         .filter((u) => u?.login)
         .map((u) => [u!.login, u!] as const),
     ).values(),
-  );
+  ).map((u) => ({
+    ...u,
+    // Copilot 头像归一（REST review 作者返回 bot 头像/可能为空 → 统一官方 in/946600，与真实用户同尺寸同风格）
+    avatar_url: isCopilotLogin(u.login) ? COPILOT_AVATAR : u.avatar_url,
+  }));
 
   return (
     /* 官方 F 型：主列 + 右 metadata（PageLayout 收编 GRID_2COL_ASIDE_280） */
@@ -567,95 +618,55 @@ export function PullDetailPage() {
       right={{
         node: (
           <aside className="space-y-5 text-sm">
-            {/* Assignees */}
-            <section>
-              <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">指派给</h3>
-              {pr.assignees && pr.assignees.length > 0 ? (
-                <ul className="space-y-1.5">
-                  {pr.assignees.map((a) => (
-                    <li key={a.login} className="flex items-center gap-2">
-                      <UserAvatar src={a.avatar_url} alt={a.login} />
-                      <Link to={`/${a.login}`} className="text-sm text-foreground hover:underline">
-                        {a.login}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-muted-foreground">未指派</p>
-              )}
-            </section>
+            {/* 审计者（官方 Reviewers metadata 第一位；+邀请审计 弹窗） */}
+            <ReviewersSidebar
+              owner={owner!}
+              repo={repo!}
+              authorLogin={pr.user.login}
+              summary={reviewSummary ?? null}
+              loading={reviewSummary === undefined}
+              onRequestReviewers={async (logins) => {
+                if (!token) return;
+                await requestReviewersSmart(
+                  owner!,
+                  repo!,
+                  Number(number),
+                  logins,
+                  token,
+                  reviewSummary?.pullRequestId,
+                );
+                setReviewSummary(
+                  (prev) =>
+                    prev && {
+                      ...prev,
+                      reviewRequests: [
+                        ...prev.reviewRequests,
+                        ...logins.map((l) => ({ login: l, avatarUrl: "" })),
+                      ],
+                    },
+                );
+              }}
+            />
 
-            {/* Labels */}
-            <section>
-              <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">标签</h3>
-              {pr.labels && pr.labels.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {pr.labels.map((l) => (
-                    <Badge
-                      key={l.name}
-                      className="text-[11px] font-medium"
-                      style={getLabelStyle(l.color, isDark)}
-                    >
-                      {l.name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground">无标签</p>
-              )}
-            </section>
-
-            {/* Milestone */}
-            <section>
-              <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">里程碑</h3>
-              {pr.milestone ? (
-                <span className="flex items-center gap-1.5">
-                  <Milestone className="size-3.5 text-muted-foreground" />
-                  {pr.milestone.title}
-                </span>
-              ) : (
-                <p className="text-muted-foreground">无里程碑</p>
-              )}
-            </section>
-
-            {/* Notifications（订阅） */}
-            <section>
-              <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">通知</h3>
-              {token ? (
-                <Button
-                  variant={subscribed ? "default" : "outline"}
-                  size="sm"
-                  onClick={toggleSubscribe}
-                  disabled={subscribing}
-                >
-                  {subscribed ? <BellRing className="size-3.5" /> : <Bell className="size-3.5" />}
-                  {subscribing ? "…" : subscribed ? "取消订阅" : "订阅"}
-                </Button>
-              ) : (
-                <p className="text-muted-foreground">登录后可订阅</p>
-              )}
-            </section>
-
-            {/* Participants */}
-            <section>
-              <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">参与者</h3>
-              {participants.length > 0 ? (
-                <div className="flex items-center gap-1.5">
-                  {participants.slice(0, 8).map((u) => (
-                    <UserAvatar
-                      key={u.login}
-                      src={u.avatar_url}
-                      alt={u.login}
-                      title={u.login}
-                      className="size-6 ring-1 ring-border"
-                    />
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground">—</p>
-              )}
-            </section>
+            {/* Assignees / Labels / Projects / Milestone / Development / participants / 底部订阅+锁定（官方 metadata 第二位起） */}
+            <PullMetadataSidebar
+              owner={owner!}
+              repo={repo!}
+              number={Number(number)}
+              assignees={pr.assignees ?? []}
+              labels={pr.labels ?? []}
+              milestone={pr.milestone ?? null}
+              locked={pr.locked ?? false}
+              pullRequestId={reviewSummary?.pullRequestId}
+              participants={participants}
+              subscribed={subscribed}
+              subscribing={subscribing}
+              onToggleSubscribe={toggleSubscribe}
+              onAssigneesChange={(users) => setPr((p) => (p ? { ...p, assignees: users } : p))}
+              onLabelsChange={(labels) => setPr((p) => (p ? { ...p, labels } : p))}
+              onMilestoneChange={(m) => setPr((p) => (p ? { ...p, milestone: m } : p))}
+              onLockedChange={(locked) => setPr((p) => (p ? { ...p, locked } : p))}
+            />
           </aside>
         ),
         width: 280,
@@ -719,6 +730,68 @@ export function PullDetailPage() {
           </div>
         </header>
 
+        {/* 评审操作区：Merge + Review changes + 关闭/重新打开（open PR 且有权限时） */}
+        {(pr.state === "open" || pr.merged_at) && (
+          <div className="mt-4 space-y-3">
+            {pr.state === "open" && !pr.merged_at && (
+              <MergePanel
+                owner={owner!}
+                repo={repo!}
+                number={Number(number)}
+                pullRequestId={reviewSummary?.pullRequestId}
+                mergeable={reviewSummary?.mergeable ?? null}
+                onMerged={() => setReviewSummary((prev) => prev && { ...prev, mergeable: null })}
+              />
+            )}
+            <div className="flex flex-wrap gap-2">
+              {pr.state === "open" && (
+                <>
+                  <ReviewChangesDialog
+                    owner={owner!}
+                    repo={repo!}
+                    number={Number(number)}
+                    onReviewed={(r) =>
+                      setReviewSummary(
+                        (prev) =>
+                          prev && {
+                            ...prev,
+                            reviews: [
+                              r,
+                              ...prev.reviews.filter((x) => x.user?.login !== r.user?.login),
+                            ],
+                          },
+                      )
+                    }
+                  />
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={async () => {
+                      if (!token) return;
+                      try {
+                        await updatePullRequestStateSmart(
+                          owner!,
+                          repo!,
+                          Number(number),
+                          "closed",
+                          token,
+                        );
+                        setPr((p) => (p ? { ...p, state: "closed" } : p));
+                        toastSuccess("已关闭 PR");
+                      } catch (e) {
+                        toastError(apiErrorMessage(e, "关闭失败"));
+                      }
+                    }}
+                  >
+                    <CircleX className="size-3.5" />
+                    关闭
+                  </Button>
+                </>
+              )}
+            </div>
+          </div>
+        )}
+
         {/* 四 tab（官方 Conversation / Commits / Checks / Files changed） */}
         <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="mt-4">
           <TabsList>
@@ -744,7 +817,7 @@ export function PullDetailPage() {
             </TabsTrigger>
           </TabsList>
 
-          {/* Conversation：作者正文 + 评论区 */}
+          {/* Conversation：作者正文 + 时间线（失败降级：评审列表 + 评论区） */}
           {tab === "conversation" && (
             <div className="mt-4 space-y-4">
               {pr.body && (
@@ -771,14 +844,76 @@ export function PullDetailPage() {
                   </CardContent>
                 </Card>
               )}
-              {comments && (
-                <CommentsSection
-                  owner={owner!}
-                  repo={repo!}
-                  number={Number(number)}
-                  comments={comments}
-                  onCommentAdded={(c) => setComments((prev) => [...(prev ?? []), c])}
-                />
+
+              {/* 时间线（GraphQL timelineItems 事件混排；null=失败降级回退下方三段式） */}
+              {timeline !== null && timeline !== undefined ? (
+                <>
+                  <PullTimeline events={timeline} owner={owner!} repo={repo!} />
+                  {/* 评论区仅保留编辑器（评论列表已在时间线内；新评论即时追加到时间线） */}
+                  {comments && (
+                    <CommentsSection
+                      owner={owner!}
+                      repo={repo!}
+                      number={Number(number)}
+                      comments={[]}
+                      onCommentAdded={appendTimelineComment}
+                    />
+                  )}
+                </>
+              ) : (
+                <>
+                  {/* 评审摘要：已提交的 review（approve/request changes/comment，官方 Conversation 顺序） */}
+                  {reviewSummary && reviewSummary.reviews.length > 0 && (
+                    <div className="space-y-3">
+                      {reviewSummary.reviews.map((r) => (
+                        <Card key={r.id}>
+                          <CardContent className="space-y-2 p-4">
+                            <div className="flex items-center gap-3 text-xs text-muted-foreground">
+                              <UserAvatar
+                                src={r.user?.avatar_url}
+                                alt={r.user?.login ?? "ghost"}
+                                className="size-7"
+                              />
+                              <span className="flex flex-wrap items-center gap-x-1.5">
+                                <Link
+                                  to={`/${r.user?.login ?? ""}`}
+                                  className="font-medium text-foreground hover:underline"
+                                >
+                                  {r.user?.login ?? "ghost"}
+                                </Link>
+                                <span>
+                                  {r.state === "APPROVED"
+                                    ? "批准了这些更改"
+                                    : r.state === "CHANGES_REQUESTED"
+                                      ? "请求更改"
+                                      : "评论了"}
+                                  {r.submitted_at ? ` · ${fmt ? fmt(r.submitted_at) : ""}` : ""}
+                                </span>
+                              </span>
+                              <ReviewStateBadge state={r.state} />
+                            </div>
+                            {r.body && (
+                              <div className="text-sm">
+                                <MarkdownView rawBase={repoRawBase(owner!, repo!)}>
+                                  {r.body}
+                                </MarkdownView>
+                              </div>
+                            )}
+                          </CardContent>
+                        </Card>
+                      ))}
+                    </div>
+                  )}
+                  {comments && (
+                    <CommentsSection
+                      owner={owner!}
+                      repo={repo!}
+                      number={Number(number)}
+                      comments={comments}
+                      onCommentAdded={(c) => setComments((prev) => [...(prev ?? []), c])}
+                    />
+                  )}
+                </>
               )}
             </div>
           )}

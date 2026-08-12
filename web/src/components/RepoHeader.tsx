@@ -19,6 +19,7 @@ import {
   BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
+import { formatCount } from "@/lib/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { StarForkButtons } from "@/components/StarForkButtons";
@@ -69,10 +70,13 @@ function showTabByFeature(
 
 export default function RepoHeader({
   data,
+  securityCount,
   onRepoUpdated,
 }: {
   /** 仓库数据（存在时渲染头像/可见性标签/Star/Fork，官方位置） */
   data?: Repository | null;
+  /** Security tab 计数（GHSA 总数，独立于 Repository 数据获取；null = 未加载/失败 → 隐藏） */
+  securityCount?: number | null;
   /** star/fork 数变化后的回调（同步回 RepoLayout 状态） */
   onRepoUpdated?: (stars: number, forks: number) => void;
 }) {
@@ -149,6 +153,16 @@ export default function RepoHeader({
             const Icon = tab.icon;
             const isActive = tab.to ? current === tab.to.slice(1) : isCodeActive;
             const full = tab.to ? basePath + tab.to : basePath;
+            // tab 计数（官方语义：Issues/PRs 显示 open 数、Security 显示 GHSA 总数；
+            // 有数据即显示含 0，undefined/null（未加载/失败/降级缺失）隐藏）
+            const tabCount =
+              tab.to === "/issues"
+                ? data?.open_issues_count
+                : tab.to === "/pulls"
+                  ? data?.open_pulls_count
+                  : tab.to === "/security"
+                    ? securityCount
+                    : undefined;
             const link = (
               <Link
                 key={tab.to}
@@ -162,6 +176,11 @@ export default function RepoHeader({
               >
                 <Icon className="size-4" />
                 {tab.label}
+                {tabCount !== undefined && tabCount !== null && (
+                  <Badge variant="secondary" className="rounded-full px-1.5 font-normal">
+                    {formatCount(tabCount)}
+                  </Badge>
+                )}
               </Link>
             );
             // Settings tab 仅仓库所有者可见（官方：非 owner/admin 完全无设置入口）

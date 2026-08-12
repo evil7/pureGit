@@ -10,7 +10,7 @@
  * 分支选择下方自动加载 diff 预览，操作由繁化简。
  */
 import { useEffect, useState, type FormEvent } from "react";
-import { Link, useNavigate, useParams } from "react-router-dom";
+import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { ArrowLeft, GitCompare, GitCommitHorizontal, Plus, Minus } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { InlineError } from "@/components/InlineError";
@@ -37,8 +37,10 @@ export default function NewPullRequestPage() {
   const { owner = "", repo = "" } = useParams();
   const { token, canWrite } = useAuth();
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
   const [base, setBase] = useState("main");
-  const [head, setHead] = useState("");
+  // compare 预填（官方 compare/<branch>?expand=1 → pulls/new?compare=<branch>；如 RecentPushesBanner 入口）
+  const [head, setHead] = useState(searchParams.get("compare") ?? "");
   const [title, setTitle] = useState("");
   const [body, setBody] = useState("");
   const [submitting, setSubmitting] = useState(false);

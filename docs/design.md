@@ -229,7 +229,7 @@
 | 组件 | 用途 | 规范 |
 |------|------|------|
 | **Logo** | 站标 | TopBar 左侧；`PureGit` 文本 + 图标 |
-| **RepoHeader** | 仓库级头部 | 仓库名行（头像+名称+可见性 Badge+Star/Fork 最右）+ 六 tab（Code/Issues/PRs/Discussions/Releases/Projects + Settings 门控）；tab 高亮 `border-b-2 border-foreground` |
+| **RepoHeader** | 仓库级头部 | 仓库名行（头像+名称+可见性 Badge+Star/Fork 最右）+ 六 tab（Code/Issues/PRs/Discussions/Releases/Projects + Settings 门控）；tab 高亮 `border-b-2 border-foreground`；**tab 计数**（官方实测 Issues/PRs/Security 带数）：Issues/PRs 显示 open 数（GraphQL totalCount 精确，REST 降级 issues 用 open_issues_count 近似、pulls 独立补查）、Security 显示 GHSA 总数（匿名可读），有数据即显示含 0，`formatCount` 压缩（5k/2.4k/43） |
 | **RepositoryCard** | 仓库卡片 | `Card + hover:bg-accent/50`；首行 BookOpen 图标+full_name（primary 链接 truncate）；描述 line-clamp-2；语言圆点+star+fork 数；topics 前 3 个 secondary Badge |
 | **StarForkButtons** | watch/star/fork 三按钮组 | **官方三按钮结构**：Watch（dropdown：Unwatch/Watch/Ignore，当前态 `bg-accent` 高亮，文案 Watch/Watching/Ignoring）/ Star（已 star 用 default variant+填充星）/ Fork；数字统一 `formatCount` 官方简写（1234→1.2k/123456→123k）；未登录弹登录引导；登录态实时切换（watch=REST PUT /subscription、star=GraphQL 主模式+REST 冗余、fork=REST POST /forks） |
 | **WriteGate / PermissionGate** | 权限门控 | 写操作 UI 灰化/隐藏（只读模式）；permission 维度控制（org/account 等） |

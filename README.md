@@ -2,7 +2,7 @@
 
 # PureGit
 
-**通过 GitHub 官方 API 全面复刻的「简版 GitHub」前端 —— 干净、极简、专注核心开发者高频操作**
+**通过 GitHub 官方 API 全量复刻的 GitHub 前端 —— 功能对齐官方、界面干净简洁**
 
 ![React](https://img.shields.io/badge/React-19-blue?logo=react)
 ![TypeScript](https://img.shields.io/badge/TypeScript-6-blue?logo=typescript)
@@ -14,7 +14,7 @@
 
 ---
 
-> 青春版、干净版、简约版 GitHub 让我们回归本源 😄
+> 全量复刻、干净呈现、回归本源 😄
 
 </div>
 
@@ -22,7 +22,7 @@
 > 
 > **本项目由「deepseek-v4-flash」完全托管开发**，项目结构与文档对 vibe coding 友好，具备完整设计规范（Design System）、架构文档、Copilot 指令与开发技能（Skills），Agent 可快速理解与上手迭代。
 > 
-> **开发阶段：0.0.x 内部试错**——可随时开展破坏性、不兼容的重构与尝试。
+> **版本阶段：v0.0.1 全量复刻**——由「简版 GitHub」升级为「功能对齐官方的全量复刻」；0.0.x 内部试错仍有效，可随时开展破坏性、不兼容的重构与尝试。
 
 ## 界面预览
 
@@ -44,11 +44,12 @@
 | **身份** | GitHub OAuth2 登录（**只读 / 完全控制** 两档权限 + 真实授予 scope 可视化）、会话恢复                                                                                        |
 | **CLI**  | **git 镜像端点自动代理**：`git clone / pull / push` 经 Worker 转发，解决 `github.com` 直连不稳定                                                                            |
 
-### 简约，回归本源
+### 全量复刻，分批对齐官方
 
-- **只做核心开发者高频必需**，去杂项：无 Packages / 评审工作流 / 深度安全子页等
-- 页面干净整洁：统一布局系统（Design System）、组件优先 shadcn/ui、信息密度适中
+- **功能对齐官方**：以官方页面为基准，按依赖层级 L0→L5 分批复刻——核心闭环（浏览/协作/账户/CLI）已完成，深度功能（评审工作流 / Webhooks / Packages / Pages / 深度安全子页）分批纳入路线图
+- 页面干净整洁：统一布局系统（Design System）、组件优先 shadcn/ui、信息密度适中——**简约仅限前端呈现，不限功能范围**
 - 技术化简：**Octokit SDK 统一封装 + 用户可选主模式**（GraphQL 优先 / REST 优先，双额度自动冗余，页面不感知协议）
+- 开发辅助：**API 对照索引 / 页面分类索引**内部工具（`scripts/` + `scripts/data/*.json`）——查接口、查页面、查双端点冗余候选用工具，不靠记忆
 
 ---
 
@@ -162,9 +163,10 @@ pnpm deploy
 
 | 文档                                           | 内容                            |
 | ---------------------------------------------- | ------------------------------- |
-| [docs/vision.md](./docs/vision.md)             | 中心思想与产品定位              |
+| [docs/vision.md](./docs/vision.md)             | 中心思想与产品定位（v0.0.1 全量复刻）      |
 | [docs/design.md](./docs/design.md)             | UI/UX 设计规范（Design System） |
 | [docs/architecture.md](./docs/architecture.md) | 架构设计                        |
+| [docs/api-compat.md](./docs/api-compat.md)     | API 兼容性对照表单与实施指导    |
 | [docs/cli-setup.md](./docs/cli-setup.md)       | CLI 镜像接入指南                |
 
 > 完整文档体系（公开/内部划分、每个文档的用意/用法/场景）见 [docs/index.md](./docs/index.md)

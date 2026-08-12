@@ -52,6 +52,10 @@ export interface Repository {
   forks_count: number;
   /** 关注者/订阅者数（watch 计数） */
   subscribers_count?: number;
+  /** open issues 数（REST open_issues_count 官方含 PRs 合计；GraphQL openIssues.totalCount 精确） */
+  open_issues_count?: number;
+  /** open PRs 数（GraphQL openPullRequests.totalCount；REST 需 pulls?state=open 独立精确） */
+  open_pulls_count?: number;
   language: string | null;
   topics?: string[];
   updated_at: string;
@@ -142,6 +146,8 @@ export interface PullRequest {
   labels?: { name: string; color: string }[];
   /** 当前用户订阅状态（GraphQL viewerSubscription） */
   subscription?: string | null;
+  /** 对话是否锁定（issues/lock；REST 详情原生字段） */
+  locked?: boolean;
 }
 
 /** check-run 状态（GET /repos/{o}/{r}/commits/{sha}/check-runs） */
@@ -242,6 +248,102 @@ export async function fetchRepoAssignees(
   );
 }
 
+/** 仓库里程碑（GET /repos/{o}/{r}/milestones；侧栏 Set milestone 编辑弹窗数据源） */
+export interface RepoMilestone {
+  number: number;
+  title: string;
+  state: string;
+  description?: string | null;
+}
+export async function fetchRepoMilestones(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<RepoMilestone[]> {
+  return typedRequest<RepoMilestone[]>(token, (octokit) =>
+    octokit.rest.issues.listMilestones({ owner, repo, state: "open", per_page: 100 }),
+  );
+}
+
+/** 更新 PR 指派（add-assignees + remove-assignees 组合；assignees 登录名数组） */
+export async function updatePullAssignees(
+  owner: string,
+  repo: string,
+  number: number,
+  add: string[],
+  remove: string[],
+  token: string,
+): Promise<void> {
+  if (add.length) {
+    await typedRequest(token, (octokit) =>
+      octokit.rest.issues.addAssignees({
+        owner,
+        repo,
+        issue_number: number,
+        assignees: add,
+      }),
+    );
+  }
+  if (remove.length) {
+    await typedRequest(token, (octokit) =>
+      octokit.rest.issues.removeAssignees({
+        owner,
+        repo,
+        issue_number: number,
+        assignees: remove,
+      }),
+    );
+  }
+}
+
+/** 更新 PR 标签（set-labels 全量替换；labels 名称数组） */
+export async function updatePullLabels(
+  owner: string,
+  repo: string,
+  number: number,
+  labels: string[],
+  token: string,
+): Promise<void> {
+  await typedRequest(token, (octokit) =>
+    octokit.rest.issues.setLabels({ owner, repo, issue_number: number, labels }),
+  );
+}
+
+/** 更新 PR 里程碑（update milestone 字段；milestone 传里程碑 number，null 清除） */
+export async function updatePullMilestone(
+  owner: string,
+  repo: string,
+  number: number,
+  milestone: number | null,
+  token: string,
+): Promise<void> {
+  await typedRequest(token, (octokit) =>
+    octokit.rest.issues.update({ owner, repo, issue_number: number, milestone }),
+  );
+}
+
+/** 锁定/解锁对话（issues/lock|unlock 对 PR 同样适用；官方侧栏 Lock conversation） */
+export async function lockPullRequest(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<void> {
+  await typedRequest(token, (octokit) =>
+    octokit.rest.issues.lock({ owner, repo, issue_number: number }),
+  );
+}
+export async function unlockPullRequest(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<void> {
+  await typedRequest(token, (octokit) =>
+    octokit.rest.issues.unlock({ owner, repo, issue_number: number }),
+  );
+}
+
 /** 获取 issue/PR 的评论列表（PR 的 issue 评论与 issue 同一端点；无需额外 scope） */
 export async function fetchIssueComments(
   owner: string,
@@ -284,6 +386,10 @@ export interface ReviewComment {
   /** LEFT=旧文件 / RIGHT=新文件 */
   side: "LEFT" | "RIGHT";
   html_url?: string;
+  /** 所属线程 id（GraphQL reviewThread；REST 无此字段时 undefined——仅线程解决 UI 用） */
+  threadId?: string;
+  /** 线程是否已解决（GraphQL reviewThread.isResolved） */
+  threadResolved?: boolean;
 }
 
 export async function fetchPullReviewComments(
@@ -558,5 +664,140 @@ export async function fetchPullCommits(
 ): Promise<PullCommit[]> {
   return typedRequest<PullCommit[]>(token, (octokit) =>
     octokit.rest.pulls.listCommits({ owner, repo, pull_number: number, per_page: 100 }),
+  );
+}
+
+// ===== PR 评审工作流（Review / Merge / Request reviewers）=====
+
+/** 评审提交（REST GET /pulls/{n}/reviews 返回结构，精简） */
+export interface PullReview {
+  id: number;
+  user: { login: string; avatar_url: string } | null;
+  body: string;
+  state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
+  submitted_at?: string;
+  commit_id?: string;
+}
+
+/**
+ * 获取 PR 评审列表（GET /pulls/{number}/reviews）。
+ * 供 PR 详情 Reviewers 栏 / 评审摘要展示。
+ */
+export async function fetchPullReviews(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<PullReview[]> {
+  return typedRequest<PullReview[]>(token, (octokit) =>
+    octokit.rest.pulls.listReviews({ owner, repo, pull_number: number, per_page: 100 }),
+  );
+}
+
+/** 评审事件（三态提交：COMMENT 普通留言 / APPROVE 批准 / REQUEST_CHANGES 请求修改） */
+export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
+
+/** 提交评审（POST /pulls/{n}/reviews；event + body，可附带行内评论 comments） */
+export interface CreatePullReviewParams {
+  event: ReviewEvent;
+  body?: string;
+  /** 附带的行内评论（与本次评审一起提交） */
+  comments?: {
+    body: string;
+    path: string;
+    line?: number;
+    side?: "LEFT" | "RIGHT";
+  }[];
+}
+
+export async function createPullReview(
+  owner: string,
+  repo: string,
+  number: number,
+  params: CreatePullReviewParams,
+  token: string,
+): Promise<PullReview> {
+  return typedRequest<PullReview>(token, (octokit) =>
+    octokit.rest.pulls.createReview({
+      owner,
+      repo,
+      pull_number: number,
+      event: params.event,
+      ...(params.body ? { body: params.body } : {}),
+      ...(params.comments?.length ? { comments: params.comments } : {}),
+    }),
+  );
+}
+
+/** 合并 PR（PUT /pulls/{n}/merge；仅 REST——GraphQL mergePullRequest 语义需 node id 且无可靠降级映射） */
+export type PullMergeMethod = "merge" | "squash" | "rebase";
+
+/** 合并 PR：commit_title/commit_message 可选；409 不可合并/405 分支保护抛出 ApiError */
+export async function mergePullRequest(
+  owner: string,
+  repo: string,
+  number: number,
+  method: PullMergeMethod,
+  token: string,
+  opts?: { commit_title?: string; commit_message?: string },
+): Promise<{ merged: boolean; message: string }> {
+  return typedRequest<{ merged: boolean; message: string }>(token, (octokit) =>
+    octokit.rest.pulls.merge({
+      owner,
+      repo,
+      pull_number: number,
+      merge_method: method,
+      ...(opts?.commit_title ? { commit_title: opts.commit_title } : {}),
+      ...(opts?.commit_message ? { commit_message: opts.commit_message } : {}),
+    }),
+  );
+}
+
+/** 请求评审者（POST /pulls/{n}/requested_reviewers；reviewers 登录名数组） */
+export async function requestReviewers(
+  owner: string,
+  repo: string,
+  number: number,
+  reviewers: string[],
+  token: string,
+): Promise<unknown> {
+  return typedRequest(token, (octokit) =>
+    octokit.rest.pulls.requestReviewers({
+      owner,
+      repo,
+      pull_number: number,
+      reviewers,
+    }),
+  );
+}
+
+/** 移除请求的评审者（DELETE /pulls/{n}/requested_reviewers） */
+export async function removeRequestedReviewer(
+  owner: string,
+  repo: string,
+  number: number,
+  reviewer: string,
+  token: string,
+): Promise<unknown> {
+  return typedRequest(token, (octokit) =>
+    octokit.rest.pulls.removeRequestedReviewers({
+      owner,
+      repo,
+      pull_number: number,
+      reviewers: [reviewer],
+    }),
+  );
+}
+
+/** 更新 PR 状态（PATCH /pulls/{n}；关闭/重新打开，保留 title/body 不变） */
+export async function updatePullRequestState(
+  owner: string,
+  repo: string,
+  number: number,
+  state: "open" | "closed",
+  token: string,
+): Promise<PullRequest> {
+  return typedRequest<PullRequest>(token, (octokit) =>
+    octokit.rest.pulls.update({ owner, repo, pull_number: number, state }),
   );
 }

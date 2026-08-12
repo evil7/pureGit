@@ -941,6 +941,37 @@ export async function fetchContributorsCount(
   }
 }
 
+/**
+ * open Pull requests 数量（REST pulls?state=open&per_page=1 读 Link header 末页）。
+ * REST 仓库主字段 open_issues_count 含 PRs 不能拆分 → 独立精确计数；
+ * 失败/限流返回 null（调用方据此隐藏计数，不显示错误）。
+ */
+export async function fetchOpenPullsCount(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<number | null> {
+  try {
+    const res = await fetchWithTimeout(
+      `${GITHUB_API}/repos/${owner}/${repo}/pulls?state=open&per_page=1`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      },
+    );
+    if (!res.ok) return null;
+    const last = lastPageFromLink(res.headers.get("Link"));
+    if (last != null) return last;
+    const arr = (await res.json()) as unknown[];
+    return Array.isArray(arr) ? arr.length : 0;
+  } catch {
+    return null;
+  }
+}
+
 // ===== D1 Security 安全公告（REST only；GraphQL 无 security advisory 通道，见 api-compat.md §4.14）=====
 
 /** 安全公告（GET /repos/{owner}/{repo}/security-advisories 结构子集） */
@@ -983,6 +1014,37 @@ export async function fetchSecurityAdvisories(
       direction: "desc",
     }),
   );
+}
+
+/**
+ * 仓库安全公告总数（per_page=1 读 Link header 末页；官方 RepoHeader Security tab 计数 =
+ * GHSA 总数，公开仓库匿名可读，2026-08-12 实测 github.com/microsoft/vscode 显示 43）。
+ * 失败/限流返回 null（调用方据此隐藏计数）。
+ */
+export async function fetchSecurityAdvisoriesCount(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<number | null> {
+  try {
+    const res = await fetchWithTimeout(
+      `${GITHUB_API}/repos/${owner}/${repo}/security-advisories?state=published&per_page=1`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      },
+    );
+    if (!res.ok) return null;
+    const last = lastPageFromLink(res.headers.get("Link"));
+    if (last != null) return last;
+    const arr = (await res.json()) as unknown[];
+    return Array.isArray(arr) ? arr.length : 0;
+  } catch {
+    return null;
+  }
 }
 
 /** 安全公告详情（GET /repos/{owner}/{repo}/security-advisories/{ghsa_id}） */

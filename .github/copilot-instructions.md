@@ -4,13 +4,14 @@
 
 ## 项目概览
 
-> **中心思想**：通过 GitHub 官方 API **全面复刻简版 GitHub 前端**，聚焦核心开发者所需的主要管理与使用功能，页面干净整洁、操作由繁化简（详见 `docs/vision.md`，全项目最高纲领）。
+> **中心思想**：通过 GitHub 官方 API **全量复刻 GitHub 前端**，功能完成度对齐官方（分批推进）、页面干净整洁、操作由繁化简（详见 `docs/vision.md`，全项目最高纲领；**v0.0.1 新概念 2026-08-12 定稿**——由「简版」升级为「全量」，简约仅限前端 UX）。
 
 - **前端**：React + Vite + TypeScript + pnpm + Tailwind CSS + shadcn/ui（组件优先复用，不自造 UI 轮子）
 - **后端**：Cloudflare Pages Worker —— GitHub OAuth2 鉴权 + 系统代理（wiki/raw）+ git 端点代理（clone/pull/push）
 - **数据源**：GitHub GraphQL API（浏览、搜索、issue/PR，含 star/fork/创建 issue/PR 等基础写操作）
 - **CLI 集成**：镜像端点代理 —— 用户通过 `git config --global url.<worker镜像端点>/.insteadOf https://github.com/` 接入
-- **开发阶段**：**0.0.x 内部试错阶段**——可随时开展破坏性、不兼容的重构与尝试，不承诺兼容保留
+- **开发阶段**：**v0.0.1 全量复刻**（0.0.x 内部试错阶段仍有效）——可随时开展破坏性、不兼容的重构与尝试，不承诺兼容保留
+- **开发工具基建**：`scripts/api-index.mjs`（API 对照索引：octokit 零下载转录 REST 1108 + GraphQL 272 并聚拢双端点）、`scripts/page-index.mjs`（官方页面分类索引）、`scripts/apiidx.mjs`（查询 CLI）；数据 `scripts/data/*.json`——**新增 API/页面先查索引再动手**
 
 ## 文档体系与规则来源（顶层框架 · vibe coding 友好）
 
@@ -84,6 +85,7 @@
 - Worker 类型生成：`pnpm --filter worker cf-typegen`（改 bindings 后运行）
 - Worker 测试：`pnpm --filter worker test`（vitest）
 - 根目录全量构建：`pnpm build`（web 构建 + worker 构建）
+- **开发工具（API 对照 / 页面分类索引，v0.0.1 工具基建）**：`node scripts/apiidx.mjs <search|api|page|pageapi|dual|stats|update>`——**新增 API / 新页面动手前先查索引**；生成器 `scripts/api-index.mjs` / `scripts/page-index.mjs`（`apiidx update` 一键重跑），人工校正表 `scripts/data/api-curations.json` / `page-curations.json`；详见 `docs/index.md` §1.3
 
 ## 依赖安全与更新风控（必须遵守）
 

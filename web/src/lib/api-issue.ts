@@ -26,9 +26,20 @@ import {
   ADD_COMMENT_MUTATION,
   PULL_REVIEW_COMMENTS_QUERY,
   ADD_PULL_REVIEW_COMMENT_MUTATION,
+  PULL_REVIEW_SUMMARY_QUERY,
+  ADD_PULL_REQUEST_REVIEW_MUTATION,
+  MERGE_PULL_REQUEST_MUTATION,
+  REQUEST_REVIEWS_MUTATION,
+  RESOLVE_REVIEW_THREAD_MUTATION,
+  UNRESOLVE_REVIEW_THREAD_MUTATION,
   REPO_BRANCHES_QUERY,
   REPO_LABELS_QUERY,
   REPO_ASSIGNEES_QUERY,
+  PR_PROJECTS_QUERY,
+  PR_DEVELOPMENT_QUERY,
+  PR_TIMELINE_QUERY,
+  LOCK_PULL_REQUEST_MUTATION,
+  UNLOCK_PULL_REQUEST_MUTATION,
 } from "./graphql";
 import {
   fetchBranches,
@@ -38,6 +49,13 @@ import {
   addIssueComment,
   fetchPullReviewComments,
   addPullReviewComment,
+  fetchPullReviews,
+  createPullReview,
+  mergePullRequest,
+  requestReviewers,
+  updatePullRequestState,
+  lockPullRequest,
+  unlockPullRequest,
   subscribeIssue,
   unsubscribeIssue,
   fetchIssues,
@@ -55,6 +73,9 @@ import type {
   Release,
   IssueComment,
   ReviewComment,
+  PullReview,
+  ReviewEvent,
+  PullMergeMethod,
   RepoLabel,
 } from "./rest";
 import { searchIssuesSmart } from "./api-search";
@@ -603,7 +624,7 @@ export async function addIssueCommentSmart(
   return addIssueComment(owner, repo, number, body, token);
 }
 
-/** GraphQL 评审评论节点 → REST ReviewComment（side 由 position/originalPosition 推断） */
+/** GraphQL 评审评论节点 → REST ReviewComment（side 由 position/originalPosition 推断；线程 id/解决状态透传） */
 interface GraphQLReviewCommentNode {
   id: string;
   body: string;
@@ -615,7 +636,18 @@ interface GraphQLReviewCommentNode {
   author: { login: string; avatarUrl: string } | null;
 }
 
-function toReviewComment(g: GraphQLReviewCommentNode): ReviewComment {
+/** GraphQL 评审线程节点（含 isResolved；供 DiffView 线程解决 UI） */
+interface GraphQLReviewThreadNode {
+  id: string;
+  isResolved: boolean;
+  comments: { nodes: GraphQLReviewCommentNode[] };
+}
+
+function toReviewComment(
+  g: GraphQLReviewCommentNode,
+  threadId?: string,
+  isResolved?: boolean,
+): ReviewComment {
   // position 存在 → 新文件（RIGHT）；仅 originalPosition → 旧文件（LEFT）；都无 → 默认 RIGHT
   const side: "LEFT" | "RIGHT" =
     g.originalPosition != null && g.position == null ? "LEFT" : "RIGHT";
@@ -627,6 +659,8 @@ function toReviewComment(g: GraphQLReviewCommentNode): ReviewComment {
     path: g.path,
     line: g.line ?? 0,
     side,
+    threadId,
+    threadResolved: isResolved,
   };
 }
 
@@ -642,14 +676,14 @@ export async function fetchPullReviewCommentsSmart(
       const resp: GraphQLResponse<{
         repository: {
           pullRequest: {
-            reviewThreads: { nodes: { comments: { nodes: GraphQLReviewCommentNode[] } }[] };
+            reviewThreads: { nodes: GraphQLReviewThreadNode[] };
           } | null;
         } | null;
       }> = await graphqlRequest(PULL_REVIEW_COMMENTS_QUERY, { owner, name: repo, number }, token);
       if (!hasGraphQLErrors(resp) && resp.data?.repository?.pullRequest) {
         const out: ReviewComment[] = [];
         for (const t of resp.data.repository.pullRequest.reviewThreads.nodes) {
-          for (const c of t.comments.nodes) out.push(toReviewComment(c));
+          for (const c of t.comments.nodes) out.push(toReviewComment(c, t.id, t.isResolved));
         }
         return out;
       }
@@ -873,4 +907,718 @@ export async function fetchPullDetailWithCommentsSmart(
   const pr = await fetchPullDetail(owner, repo, number, token);
   const comments = await fetchIssueComments(owner, repo, number, token ?? null);
   return { pr, comments };
+}
+
+// ===== B1 评审工作流 smart 层：GraphQL 首选 + REST 降级 =====
+
+/** PR 评审摘要（reviewDecision + reviews + reviewRequests + mergeable + pullRequestId） */
+export interface PullReviewSummary {
+  pullRequestId: string;
+  reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN" | null;
+  reviews: PullReview[];
+  reviewRequests: { login: string; avatarUrl: string }[];
+}
+
+/** GraphQL reviews 节点 → REST PullReview（state 枚举对齐 REST：APPROVED/CHANGES_REQUESTED/COMMENTED/DISMISSED） */
+interface GraphQLReviewNode {
+  id: string;
+  state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
+  body: string | null;
+  submittedAt: string | null;
+  author: { login: string; avatarUrl: string } | null;
+}
+
+/** 智能获取 PR 评审摘要：GraphQL reviewDecision+reviews 首选，失败降级 REST（reviewDecision 由 reviews 推断）。 */
+export async function fetchPullReviewSummarySmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<PullReviewSummary | null> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          pullRequest: {
+            id: string;
+            reviewDecision: string | null;
+            mergeable: string | null;
+            reviews: { nodes: GraphQLReviewNode[] };
+            reviewRequests: {
+              nodes: {
+                requestedReviewer: {
+                  __typename: string;
+                  login?: string;
+                  avatarUrl?: string;
+                  name?: string;
+                } | null;
+              }[];
+            };
+          } | null;
+        } | null;
+      }> = await graphqlRequest(PULL_REVIEW_SUMMARY_QUERY, { owner, name: repo, number }, token);
+      const g = resp.data?.repository?.pullRequest;
+      if (!hasGraphQLErrors(resp) && g) {
+        return {
+          pullRequestId: g.id,
+          reviewDecision: (g.reviewDecision as PullReviewSummary["reviewDecision"]) ?? null,
+          mergeable: (g.mergeable as PullReviewSummary["mergeable"]) ?? null,
+          reviews: g.reviews.nodes.map((r) => ({
+            id: -1,
+            user: r.author ? { login: r.author.login, avatar_url: r.author.avatarUrl } : null,
+            body: r.body ?? "",
+            state: r.state,
+            submitted_at: r.submittedAt ?? undefined,
+          })),
+          reviewRequests: g.reviewRequests.nodes
+            .map((n) => n.requestedReviewer)
+            .filter((x): x is { __typename: string; login?: string; avatarUrl?: string } =>
+              Boolean(x?.login),
+            )
+            .map((x) => ({ login: x.login!, avatarUrl: x.avatarUrl ?? "" })),
+        };
+      }
+    } catch {
+      // 降级 REST
+    }
+  }
+  // REST 降级：reviews 列表 + reviewDecision 由最新非 COMMENTED 评审推断（REST 无 reviewDecision 字段）
+  const reviews = await fetchPullReviews(owner, repo, number, token);
+  const latest = reviews.find((r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED");
+  return {
+    pullRequestId: "",
+    reviewDecision: latest ? (latest.state as PullReviewSummary["reviewDecision"]) : null,
+    mergeable: null,
+    reviews,
+    reviewRequests: [],
+  };
+}
+
+/** 智能提交评审（三态）：GraphQL submitPullRequestReview 首选，失败降级 REST create-review。 */
+export async function submitPullReviewSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  event: ReviewEvent,
+  body: string,
+  token: string,
+): Promise<PullReview> {
+  try {
+    // 前置：pullRequestId（submitPullRequestReview 需要）
+    const pidResp: GraphQLResponse<{
+      repository: { pullRequest: { id: string } | null } | null;
+    }> = await graphqlRequest(
+      /* GraphQL */ `
+        query PullRequestId($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              id
+            }
+          }
+        }
+      `,
+      { owner, name: repo, number },
+      token,
+    );
+    const pid = pidResp.data?.repository?.pullRequest?.id;
+    if (pid && !hasGraphQLErrors(pidResp)) {
+      const mutResp: GraphQLResponse<{
+        addPullRequestReview: { pullRequestReview: GraphQLReviewNode } | null;
+      }> = await graphqlRequest(
+        ADD_PULL_REQUEST_REVIEW_MUTATION,
+        { pullRequestId: pid, event, body: body || null },
+        token,
+      );
+      const r = mutResp.data?.addPullRequestReview?.pullRequestReview;
+      if (r && !hasGraphQLErrors(mutResp)) {
+        return {
+          id: -1,
+          user: r.author ? { login: r.author.login, avatar_url: r.author.avatarUrl } : null,
+          body: r.body ?? "",
+          state: r.state,
+          submitted_at: r.submittedAt ?? undefined,
+        };
+      }
+    }
+  } catch {
+    // 降级 REST
+  }
+  return createPullReview(owner, repo, number, { event, body }, token);
+}
+
+/** 智能合并 PR：GraphQL mergePullRequest 首选，失败降级 REST pulls/merge。 */
+export async function mergePullRequestSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  method: PullMergeMethod,
+  token: string,
+  pullRequestId?: string,
+): Promise<{ merged: boolean; message: string }> {
+  if (token && pullRequestId) {
+    try {
+      const mutResp: GraphQLResponse<{
+        mergePullRequest: { pullRequest: { state: string; mergedAt: string | null } } | null;
+      }> = await graphqlRequest(
+        MERGE_PULL_REQUEST_MUTATION,
+        { pullRequestId, mergeMethod: method.toUpperCase() },
+        token,
+      );
+      const m = mutResp.data?.mergePullRequest?.pullRequest;
+      if (!hasGraphQLErrors(mutResp) && m) {
+        return { merged: m.mergedAt != null || m.state === "MERGED", message: "" };
+      }
+    } catch {
+      // 降级 REST
+    }
+  }
+  return mergePullRequest(owner, repo, number, method, token);
+}
+
+/** 智能请求评审者：GraphQL requestReviews 首选，失败降级 REST。 */
+export async function requestReviewersSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  reviewers: string[],
+  token: string,
+  pullRequestId?: string,
+): Promise<void> {
+  if (token && pullRequestId && reviewers.length) {
+    try {
+      // 前置：用户 node id（requestReviews 需 userIds）
+      const userIds: string[] = [];
+      for (const login of reviewers) {
+        const u: GraphQLResponse<{ user: { id: string } | null }> = await graphqlRequest(
+          /* GraphQL */ `
+            query UserId($login: String!) {
+              user(login: $login) {
+                id
+              }
+            }
+          `,
+          { login },
+          token,
+        );
+        if (u.data?.user?.id && !hasGraphQLErrors(u)) userIds.push(u.data.user.id);
+      }
+      if (userIds.length) {
+        const mutResp: GraphQLResponse<{ requestReviews: { pullRequest: { id: string } } }> =
+          await graphqlRequest(REQUEST_REVIEWS_MUTATION, { pullRequestId, userIds }, token);
+        if (!hasGraphQLErrors(mutResp) && mutResp.data?.requestReviews) return;
+      }
+    } catch {
+      // 降级 REST
+    }
+  }
+  await requestReviewers(owner, repo, number, reviewers, token);
+}
+
+/** 智能更新 PR 状态（关闭/重新打开）：GraphQL 无直接 mutation（closePullRequest 需 node id），统一 REST。 */
+export async function updatePullRequestStateSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  state: "open" | "closed",
+  token: string,
+): Promise<PullRequest> {
+  return updatePullRequestState(owner, repo, number, state, token);
+}
+
+/** 解决/取消解决评审线程（GraphQL-only——REST 无端点；需 reviewThread node id，由评论的 threadId 提供）。 */
+export async function setReviewThreadResolvedSmart(
+  threadId: string,
+  resolved: boolean,
+  token: string,
+): Promise<void> {
+  try {
+    const resp: GraphQLResponse<{
+      resolveReviewThread?: { thread: { id: string; isResolved: boolean } };
+      unresolveReviewThread?: { thread: { id: string; isResolved: boolean } };
+    }> = await graphqlRequest(
+      resolved ? RESOLVE_REVIEW_THREAD_MUTATION : UNRESOLVE_REVIEW_THREAD_MUTATION,
+      { threadId },
+      token,
+    );
+    if (!hasGraphQLErrors(resp)) return;
+  } catch {
+    // GraphQL 失败静默（REST 无等价端点可降级——仅记录）
+  }
+  throw new Error("线程解决失败（GraphQL 不可用）");
+}
+
+// ===== PR 详情侧栏增强（B1 补：Lock / Projects / Development） =====
+
+/** 智能锁定/解锁对话：GraphQL lockLockable 首选（需 pullRequestId），失败降级 REST issues/lock。 */
+export async function setPullLockedSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  locked: boolean,
+  token: string,
+  pullRequestId?: string,
+): Promise<void> {
+  if (token && pullRequestId) {
+    try {
+      const mutResp: GraphQLResponse<{
+        lockLockable?: { lockedRecord: { id: string; locked: boolean } };
+        unlockLockable?: { unlockedRecord: { id: string; locked: boolean } };
+      }> = await graphqlRequest(
+        locked ? LOCK_PULL_REQUEST_MUTATION : UNLOCK_PULL_REQUEST_MUTATION,
+        { lockableId: pullRequestId },
+        token,
+      );
+      if (!hasGraphQLErrors(mutResp)) return;
+    } catch {
+      // 降级 REST
+    }
+  }
+  if (locked) await lockPullRequest(owner, repo, number, token);
+  else await unlockPullRequest(owner, repo, number, token);
+}
+
+/** PR 关联 ProjectsV2（GraphQL-only 只读；失败静默空——侧栏非核心，参照 ForkInfoBar 静默先例）。 */
+export type PullProjectItem = {
+  id: string;
+  project: { number: number; title: string; url: string; public: boolean };
+  status: string | null;
+};
+export async function fetchPullProjectsSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<PullProjectItem[]> {
+  if (!token) return [];
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        pullRequest: {
+          projectItems: {
+            nodes: Array<{
+              id: string;
+              project: { number: number; title: string; url: string; public: boolean };
+              fieldValueByName: { __typename: string; name?: string } | null;
+            }>;
+          } | null;
+        } | null;
+      } | null;
+    }> = await graphqlRequest(PR_PROJECTS_QUERY, { owner, name: repo, number }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest?.projectItems) return [];
+    return resp.data.repository.pullRequest.projectItems.nodes.map((n) => ({
+      id: n.id,
+      project: n.project,
+      status:
+        n.fieldValueByName && "name" in n.fieldValueByName
+          ? (n.fieldValueByName.name ?? null)
+          : null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+/** PR 开发关联（GraphQL-only 只读：closingIssuesReferences + linkedBranches；失败静默空）。 */
+export type PullDevelopment = {
+  issues: { number: number; title: string; state: string; url: string }[];
+  branches: string[];
+};
+export async function fetchPullDevelopmentSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<PullDevelopment> {
+  if (!token) return { issues: [], branches: [] };
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        pullRequest: {
+          closingIssuesReferences: {
+            nodes: Array<{ number: number; title: string; state: string; url: string }>;
+          } | null;
+          linkedBranches: { nodes: Array<{ ref: { name: string } | null }> } | null;
+        } | null;
+      } | null;
+    }> = await graphqlRequest(PR_DEVELOPMENT_QUERY, { owner, name: repo, number }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest) {
+      return { issues: [], branches: [] };
+    }
+    const pr = resp.data.repository.pullRequest;
+    return {
+      issues: (pr.closingIssuesReferences?.nodes ?? []).map((n) => ({
+        number: n.number,
+        title: n.title,
+        state: n.state,
+        url: n.url,
+      })),
+      branches: (pr.linkedBranches?.nodes ?? [])
+        .map((n) => n.ref?.name)
+        .filter((b): b is string => Boolean(b)),
+    };
+  } catch {
+    return { issues: [], branches: [] };
+  }
+}
+
+// ===== PR Conversation 时间线（PullTimeline；GraphQL-only，失败降级 null → 页面回退现有评论渲染） =====
+
+/** 时间线事件（归一后的轻量结构，覆盖官方 Conversation 常用事件类型）。 */
+export type PullTimelineEvent =
+  | {
+      kind: "comment";
+      id: string;
+      author: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      body: string;
+    }
+  | {
+      kind: "review";
+      id: string;
+      author: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      submittedAt: string | null;
+      state: string;
+      body: string | null;
+    }
+  | {
+      kind: "review-thread";
+      id: string;
+      isResolved: boolean;
+      path: string | null;
+      line: number | null;
+      originalLine: number | null;
+      startLine: number | null;
+      comments: Array<{
+        id: string;
+        author: { login: string; avatarUrl: string | null } | null;
+        createdAt: string;
+        body: string;
+      }>;
+    }
+  | {
+      kind: "commit";
+      id: string;
+      oid: string;
+      messageHeadline: string;
+      committedDate: string;
+      author: { login: string | null; avatarUrl: string | null; name: string | null } | null;
+    }
+  | {
+      kind: "merged";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      mergeRefName: string | null;
+    }
+  | {
+      kind: "closed";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+    }
+  | {
+      kind: "reopened";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+    }
+  | {
+      kind: "assigned";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      assignee: string | null;
+    }
+  | {
+      kind: "unassigned";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      assignee: string | null;
+    }
+  | {
+      kind: "labeled";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      label: { name: string; color: string } | null;
+    }
+  | {
+      kind: "unlabeled";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      label: { name: string; color: string } | null;
+    }
+  | {
+      kind: "milestoned";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      milestoneTitle: string | null;
+    }
+  | {
+      kind: "demilestoned";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      milestoneTitle: string | null;
+    }
+  | {
+      kind: "review-requested";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+    }
+  | {
+      kind: "review-request-removed";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+    }
+  | {
+      kind: "locked";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+    }
+  | {
+      kind: "unlocked";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+    }
+  | {
+      kind: "renamed";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      previousTitle: string;
+      currentTitle: string;
+    }
+  | {
+      kind: "force-pushed";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+    }
+  | {
+      kind: "ready-for-review";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+    };
+
+/** 时间线查询（GraphQL-only：REST 无 timeline 通道；失败返回 null → 页面回退评论+评审拼接渲染）。 */
+export async function fetchPullTimelineSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<PullTimelineEvent[] | null> {
+  if (!token) return null;
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        pullRequest: { timelineItems: { nodes: unknown[] } | null } | null;
+      } | null;
+    }> = await graphqlRequest(PR_TIMELINE_QUERY, { owner, name: repo, number }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest?.timelineItems) return null;
+    const nodes = resp.data.repository.pullRequest.timelineItems.nodes;
+    const events: PullTimelineEvent[] = [];
+    for (const raw of nodes) {
+      const n = raw as Record<string, unknown> & { __typename?: string };
+      // 方括号访问规避 no-underscore-dangle（GraphQL 类型名标识）
+      const t = n["__typename"];
+      const actor = (a: unknown) => {
+        if (!a) return null;
+        const x = a as { login?: string; avatarUrl?: string | null };
+        return { login: x.login ?? "", avatarUrl: x.avatarUrl ?? null };
+      };
+      const at = (v: unknown) => (typeof v === "string" ? v : "");
+      if (t === "IssueComment") {
+        const body = typeof n.body === "string" ? n.body : "";
+        if (body.trim()) {
+          events.push({
+            kind: "comment",
+            id: String(n.id),
+            author: actor(n.author),
+            createdAt: at(n.createdAt),
+            body,
+          });
+        }
+      } else if (t === "PullRequestReview") {
+        events.push({
+          kind: "review",
+          id: String(n.id),
+          author: actor(n.author),
+          createdAt: at(n.createdAt),
+          submittedAt: typeof n.submittedAt === "string" ? n.submittedAt : null,
+          state: String(n.state),
+          body: typeof n.body === "string" && n.body ? n.body : null,
+        });
+      } else if (t === "PullRequestReviewThread") {
+        const commentsRaw = (n.comments as { nodes?: unknown[] } | null)?.nodes ?? [];
+        events.push({
+          kind: "review-thread",
+          id: String(n.id),
+          isResolved: Boolean(n.isResolved),
+          path: typeof n.path === "string" ? n.path : null,
+          line: typeof n.line === "number" ? n.line : null,
+          originalLine: typeof n.originalLine === "number" ? n.originalLine : null,
+          startLine: typeof n.startLine === "number" ? n.startLine : null,
+          comments: commentsRaw.map((c) => {
+            const cc = c as Record<string, unknown> & { author?: unknown };
+            return {
+              id: String(cc.id),
+              author: actor(cc.author),
+              createdAt: typeof cc.createdAt === "string" ? cc.createdAt : "",
+              body: typeof cc.body === "string" ? cc.body : "",
+            };
+          }),
+        });
+      } else if (t === "PullRequestCommit") {
+        const commit = n.commit as {
+          oid?: unknown;
+          messageHeadline?: unknown;
+          committedDate?: unknown;
+          author?: unknown;
+        } | null;
+        const ca = commit?.author as {
+          user?: { login?: string; avatarUrl?: string | null } | null;
+          name?: string | null;
+        } | null;
+        events.push({
+          kind: "commit",
+          id: String(n.id),
+          oid: String(commit?.oid ?? "").slice(0, 7),
+          messageHeadline: String(commit?.messageHeadline ?? ""),
+          committedDate: typeof commit?.committedDate === "string" ? commit.committedDate : "",
+          author: ca?.user
+            ? { login: ca.user.login ?? null, avatarUrl: ca.user.avatarUrl ?? null, name: null }
+            : { login: null, avatarUrl: null, name: ca?.name ?? null },
+        });
+      } else if (t === "MergedEvent") {
+        events.push({
+          kind: "merged",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+          mergeRefName: typeof n.mergeRefName === "string" ? n.mergeRefName : null,
+        });
+      } else if (t === "ClosedEvent") {
+        events.push({
+          kind: "closed",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+        });
+      } else if (t === "ReopenedEvent") {
+        events.push({
+          kind: "reopened",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+        });
+      } else if (t === "AssignedEvent") {
+        events.push({
+          kind: "assigned",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+          assignee: extractLogin(n.assignee),
+        });
+      } else if (t === "UnassignedEvent") {
+        events.push({
+          kind: "unassigned",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+          assignee: extractLogin(n.assignee),
+        });
+      } else if (t === "LabeledEvent" || t === "UnlabeledEvent") {
+        const label = n.label as { name?: string; color?: string } | null;
+        events.push({
+          kind: t === "LabeledEvent" ? "labeled" : "unlabeled",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+          label: label
+            ? { name: String(label.name ?? ""), color: String(label.color ?? "") }
+            : null,
+        });
+      } else if (t === "MilestonedEvent" || t === "DemilestonedEvent") {
+        events.push({
+          kind: t === "MilestonedEvent" ? "milestoned" : "demilestoned",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+          milestoneTitle: typeof n.milestoneTitle === "string" ? n.milestoneTitle : null,
+        });
+      } else if (t === "ReviewRequestedEvent") {
+        events.push({
+          kind: "review-requested",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+        });
+      } else if (t === "ReviewRequestRemovedEvent") {
+        events.push({
+          kind: "review-request-removed",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+        });
+      } else if (t === "LockedEvent") {
+        events.push({
+          kind: "locked",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+        });
+      } else if (t === "UnlockedEvent") {
+        events.push({
+          kind: "unlocked",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+        });
+      } else if (t === "RenamedTitleEvent") {
+        events.push({
+          kind: "renamed",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+          previousTitle: String(n.previousTitle ?? ""),
+          currentTitle: String(n.currentTitle ?? ""),
+        });
+      } else if (t === "HeadRefForcePushedEvent") {
+        events.push({
+          kind: "force-pushed",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+        });
+      } else if (t === "ReadyForReviewEvent") {
+        events.push({
+          kind: "ready-for-review",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+        });
+      }
+    }
+    return events;
+  } catch {
+    return null;
+  }
+}
+
+/** 从 Assignee union 节点提取 login */
+function extractLogin(v: unknown): string | null {
+  if (!v) return null;
+  const x = v as { login?: string };
+  return typeof x.login === "string" ? x.login : null;
 }

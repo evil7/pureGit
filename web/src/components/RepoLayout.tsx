@@ -12,7 +12,12 @@ import RepoAbout from "@/components/RepoAbout";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
-import { fetchContributorsCount, normalizeApiError, type ApiError } from "@/lib/rest";
+import {
+  fetchContributorsCount,
+  fetchSecurityAdvisoriesCount,
+  normalizeApiError,
+  type ApiError,
+} from "@/lib/rest";
 import {
   fetchRepositorySmart,
   fetchLatestReleaseSmart,
@@ -106,6 +111,8 @@ export default function RepoLayout() {
   const [latestRelease, setLatestRelease] = useState<Release | null>(null);
   const [rootFiles, setRootFiles] = useState<string[] | null>(null);
   const [contributorsCount, setContributorsCount] = useState(0);
+  // RepoHeader Security tab 计数（GHSA 总数；公开仓库匿名可读；null = 未加载/失败 → 隐藏计数）
+  const [securityCount, setSecurityCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
 
@@ -129,6 +136,18 @@ export default function RepoLayout() {
       cancelled = true;
     };
   }, [owner, repo, token, hideAbout]);
+
+  useEffect(() => {
+    // RepoHeader Security tab 计数：独立于 About 侧栏（tab 恒显示），与 hideAbout 无关；
+    // 失败/限流 → null → RepoHeader 隐藏计数（不显示错误）
+    let cancelled = false;
+    fetchSecurityAdvisoriesCount(owner!, repo!, token)
+      .then((c) => !cancelled && setSecurityCount(c))
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [owner, repo, token]);
 
   useEffect(() => {
     // 根目录文件探测（依赖 data 默认分支；Resources 中 CoC/Contributing/Security/license 显隐；
@@ -260,6 +279,7 @@ export default function RepoLayout() {
         {/* 仓库头（含 tabs 行右侧 Star/Fork，官方位置）；data 加载后传递 */}
         <RepoHeader
           data={data}
+          securityCount={securityCount}
           onRepoUpdated={(stars, forks) =>
             setData((prev) =>
               prev ? { ...prev, stargazers_count: stars, forks_count: forks } : prev,

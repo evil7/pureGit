@@ -91,6 +91,7 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { WriteGate } from "@/components/WriteGate";
 import { ForkInfoBar } from "@/components/ForkInfoBar";
 import { ArchivedBanner } from "@/components/ArchivedBanner";
+import { RecentPushesBanner } from "@/components/RecentPushesBanner";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { cn } from "@/lib/utils";
 import { SIDEBAR_STICKY_SCROLL } from "@/lib/layout";
@@ -661,6 +662,8 @@ export function CodeIndex() {
       <ArchivedBanner archivedAt={repoData?.archived_at} />
       {/* fork 对照信息条（仅 fork 仓库；官方 BranchInfoBar） */}
       <ForkInfoBar />
+      {/* 最近推送分支提示条（官方 Recently touched branches；仅登录 + 14 天内非默认分支） */}
+      <RecentPushesBanner />
       <RepoActionBar branch={branch} />
       {entries === null ? (
         <Skeleton className="h-64 w-full" />

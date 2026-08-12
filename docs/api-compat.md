@@ -89,7 +89,21 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchPullDetailWithCommentsSmart`（PR 详情+评论单请求） | ✅ | ✅ 分步降级 | — | — | ✅ |
 | `fetchReleasesCountSmart`（GraphQL totalCount 替代 Link header） | ✅ | ✅ | — | — | ✅ |
 | `fetchLatestReleaseSmart`（About 侧栏 Releases 入口：GraphQL totalCount+nodes(first:1) 一次查询 / REST per_page=1 一次请求） | ✅ | ✅ | — | — | ✅ |
-
+| **B1 评审工作流（2026-08-12 新增）** | | | | | |
+| `fetchPullReviewSummarySmart`（reviewDecision+reviews+reviewRequests+mergeable，PR 详情 Reviewers 栏/合并判定） | ✅ | ✅ 降级（reviewDecision 由 reviews 推断） | — | — | ✅ |
+| `submitPullReviewSmart`（三态：COMMENT/APPROVE/REQUEST_CHANGES） | ✅ | ✅ 降级 | — | — | ✅ |
+| `mergePullRequestSmart`（merge/squash/rebase） | ✅ | ✅ 降级 | — | — | ✅ |
+| `requestReviewersSmart`（GraphQL 需 userIds 前置查询；REST 直接 reviewers 数组） | ✅ | ✅ 降级 | — | — | ✅ || `setReviewThreadResolvedSmart`（线程解决/取消解决） | ✅ | ✗（REST 无端点） | — | — | ✅（GraphQL-only） |
+| `updatePullRequestStateSmart`（关闭/重新打开） | ✗（需 node id 前置） | ✅ | — | — | ✅（REST） |
+| `pulls/update` 更新 PR 标题/body（fetchPullDetail 已含） | ✅ | ✅ | — | — | ✅ |
+| **仓库 Overview 增强（2026-08-12 新增）** | | | | | | |
+| `fetchRecentBranchesSmart`（Recently touched branches 提示条：refs committedDate 排序取非默认分支；仅登录，失败静默空——GraphQL RefOrderField 仅 ALPHABETICAL/TAG_COMMIT_DATE 无 PUSHED_DATE，故前端排序） | ✅ | ✗（REST branches 无提交时间） | — | — | ✅（GraphQL-only + 静默） || **PR 详情侧栏增强（B1 补 2026-08-12 新增）** | | | | | |
+| `setPullLockedSmart`（Lock conversation：GraphQL lockLockable 首选 + REST issues/lock 降级） | ✅ | ✅ | — | — | ✅ |
+| `fetchPullProjectsSmart`（侧栏 Projects 只读：projectItems 项目 + Status 字段；GraphQL-only，失败静默空） | ✅ | ✗（REST 无 repo 级 projectsV2 关联） | — | — | ✅（GraphQL-only + 静默） |
+| `fetchPullDevelopmentSmart`（侧栏 Development 只读：closingIssuesReferences + linkedBranches；GraphQL-only，失败静默空） | ✅ | ✗（REST 无对应） | — | — | ✅（GraphQL-only + 静默） |
+| 侧栏编辑写操作（Assignees add/remove / Labels set-labels / Milestone issues.update） | ✗（需 node id 前置） | ✅ | — | — | ✅（REST） |
+| **PR Conversation 时间线（PullTimeline，2026-08-12 新增）** | | | | | | |
+| `fetchPullTimelineSmart`（时间线事件混排：timelineItems first:100 覆盖 评论/评审/评审线程/commit/合并/关闭/标签/里程碑/指派/锁定/改题 等 21 类；GraphQL-only，失败返回 null → 页面降级回退「作者正文+评审列表+CommentsSection」） | ✅ | ✗（REST timeline 无对应通道） | — | — | ✅（GraphQL-only + 失败降级） |
 ### 2.2 保持 REST-only（⚠️ 有 GraphQL 但合理保留 / ✗ 无 GraphQL）—— 全部有据可查
 
 | API 名 | octokit_graphQL | octokit_rest | selfcode_fetch | worker_proxy | already_smart_now | 不可抗力理由（§4） |

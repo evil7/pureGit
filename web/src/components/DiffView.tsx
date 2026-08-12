@@ -8,6 +8,7 @@
  */
 import { useMemo, useState } from "react";
 import {
+  Check,
   ChevronDown,
   ChevronRight,
   FileDiff,
@@ -91,6 +92,8 @@ function DiffFile({
   const [commentBody, setCommentBody] = useState("");
   const [commentBusy, setCommentBusy] = useState(false);
   const [commentError, setCommentError] = useState<string | null>(null);
+  const [commentsReloadKey, setCommentsReloadKey] = useState(0);
+  const [threadBusyId, setThreadBusyId] = useState<string | null>(null);
 
   /* 行内评论数据（已有评论展示） */
   useMemo(() => {
@@ -99,7 +102,22 @@ function DiffFile({
       .then((cs) => setComments(cs.filter((c) => c.path === file.filename)))
       .catch(() => undefined);
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [owner, repo, number, file.filename]);
+  }, [owner, repo, number, file.filename, commentsReloadKey]);
+
+  /** 线程解决/取消解决：成功后重拉该文件评论（刷新 isResolved 状态） */
+  const toggleThread = async (c: ReviewComment) => {
+    if (!token || !c.threadId || threadBusyId) return;
+    setThreadBusyId(c.threadId);
+    try {
+      const m = await import("@/lib/api");
+      await m.setReviewThreadResolvedSmart(c.threadId, !c.threadResolved, token);
+      setCommentsReloadKey((k) => k + 1);
+    } catch {
+      /* 静默 */
+    } finally {
+      setThreadBusyId(null);
+    }
+  };
 
   /* Expand：拉 base/head raw → jsdiff 全量对比 */
   const expand = async () => {
@@ -264,7 +282,14 @@ function DiffFile({
                         />
                       )}
                       {myComments.length > 0 && (
-                        <CommentRows comments={myComments} owner={owner} repo={repo} />
+                        <CommentRows
+                          comments={myComments}
+                          owner={owner}
+                          repo={repo}
+                          token={token}
+                          busyThreadId={threadBusyId}
+                          onToggleThread={toggleThread}
+                        />
                       )}
                     </tr>
                   );
@@ -361,15 +386,21 @@ function InlineCommentForm({
   );
 }
 
-/** 行内已有评论列表 */
+/** 行内已有评论列表（含线程解决/取消解决——GraphQL-only，见 setReviewThreadResolvedSmart） */
 function CommentRows({
   comments,
   owner,
   repo,
+  token,
+  busyThreadId,
+  onToggleThread,
 }: {
   comments: ReviewComment[];
   owner?: string;
   repo?: string;
+  token?: string | null;
+  busyThreadId?: string | null;
+  onToggleThread?: (c: ReviewComment) => void;
 }) {
   return (
     <td colSpan={4} className="border-t bg-muted/10 p-3">
@@ -385,6 +416,12 @@ function CommentRows({
               <div className="flex items-center gap-2 text-xs text-muted-foreground">
                 <span className="font-medium text-foreground">{c.user.login}</span>
                 <span>{new Date(c.created_at).toLocaleString()}</span>
+                {c.threadResolved && (
+                  <Badge variant="outline" className="gap-1 text-[10px]">
+                    <Check className="size-3 text-emerald-500" />
+                    已解决
+                  </Badge>
+                )}
               </div>
               <div className="mt-1">
                 <MarkdownView rawBase={owner && repo ? repoRawBase(owner, repo) : undefined}>
@@ -392,6 +429,17 @@ function CommentRows({
                 </MarkdownView>
               </div>
             </div>
+            {token && c.threadId && onToggleThread && (
+              <Button
+                variant="ghost"
+                size="sm"
+                className="h-6 px-1.5 text-[11px]"
+                disabled={busyThreadId === c.threadId}
+                onClick={() => onToggleThread(c)}
+              >
+                {busyThreadId === c.threadId ? "…" : c.threadResolved ? "取消解决" : "解决"}
+              </Button>
+            )}
           </div>
         ))}
       </div>

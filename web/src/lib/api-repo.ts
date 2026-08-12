@@ -18,6 +18,7 @@ import {
   DELETE_REPOSITORY_MUTATION,
   REPO_TOPICS_QUERY,
   REPO_PROJECTS_V2_QUERY,
+  RECENT_BRANCHES_QUERY,
 } from "./graphql";
 import {
   ApiError,
@@ -30,6 +31,7 @@ import {
   setStarred,
   fetchReleasesCount,
   fetchLanguages,
+  fetchOpenPullsCount,
   replaceRepoTopics,
   fetchRepoTopics,
   fetchRepoSubscription,
@@ -156,6 +158,9 @@ export interface GraphQLRepository {
   hasDiscussionsEnabled?: boolean;
   hasWikiEnabled?: boolean;
   hasProjectsEnabled?: boolean;
+  /** tab 计数：open issues / open PRs（REPOSITORY_QUERY 并入，GraphQL 精确语义） */
+  openIssues?: { totalCount: number };
+  openPullRequests?: { totalCount: number };
 }
 
 /** GraphQL 仓库 → REST 兼容结构 */
@@ -200,6 +205,8 @@ export function toRepository(g: GraphQLRepository, owner: string): Repository {
     has_discussions: g.hasDiscussionsEnabled,
     has_wiki: g.hasWikiEnabled,
     has_projects: g.hasProjectsEnabled,
+    open_issues_count: g.openIssues?.totalCount,
+    open_pulls_count: g.openPullRequests?.totalCount,
     viewer_subscription: g.viewerSubscription ?? null,
   };
 }
@@ -236,11 +243,16 @@ export async function fetchRepositorySmart(
   }
 
   // ---- 降级 REST ----
-  const [data, langs] = await Promise.all([
+  // pulls 计数精确补查（REST open_issues_count 含 PRs，不能拆分；pulls?state=open 独立精确）
+  const [data, langs, pullsCount] = await Promise.all([
     fetchRepository(owner, name, token),
     fetchLanguages(owner, name, token).catch(() => ({})),
+    fetchOpenPullsCount(owner, name, token),
   ]);
-  return { data, langs };
+  return {
+    data: pullsCount != null ? { ...data, open_pulls_count: pullsCount } : data,
+    langs,
+  };
 }
 
 // ===== M3 写操作：GraphQL 首选 + REST 降级 =====
@@ -520,6 +532,32 @@ export async function setRepoSubscriptionSmart(
     // 降级 REST
   }
   return setRepoSubscription(owner, repo, token, body);
+}
+
+/** 最近推送分支（GraphQL refs committedDate 排序；仅登录查询，失败/匿名静默返回空——提示条非核心，参照 ForkInfoBar 静默先例）。 */
+export type RecentBranch = { name: string; committedDate: string };
+export async function fetchRecentBranchesSmart(
+  owner: string,
+  repo: string,
+  token: string,
+): Promise<RecentBranch[]> {
+  if (!token) return [];
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        defaultBranchRef: { name: string } | null;
+        refs: { nodes: Array<{ name: string; target: { committedDate: string } | null }> } | null;
+      } | null;
+    }> = await graphqlRequest(RECENT_BRANCHES_QUERY, { owner, name: repo }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.refs) return [];
+    const def = resp.data.repository.defaultBranchRef?.name ?? "main";
+    return resp.data.repository.refs.nodes
+      .filter((n) => n.name !== def && n.target?.committedDate)
+      .map((n) => ({ name: n.name, committedDate: n.target!.committedDate }))
+      .sort((a, b) => (a.committedDate < b.committedDate ? 1 : -1));
+  } catch {
+    return [];
+  }
 }
 
 /** 智能删除仓库：GraphQL deleteRepository 首选（需 repositoryId），失败降级 REST。 */
