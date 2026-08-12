@@ -264,7 +264,8 @@ function StepperItem({
         {...(isLoading ? { "data-loading": true } : {})}
         className={cn(
           "group/step flex items-center justify-center",
-          isVertical ? "flex-col" : "not-last:flex-1",
+          // vertical：min-h-14 保证 step 间固有最小竖向间隔（内容高时自然扩展，连线由 StepperNav 贯穿竖线自动处理）
+          isVertical ? "min-h-14 flex-col" : "not-last:flex-1",
           className,
         )}
         {...props}
@@ -469,8 +470,23 @@ function StepperNav({ children, className }: ComponentProps<"nav">) {
       data-slot="stepper-nav"
       data-state={currentId}
       data-orientation={orientation}
-      className={cn("inline-flex", isVertical ? "flex-col" : "w-full flex-row", responsiveNavClasses, className)}
+      className={cn(
+        "inline-flex",
+        isVertical ? "relative flex-col" : "w-full flex-row",
+        responsiveNavClasses,
+        className,
+      )}
     >
+      {/* vertical 自动连线：一条贯穿 nav 的竖线（left-4 = 默认 indicator 中心 16px），
+          节点圆形背景盖线 → step 间自动无缝连线，无需手动 StepperSeparator；
+          自定义 indicator 偏移时用 className 覆盖 left（如 left-3） */}
+      {isVertical && (
+        <div
+          aria-hidden
+          data-slot="stepper-line"
+          className="pointer-events-none absolute inset-y-0 left-4 w-px bg-border"
+        />
+      )}
       {children}
     </nav>
   );

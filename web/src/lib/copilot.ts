@@ -8,6 +8,11 @@
  */
 export const COPILOT_AVATAR = "https://avatars.githubusercontent.com/in/946600?v=4&size=48";
 
-/** 识别 Copilot 账号（统一名称/头像/effort 下拉） */
+/** 识别 Copilot 账号（统一名称/头像/effort 下拉；REST 可能返回无 [bot] 后缀的 login） */
 export const isCopilotLogin = (login: string) =>
-  login === "Copilot" || login === "copilot-pull-request-reviewer[bot]";
+  login === "Copilot" ||
+  login === "copilot-pull-request-reviewer[bot]" ||
+  login === "copilot-pull-request-reviewer";
+
+/** Copilot 显示名（官方统一显示 "Copilot"，其余原样） */
+export const copilotDisplayName = (login: string) => (isCopilotLogin(login) ? "Copilot" : login);

@@ -31,20 +31,14 @@ import {
   UserPlus,
   Zap,
 } from "lucide-react";
-import {
-  Stepper,
-  StepperItem,
-  StepperIndicator,
-  StepperSeparator,
-  StepperNav,
-} from "@/components/ui/stepper";
+import { Stepper, StepperItem, StepperIndicator, StepperNav } from "@/components/ui/stepper";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import { MarkdownView } from "@/components/MarkdownView";
 import { UserAvatar } from "@/components/UserAvatar";
 import { repoRawBase } from "@/lib/repo-raw";
-import { isCopilotLogin, COPILOT_AVATAR } from "@/lib/copilot";
+import { isCopilotLogin, COPILOT_AVATAR, copilotDisplayName } from "@/lib/copilot";
 import type { PullTimelineEvent } from "@/lib/api";
 import { ReviewStateBadge } from "./PullReviewPanel";
 
@@ -99,7 +93,7 @@ type RowEvent = Exclude<
 
 /** 事件行中文文案（对齐官方语义；与 PullReviewPanel 硬编码中文一致） */
 function eventText(e: RowEvent): string {
-  const actor = e.actor?.login ?? "未知用户";
+  const actor = copilotDisplayName(e.actor?.login ?? "未知用户");
   switch (e.kind) {
     case "merged":
       return `${actor} 将提交合并到 ${e.mergeRefName ?? "目标分支"}`;
@@ -140,18 +134,18 @@ function eventText(e: RowEvent): string {
   }
 }
 
-/** 纯事件行（图标 + 文案 + 时间，无卡片） */
+/** 纯事件行（图标 + 文案 + 时间，无卡片；时间用「 · 」紧跟文案分隔） */
 function TimelineEventRow({ event }: { event: RowEvent }) {
   const { fmt } = useDateFormat();
   return (
     <div className="flex min-w-0 items-center gap-2 py-1.5 text-sm text-muted-foreground">
       <span className="min-w-0 truncate">{eventText(event)}</span>
-      <span className="shrink-0 text-xs">· {fmt(event.createdAt)}</span>
+      <span className="shrink-0 text-xs"> · {fmt(event.createdAt)}</span>
     </div>
   );
 }
 
-/** 评审卡（作者 + 状态徽标 + 时间 + body） */
+/** 评审卡（作者 + 状态徽标 + 时间 + body——评论态「提出了 · 时间」后直接展示评论，无折叠） */
 function ReviewCard({
   event,
   owner,
@@ -162,6 +156,7 @@ function ReviewCard({
   repo: string;
 }) {
   const { fmt } = useDateFormat();
+  const isComment = event.state === "COMMENTED";
   return (
     <div className="pb-4">
       <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
@@ -169,17 +164,13 @@ function ReviewCard({
           to={`/${event.author?.login ?? ""}`}
           className="font-medium text-foreground hover:underline"
         >
-          {event.author?.login ?? "ghost"}
+          {copilotDisplayName(event.author?.login ?? "ghost")}
         </Link>
         <span>
-          {event.state === "APPROVED"
-            ? "批准了这些更改"
-            : event.state === "CHANGES_REQUESTED"
-              ? "请求更改"
-              : "评论了"}
+          {isComment ? "提出了" : event.state === "APPROVED" ? "批准了这些更改" : "请求更改"}
           {event.submittedAt ? ` · ${fmt(event.submittedAt)}` : ""}
         </span>
-        <ReviewStateBadge state={event.state} />
+        {!isComment && <ReviewStateBadge state={event.state} />}
       </div>
       {event.body && (
         <Card className="mt-2">
@@ -212,7 +203,7 @@ function CommentCard({
               to={`/${event.author?.login ?? ""}`}
               className="font-medium text-foreground hover:underline"
             >
-              {event.author?.login ?? "ghost"}
+              {copilotDisplayName(event.author?.login ?? "ghost")}
             </Link>
             <span className="min-w-0 flex-1 truncate">{fmt(event.createdAt)}</span>
           </div>
@@ -231,7 +222,8 @@ function CommitRow({ event }: { event: Extract<PullTimelineEvent, { kind: "commi
       <span className="min-w-0 flex-1 truncate font-medium">{event.messageHeadline}</span>
       <code className="shrink-0 font-mono text-xs text-muted-foreground">{event.oid}</code>
       <span className="shrink-0 text-xs text-muted-foreground">
-        {event.author?.login ?? event.author?.name ?? "unknown"} · {fmt(event.committedDate)}
+        {copilotDisplayName(event.author?.login ?? event.author?.name ?? "unknown")} ·{" "}
+        {fmt(event.committedDate)}
       </span>
     </div>
   );
@@ -260,11 +252,11 @@ function ReviewThreadCard({
               to={`/${first?.author?.login ?? ""}`}
               className="font-medium text-foreground hover:underline"
             >
-              {first?.author?.login ?? "ghost"}
+              {copilotDisplayName(first?.author?.login ?? "ghost")}
             </Link>
             <span>
               在 {event.path}
-              {line != null ? `:${line}` : ""} 评论了{first ? ` · ${fmt(first.createdAt)}` : ""}
+              {line != null ? `:${line}` : ""} 评论了
             </span>
             {event.isResolved && (
               <Badge
@@ -275,6 +267,7 @@ function ReviewThreadCard({
                 已解决
               </Badge>
             )}
+            {first && <span className="shrink-0 text-xs"> · {fmt(first.createdAt)}</span>}
           </div>
           <button
             type="button"
@@ -303,7 +296,7 @@ function ReviewThreadCard({
                         to={`/${c.author?.login ?? ""}`}
                         className="font-medium text-foreground hover:underline"
                       >
-                        {c.author?.login ?? "ghost"}
+                        {copilotDisplayName(c.author?.login ?? "ghost")}
                       </Link>
                       <span> · {fmt(c.createdAt)}</span>
                     </div>
@@ -357,21 +350,20 @@ export function PullTimeline({
   return (
     <Stepper orientation="vertical" steps={steps} defaultValue={steps[0]?.id} className="w-full">
       <StepperNav className="w-full">
-        {events.map((event, i) => (
+        {events.map((event) => (
           <StepperItem
             key={event.id}
             stepId={event.id}
             className="w-full flex-row items-start gap-3"
           >
-            {/* 左列：节点 + 竖线（stepper vertical 骨架） */}
-            <div className="flex flex-col items-center self-stretch">
+            {/* 左列：节点（竖线由 StepperNav 自动贯穿连线，节点圆形盖线） */}
+            <div className="flex flex-col items-center">
               <StepperIndicator
                 variant="plain"
                 className="size-8 shrink-0 overflow-visible rounded-full bg-transparent"
               >
                 <TimelineMark event={event} />
               </StepperIndicator>
-              {i < events.length - 1 && <StepperSeparator className="m-0 w-px flex-1 bg-border" />}
             </div>
             {/* 右列：事件内容 */}
             <div className="min-w-0 flex-1 pt-0.5">{renderEvent(event, owner, repo)}</div>

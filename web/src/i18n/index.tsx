@@ -79,11 +79,12 @@ i18n.use(initReactI18next).init({
 });
 
 /** 兼容 hook：签名与旧自研 useI18n 一致（t/lang/setLang），调用点零改动
- * lang 返回本地偏好（含 system 跟随系统），供设置页 SegmentedControl 展示 */
+ * lang 返回本地偏好（含 system 跟随系统），供设置页 SegmentedControl 展示
+ * t 支持 i18next 变量插值（{{var}}），vars 可选向后兼容 */
 export function useI18n() {
   const { t, i18n: inst } = useTranslation();
   return {
-    t: (key: I18nKey): string => t(key),
+    t: (key: I18nKey, vars?: Record<string, unknown>): string => t(key, vars),
     lang: getStoredLang(),
     setLang: (l: Lang) => {
       void inst.changeLanguage(resolveLang(l));

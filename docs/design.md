@@ -283,7 +283,32 @@
 
 > **错误分层原则**：整页无内容（仓库/用户/详情/列表页加载失败）→ 全局错误页（页面被替换，导航即恢复）；页面主体正常但局部失败（feed/trending/搜索/评论/表单）→ 局部 InlineError + 重试/占位。不做「全站 92 处 InlineError 全改」——局部错误保留上下文内联语义。
 
-### 4.6 新建类整页（复刻官方路径 定稿）
+### 4.6 仓库 Pulls 列表页（复刻官方结构 定稿）
+
+> **官方结构**（devtools 实测 `github.com/{o}/{r}/pulls`）：`container-xl` 内 ① 搜索工具条（Filters 下拉 + 搜索框 + Labels/Milestones 链接 + New pull request 右）→ ② 统一 Box（`Box-header` 状态链接 Open/Closed + 过滤按钮组 Author/Label/Milestones/Assignee/Sort + `Box-row` 行列表）→ ③ 空态 blankslate → ④ ProTip 提示条。**无页内 sticky**（整页滚动）。
+
+| 模块 | 规范 |
+|------|------|
+| **① 搜索工具条** | `flex flex-wrap items-end justify-between gap-3`：左 Filters 下拉（shadcn Popover，预置搜索链接：全部 PR / author:@me / assignee:@me / mentions:@me / 高级搜索外链）+ `RepoSearchInput`（placeholder `is:pr is:{state}`）；右 Labels（`Tag` icon + 计数）/Milestones（`Milestone` icon + 计数，计数 = REST `per_page=1` 读 Link header 末页）+ `New pull request`（primary sm） |
+| **② 统一 Box** | `overflow-hidden rounded-lg border bg-card`；`Box-header`（`flex flex-wrap items-center justify-between gap-2 border-b px-4 py-1.5`）：状态链接 btn-link 风格（icon + 文字 + 计数，selected `aria-current` + `font-medium text-foreground`，**无下划线**）+ 过滤按钮组（`FilterDropdown`：shadcn Popover+Command，标题 + CommandInput 过滤 + 选项 + 已选显示值 + 清除项） |
+| **③ 行列表** | `divide-y` 统一容器（非独立卡片）；行 `group flex items-center gap-3 px-4 py-2.5 hover:bg-accent/50`：状态 icon（open 绿 PR / merged 紫 merge / closed 红 PR / draft 灰）+ 标题列（`font-medium text-foreground hover:underline` + meta 行 `#n by 作者 [Owner 标] 打开于/关闭于/合并于 时间` + Draft 标 + labels）+ 右列（assignee 头像栈 + 评论数） |
+| **④ 空态** | `flex flex-col items-center gap-2 px-4 py-12 text-center`：圆底大图标 + `h3` 标题（`没有{{state}}的拉取请求。`）+ 描述（「你可以搜索 GitHub 全部仓库 或尝试 高级搜索。」） |
+| **⑤ ProTip** | `flex flex-wrap items-center justify-center gap-1.5 text-center text-sm`：灯泡 icon + `ProTip!` + no:label 链接 |
+
+**数据流**：URL query 驱动（`state/author/labels/milestone/assignee/q/sort/page`）；`fetchPullsSmart` 扩展——无过滤 GraphQL `PULLS_QUERY`（orderBy 变量化）→ REST `pulls.list`（sort/direction 透传）；有过滤（author/labels/milestone/assignee/q）→ search API（`searchIssues` 提取 q 内 `sort:` qualifier 映射 REST sort 参数）；过滤下拉数据源（contributors/labels/milestones/assignees）进入页面并行预取一次。
+
+### 4.7 仓库 PR 详情页（全宽头部 + 滚动后精简 sticky 头 + 下方左右栏 定稿）
+
+> **官方结构**（devtools 实测 `github.com/{o}/{r}/pull/{n}`）：`PageLayout-HeaderContent` **全宽标题区**（PageHeader：标题+状态+操作+统计 + TabNav 四 tab）→ 下方 `.gutter-condensed` **左右栏**（主列 Conversation/Commits/Checks/Files + 右 metadata 280px）。滚动后完整头滚出视口，**精简头**（状态标+标题+#号，**不含 tabs**）fixed 盖顶（官方 `StickyPullRequestHeader`：`position:fixed; top:0; z-index:11; display:none→flex` 切换，`is-stuck` class 驱动）。
+
+| 模块 | 规范 |
+|------|------|
+| **① 完整头部** | 正常文档流**不 sticky**（随内容滚走）：返回列表按钮（ghost sm `-ml-2`）+ 标题行（h1 `text-2xl font-bold` + `#号` + 状态 Badge + 作者 + `wants to merge N commits into base from head` + 文件/增删/评论统计 badges）+ 评审操作区（MergePanel / ReviewChangesDialog / 关闭）+ TabNav（shadcn TabsList：Conversation/Commits/Checks/Files changed，**随内容滚走不吸附**） |
+| **② 滚动后精简头** | **`createPortal` 到 `document.body` 的 `fixed inset-x-0 top-14 z-40 border-b bg-background/95 backdrop-blur`**（高 h-14）：`PullStateBadge` + 标题（truncate）+ `#号`，**不含 tabs**。⚠️ **必须 portal 到 body**——页面根 `.page-enter` 容器带 `transform`，会使 `fixed` 的 containing block 变为该容器（视口失效，实测 y=-402 偏移），portal 到 body 脱离 transform 树 |
+| **② 触发逻辑** | 参照 blob 页 scroll 监听模式：`useEffect` 挂 `window.scroll` 监听（passive）+ **内容加载后补测一次**（URL 带锚点直达等 scroll 未触发场景）——`fullHeaderRef` 完整头 `getBoundingClientRect().bottom <= 57`（topbar 下沿）→ `stuck` state → 渲染 portal 精简头 |
+| **③ 下方左右栏** | `PageLayout gap="sm" right={{ width: 280, sticky: "nav" }}`：主列 = 4 tab 内容（Conversation 正文+时间线+评论 / Commits 列表 / Checks 汇总 / Files diff）；右栏 = `ReviewersSidebar` + `PullMetadataSidebar`（官方 metadata 顺序） |
+
+### 4.8 新建类整页（复刻官方路径 定稿）
 
 > **决策**：新建仓库/issue/PR 一律使用**整页**（`/new`、`/{owner}/{repo}/issues/new`、`/{owner}/{repo}/pulls/new`），**不使用弹框**——对齐官方路径/行为；原弹框组件（WriteActions、NewRepoDialog 弹框版）已删除。
 

@@ -47,7 +47,8 @@ import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { UserAvatar } from "@/components/UserAvatar";
 import { apiErrorMessage, type PullReview, type ReviewEvent } from "@/lib/rest";
 import { fetchCollaborators, type Collaborator } from "@/lib/rest-issue-pr";
-import { COPILOT_AVATAR, isCopilotLogin } from "@/lib/copilot";
+import { COPILOT_AVATAR, copilotDisplayName, isCopilotLogin } from "@/lib/copilot";
+import { REVIEW_STATE_BADGE_TINTED, REVIEW_STATE_ICON } from "@/lib/state-colors";
 import { toastSuccess } from "@/lib/toast";
 import type { PullReviewSummary } from "@/lib/api";
 
@@ -129,10 +130,10 @@ function ReviewerItem({
     <>
       <UserAvatar src={avatarOf(login, avatarUrl)} alt={login} />
       <span className="flex min-w-0 flex-1 items-center gap-1 text-sm">
-        <span className="truncate">{login}</span>
+        <span className="truncate">{copilotDisplayName(login)}</span>
         {isCopilotLogin(login) && <CopilotEffortMenu />}
       </span>
-      {state && <ReviewStateBadge state={state} />}
+      {state && <ReviewStateBadge state={state} iconOnly />}
     </>
   );
 }
@@ -144,26 +145,58 @@ function avatarOf(login: string, avatarUrl?: string | null) {
 
 /* ── 评审状态徽标 ── */
 
-const REVIEW_STATE_META: Record<string, { label: string; className: string }> = {
-  APPROVED: { label: "已批准", className: "bg-emerald-500/15 text-emerald-600" },
-  CHANGES_REQUESTED: { label: "请求修改", className: "bg-red-500/15 text-red-600" },
-  COMMENTED: { label: "已评论", className: "bg-muted text-muted-foreground" },
-  DISMISSED: { label: "已驳回", className: "bg-muted text-muted-foreground" },
-  PENDING: { label: "待提交", className: "bg-muted text-muted-foreground" },
+const REVIEW_STATE_META: Record<string, { label: string; className: string; iconClass: string }> = {
+  APPROVED: {
+    label: "已批准",
+    className: REVIEW_STATE_BADGE_TINTED.APPROVED,
+    iconClass: REVIEW_STATE_ICON.APPROVED,
+  },
+  CHANGES_REQUESTED: {
+    label: "请求修改",
+    className: REVIEW_STATE_BADGE_TINTED.CHANGES_REQUESTED,
+    iconClass: REVIEW_STATE_ICON.CHANGES_REQUESTED,
+  },
+  COMMENTED: {
+    label: "已评论",
+    className: REVIEW_STATE_BADGE_TINTED.COMMENTED,
+    iconClass: REVIEW_STATE_ICON.COMMENTED,
+  },
+  DISMISSED: {
+    label: "已驳回",
+    className: REVIEW_STATE_BADGE_TINTED.DISMISSED,
+    iconClass: REVIEW_STATE_ICON.DISMISSED,
+  },
+  PENDING: {
+    label: "待提交",
+    className: REVIEW_STATE_BADGE_TINTED.PENDING,
+    iconClass: REVIEW_STATE_ICON.PENDING,
+  },
 };
 
-export function ReviewStateBadge({ state }: { state: string }) {
+export function ReviewStateBadge({
+  state,
+  iconOnly = false,
+}: {
+  state: string;
+  /** 仅图标模式（审计者栏紧凑显示——官方审计者状态只有图标色点，无文字/胶囊背景） */
+  iconOnly?: boolean;
+}) {
   const meta = REVIEW_STATE_META[state];
   if (!meta) return null;
+  const Icon = state === "APPROVED" ? Check : state === "CHANGES_REQUESTED" ? X : MessageSquare;
+  if (iconOnly) {
+    // 评论图标 fill 填色（官方审计者状态图标；Check/X 保持 outline 描边）
+    return (
+      <Icon
+        aria-label={meta.label}
+        className={`size-3.5 shrink-0 ${meta.iconClass ?? "text-muted-foreground"}`}
+        fill={state === "COMMENTED" ? "currentColor" : undefined}
+      />
+    );
+  }
   return (
     <Badge variant="outline" className={`gap-1 border-transparent text-[11px] ${meta.className}`}>
-      {state === "APPROVED" ? (
-        <Check className="size-3" />
-      ) : state === "CHANGES_REQUESTED" ? (
-        <X className="size-3" />
-      ) : (
-        <MessageSquare className="size-3" />
-      )}
+      <Icon className="size-3" />
       {meta.label}
     </Badge>
   );
@@ -205,6 +238,8 @@ export function ReviewersSidebar({
   const requestedLogins = new Set(requests.map((r) => r.login));
   // 已评审用户（可能在请求列表中重复出现——优先展示状态）
   const reviewLogins = new Set(reviews.map((r) => r.user?.login ?? ""));
+  // 聚合列表过滤作者本人（官方 Reviewers 栏语义：作者不能是评审者——与邀请弹窗一致；
+  // 作者提交的 COMMENT 态 review（self-review）会出现在 Conversation 时间线但不在审计者栏）
   const everyone = Array.from(
     new Map(
       [
@@ -216,7 +251,7 @@ export function ReviewersSidebar({
               { login: r.user?.login ?? "", avatarUrl: r.user?.avatar_url },
             ] as const,
         ),
-      ].filter(([login]) => login),
+      ].filter(([login]) => login && login !== authorLogin),
     ).values(),
   );
 
@@ -433,7 +468,7 @@ function AuditorRow({
       }`}
     >
       <UserAvatar src={avatarUrl} alt={login} className="size-6" />
-      <span className="min-w-0 flex-1 truncate">{login}</span>
+      <span className="min-w-0 flex-1 truncate">{copilotDisplayName(login)}</span>
       {disabled && <span className="text-xs text-muted-foreground">已请求</span>}
       <Checkbox
         checked={selected}

@@ -123,6 +123,7 @@ function toIssue(g: GraphQLIssueNode): Issue {
 
 /** GraphQL PR 节点（列表与详情共用） */
 interface GraphQLPullNode {
+  databaseId?: number | null;
   number: number;
   title: string;
   state: string;
@@ -136,6 +137,10 @@ interface GraphQLPullNode {
   isDraft: boolean;
   author: { login: string; avatarUrl?: string } | null;
   comments: { totalCount: number };
+  reviews: { totalCount: number };
+  reviewThreads: { totalCount: number };
+  /** 关联的 issue 数（PR 关闭时引用的 closing references） */
+  closingIssuesReferences: { totalCount: number };
   commits: { totalCount: number };
   additions: number;
   deletions: number;
@@ -151,10 +156,10 @@ interface GraphQLPullNode {
   milestone?: { title: string } | null;
 }
 
-/** GraphQL PR 节点 → REST PullRequest（MERGED 映射为 closed + merged_at） */
+/** GraphQL PR 节点 → REST PullRequest（MERGED 映射为 closed + merged_at；id 用 databaseId 保证列表 key 唯一） */
 function toPull(g: GraphQLPullNode): PullRequest {
   return {
-    id: -1,
+    id: g.databaseId ?? -1,
     number: g.number,
     title: g.title,
     state: g.state === "MERGED" ? "closed" : g.state.toLowerCase(),
@@ -165,7 +170,13 @@ function toPull(g: GraphQLPullNode): PullRequest {
     closed_at: g.closedAt ?? null,
     body: g.body,
     merged_at: g.mergedAt,
-    comments: g.comments?.totalCount ?? 0,
+    // 评论数 = issue 评论 + 评审评论 + 行内线程（对齐官方 octicon-comment 合计；REST 列表 comments 字段原生即合计）
+    comments:
+      (g.comments?.totalCount ?? 0) +
+      (g.reviews?.totalCount ?? 0) +
+      (g.reviewThreads?.totalCount ?? 0),
+    /** 关联 issue 数（PR 描述中引用、可关闭的 issues） */
+    linked_issues: g.closingIssuesReferences?.totalCount ?? 0,
     commits: g.commits?.totalCount ?? 0,
     additions: g.additions ?? 0,
     deletions: g.deletions ?? 0,
@@ -382,29 +393,81 @@ export async function setIssueSubscriptionSmart(
   return !subscribed;
 }
 
+/** 官方 Sort 菜单值 → REST /pulls sort + direction（best/newest 不传，默认即 newest） */
+function restPullSort(sort?: string): {
+  sort?: "created" | "updated" | "popularity" | "long-running";
+  direction?: "asc" | "desc";
+} {
+  switch (sort) {
+    case "created-asc":
+      return { sort: "created", direction: "asc" };
+    case "comments":
+      return { sort: "popularity" };
+    case "comments-asc":
+      return { sort: "popularity", direction: "asc" };
+    case "updated":
+      return { sort: "updated" };
+    case "updated-asc":
+      return { sort: "updated", direction: "asc" };
+    default:
+      return {}; // newest / best / undefined
+  }
+}
+
+/** 官方 Sort 菜单值 → search q 内 sort: qualifier（best/newest 不追加，默认即 newest） */
+function searchSortQualifier(sort?: string): string {
+  if (sort && sort !== "created" && sort !== "best") return `sort:${sort}`;
+  return "";
+}
+
+/** 官方 Sort 菜单值 → GraphQL PullRequestOrderField（GitHub 无按评论数排序 → comments 归并 CREATED_AT） */
+function graphqlPullOrderField(sort?: string): string {
+  if (sort === "updated" || sort === "updated-asc") return "UPDATED_AT";
+  return "CREATED_AT";
+}
+
+/** 官方 Sort 菜单值 → GraphQL OrderDirection（*-asc 升序，其余降序） */
+function graphqlPullOrderDir(sort?: string): string {
+  return sort?.endsWith("-asc") ? "ASC" : "DESC";
+}
+
 /** 智能获取仓库 PR 列表：GraphQL repository.pullRequests 首选，失败降级 REST。 */
 export async function fetchPullsSmart(
   owner: string,
   repo: string,
   state: "open" | "closed" | "all" = "open",
   token?: string | null,
-  filters?: { author?: string; labels?: string; sort?: string; q?: string },
+  filters?: {
+    author?: string;
+    labels?: string;
+    milestone?: string;
+    assignee?: string;
+    sort?: string;
+    q?: string;
+  },
   page = 1,
 ): Promise<{ items: PullRequest[]; openCount: number | null; closedCount: number | null }> {
+  const { sort: restSort, direction } = restPullSort(filters?.sort);
   // 分页请求（page>1）→ 直接 REST（GraphQL 分页需游标）
   if (page > 1) {
-    const items = await fetchPulls(owner, repo, state, 30, token, page);
+    const items = await fetchPulls(owner, repo, state, 30, token, page, restSort, direction);
     return { items, openCount: null, closedCount: null };
   }
-  // 有过滤条件 → search API（REST /pulls 不支持 q/author=@me/labels 便捷过滤）
-  if (filters && (filters.author || filters.labels || filters.q)) {
+  // 有过滤条件 → search API（REST /pulls 不支持 q/author=@me/labels/milestone/assignee 便捷过滤）
+  if (
+    filters &&
+    (filters.author || filters.labels || filters.milestone || filters.assignee || filters.q)
+  ) {
     // 搜索独立于 state tab（官方行为）：q 存在时不再追加 state:，结果含所有状态
     const qParts = [
       `repo:${owner}/${repo}`,
       `is:pr`,
       filters.author ? `author:${filters.author}` : "",
       filters.labels ? `label:${filters.labels}` : "",
+      filters.milestone ? `milestone:${filters.milestone}` : "",
+      filters.assignee ? `assignee:${filters.assignee}` : "",
       filters.q,
+      searchSortQualifier(filters.sort),
     ]
       .filter(Boolean)
       .join(" ");
@@ -442,7 +505,14 @@ export async function fetchPullsSmart(
         } | null;
       }> = await graphqlRequest(
         PULLS_QUERY,
-        { owner, name: repo, states: pullStates(state), first: 30 },
+        {
+          owner,
+          name: repo,
+          states: pullStates(state),
+          first: 30,
+          orderField: graphqlPullOrderField(filters?.sort),
+          orderDir: graphqlPullOrderDir(filters?.sort),
+        },
         token,
       );
       if (!hasGraphQLErrors(resp) && resp.data?.repository) {
@@ -457,7 +527,7 @@ export async function fetchPullsSmart(
       // 降级 REST
     }
   }
-  const items = await fetchPulls(owner, repo, state, 30, token);
+  const items = await fetchPulls(owner, repo, state, 30, token, 1, restSort, direction);
   return { items, openCount: null, closedCount: null };
 }
 

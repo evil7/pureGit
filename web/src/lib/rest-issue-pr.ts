@@ -3,7 +3,7 @@
  * Board file. See rest.ts barrel for full export surface & docs/api-compat.md.
  */
 
-import { typedRequest } from "./rest-core";
+import { typedRequest, fetchWithTimeout, GITHUB_API } from "./rest-core";
 import type { GitHubUser } from "./rest-core";
 
 // ===== M3 写操作 API（需 token）=====
@@ -132,6 +132,8 @@ export interface PullRequest {
   merged_at: string | null;
   comments: number;
   commits: number;
+  /** 关联 issue 数（GraphQL closingIssuesReferences；REST 原生无此字段，undefined 时列表不渲染） */
+  linked_issues?: number;
   additions: number;
   deletions: number;
   changed_files: number;
@@ -263,6 +265,64 @@ export async function fetchRepoMilestones(
   return typedRequest<RepoMilestone[]>(token, (octokit) =>
     octokit.rest.issues.listMilestones({ owner, repo, state: "open", per_page: 100 }),
   );
+}
+
+/** 从分页 Link header 解析最后一页页码（统计总数用，避免全量拉取） */
+function lastPageFromLink(linkHeader: string | null): number | null {
+  if (!linkHeader) return null;
+  const m = linkHeader.match(/[?&]page=(\d+)>;\s*rel="last"/);
+  return m ? Number(m[1]) : null;
+}
+
+/** 仓库 Labels 总数（per_page=1 读 Link header 末页；失败/限流返回 null） */
+export async function fetchRepoLabelCount(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<number | null> {
+  try {
+    const res = await fetchWithTimeout(`${GITHUB_API}/repos/${owner}/${repo}/labels?per_page=1`, {
+      headers: {
+        Accept: "application/vnd.github+json",
+        "X-GitHub-Api-Version": "2022-11-28",
+        ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      },
+    });
+    if (!res.ok) return null;
+    const last = lastPageFromLink(res.headers.get("Link"));
+    if (last != null) return last;
+    const arr = (await res.json()) as unknown[];
+    return Array.isArray(arr) ? arr.length : 0;
+  } catch {
+    return null;
+  }
+}
+
+/** 仓库 Milestones 总数（per_page=1 读 Link header 末页；失败/限流返回 null） */
+export async function fetchRepoMilestoneCount(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<number | null> {
+  try {
+    const res = await fetchWithTimeout(
+      `${GITHUB_API}/repos/${owner}/${repo}/milestones?per_page=1`,
+      {
+        headers: {
+          Accept: "application/vnd.github+json",
+          "X-GitHub-Api-Version": "2022-11-28",
+          ...(token ? { Authorization: `Bearer ${token}` } : {}),
+        },
+      },
+    );
+    if (!res.ok) return null;
+    const last = lastPageFromLink(res.headers.get("Link"));
+    if (last != null) return last;
+    const arr = (await res.json()) as unknown[];
+    return Array.isArray(arr) ? arr.length : 0;
+  } catch {
+    return null;
+  }
 }
 
 /** 更新 PR 指派（add-assignees + remove-assignees 组合；assignees 登录名数组） */
@@ -585,9 +645,18 @@ export async function fetchPulls(
   perPage = 30,
   token?: string | null,
   page = 1,
+  sort?: "created" | "updated" | "popularity" | "long-running",
+  direction?: "asc" | "desc",
 ): Promise<PullRequest[]> {
   return typedRequest<PullRequest[]>(token, (octokit) =>
-    octokit.rest.pulls.list({ owner, repo, state, per_page: perPage, page }),
+    octokit.rest.pulls.list({
+      owner,
+      repo,
+      state,
+      per_page: perPage,
+      page,
+      ...(sort ? { sort, ...(direction ? { direction } : {}) } : {}),
+    }),
   );
 }
 

@@ -346,11 +346,20 @@ export async function searchIssues(
   token?: string | null,
   page = 1,
 ): Promise<SearchResponse<Issue>> {
+  // q 内 sort: qualifier（网页/GraphQL 语法）映射到 REST 独立 sort 参数：
+  // REST /search 不解析 q 内 sort:，需显式提取（best/无 sort 时不传）
+  const sortMatch = q.match(/(?:^|\s)sort:(\w+)(-asc)?/);
+  const sortVal = sortMatch?.[1];
+  const isAsc = !!sortMatch?.[2];
+  const sortParam: "comments" | "created" | "updated" | undefined =
+    sortVal && ["comments", "created", "updated"].includes(sortVal)
+      ? (sortVal as "comments" | "created" | "updated")
+      : undefined;
+  const order: "asc" | "desc" = isAsc ? "asc" : "desc";
   return typedRequest<SearchResponse<Issue>>(token, (octokit) =>
     octokit.rest.search.issuesAndPullRequests({
       q,
-      sort: "comments",
-      order: "desc",
+      ...(sortParam ? { sort: sortParam, order } : {}),
       per_page: perPage,
       page,
     }),

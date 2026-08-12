@@ -499,9 +499,16 @@ export const ISSUE_DETAIL_QUERY = /* GraphQL */ `
   }
 `;
 
-/** PR 列表（states: OPEN/CLOSED/MERGED 数组） */
+/** PR 列表（states: OPEN/CLOSED/MERGED 数组；orderBy 由官方 Sort 菜单驱动） */
 export const PULLS_QUERY = /* GraphQL */ `
-  query RepoPulls($owner: String!, $name: String!, $states: [PullRequestState!], $first: Int!) {
+  query RepoPulls(
+    $owner: String!
+    $name: String!
+    $states: [PullRequestState!]
+    $first: Int!
+    $orderField: PullRequestOrderField!
+    $orderDir: OrderDirection!
+  ) {
     repository(owner: $owner, name: $name) {
       openCount: pullRequests(states: [OPEN]) {
         totalCount
@@ -512,9 +519,10 @@ export const PULLS_QUERY = /* GraphQL */ `
       pullRequests(
         first: $first
         states: $states
-        orderBy: { field: CREATED_AT, direction: DESC }
+        orderBy: { field: $orderField, direction: $orderDir }
       ) {
         nodes {
+          databaseId
           number
           title
           state
@@ -529,6 +537,15 @@ export const PULLS_QUERY = /* GraphQL */ `
             avatarUrl
           }
           comments {
+            totalCount
+          }
+          reviews {
+            totalCount
+          }
+          reviewThreads {
+            totalCount
+          }
+          closingIssuesReferences {
             totalCount
           }
           commits {

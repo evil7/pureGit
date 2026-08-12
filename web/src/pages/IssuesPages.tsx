@@ -59,6 +59,7 @@ import { CommentsSection } from "@/components/CommentsSection";
 import { MarkdownView } from "@/components/MarkdownView";
 import { RepoSearchInput } from "@/components/RepoSearchInput";
 import { repoRawBase } from "@/lib/repo-raw";
+import { STATE_BADGE_SOLID } from "@/lib/state-colors";
 import { UserAvatar } from "@/components/UserAvatar";
 import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/format";
@@ -385,9 +386,9 @@ export function IssueRow({
           {/* 状态图标（官方：open=绿圈/closed=紫叉）+ 作者 opened + 时间（fmt 日期格式偏好） */}
           <span className="flex items-center gap-1">
             {issue.state === "open" ? (
-              <CircleDot className="size-3.5 text-green-600 dark:text-green-400" />
+              <CircleDot className="size-3.5 text-[#1a7f37] dark:text-[#3fb950]" />
             ) : (
-              <XCircle className="size-3.5 text-purple-600 dark:text-purple-400" />
+              <XCircle className="size-3.5 text-[#8250df] dark:text-[#a371f7]" />
             )}
           </span>
           <span>
@@ -700,7 +701,13 @@ export function IssueDetailPage() {
 
           {/* 状态徽标 + 作者 + 时间 + 评论数（官方：标题下方元信息行） */}
           <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-            <Badge variant={issue.state === "open" ? "default" : "secondary"} className="text-xs">
+            <Badge
+              variant="outline"
+              className={cn(
+                "border-transparent text-xs",
+                issue.state === "open" ? STATE_BADGE_SOLID.open : STATE_BADGE_SOLID["issue-closed"],
+              )}
+            >
               {issue.state === "open" ? "Open" : "Closed"}
             </Badge>
             <span className="flex items-center gap-1">

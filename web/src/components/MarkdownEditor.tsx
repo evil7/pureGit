@@ -14,7 +14,7 @@
  * 3. text-expander-committed 在 DOM value 更新后触发（含 input）→ 用它同步 state，
  *    覆盖「补全插入」这类不经过 onInput 的值变化。
  */
-import { useCallback, useEffect, useId, useRef, useState } from "react";
+import { useCallback, useEffect, useId, useRef, useState, type ReactNode } from "react";
 import "@github/markdown-toolbar-element";
 import "@github/text-expander-element";
 import { search as emojiSearch } from "node-emoji";
@@ -105,6 +105,7 @@ export function MarkdownEditor({
   onSubmit,
   className,
   autoFocus,
+  titleSlot,
 }: {
   /** textarea id（markdown-toolbar for 关联） */
   id?: string;
@@ -121,6 +122,8 @@ export function MarkdownEditor({
   onSubmit?: (value: string) => void;
   className?: string;
   autoFocus?: boolean;
+  /** 工具栏行最左侧插槽（如「发表评论」标题——官方编辑器标题行与 Write/Preview 同排） */
+  titleSlot?: ReactNode;
 }) {
   const { t } = useI18n();
   const { token } = useAuth();
@@ -242,18 +245,21 @@ export function MarkdownEditor({
 
   return (
     <div className={cn("overflow-hidden rounded-lg border bg-card", className)}>
-      {/* 顶部：Write/Preview + 工具栏（GitHub 官方布局） */}
+      {/* 顶部：标题插槽（左）+ Write/Preview + 工具栏（GitHub 官方布局） */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-2 py-1.5">
-        <SegmentedControl
-          variant="tab"
-          size="xs"
-          options={[
-            { value: "write", label: t("comments.write") },
-            { value: "preview", label: t("comments.preview") },
-          ]}
-          value={tab}
-          onValueChange={(v) => setTab(v)}
-        />
+        <div className="flex min-w-0 items-center gap-2">
+          {titleSlot}
+          <SegmentedControl
+            variant="tab"
+            size="xs"
+            options={[
+              { value: "write", label: t("comments.write") },
+              { value: "preview", label: t("comments.preview") },
+            ]}
+            value={tab}
+            onValueChange={(v) => setTab(v)}
+          />
+        </div>
         {/* 格式化工具栏（仅写模式显示） */}
         {tab === "write" && (
           <markdown-toolbar for={textareaId} className="flex items-center gap-0.5">

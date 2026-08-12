@@ -17,6 +17,7 @@ import {
   CircleDot,
   FileCode2,
   GitPullRequest,
+  GitPullRequestClosed,
   MessageSquare,
   BookOpen,
   Star,
@@ -29,6 +30,7 @@ import {
   StickyNote,
   ExternalLink,
   Inbox,
+  XCircle,
 } from "lucide-react";
 import { Card, CardContent } from "@/components/ui/card";
 import { InlineError } from "@/components/InlineError";
@@ -77,6 +79,7 @@ import {
   type UserOrgItem,
 } from "@/lib/api";
 import { PAGE_SHELL } from "@/lib/layout";
+import { STATE_BADGE_SOLID } from "@/lib/state-colors";
 import PageLayout from "@/components/PageLayout";
 import { cn } from "@/lib/utils";
 import { matchSearch } from "@/lib/search-syntax";
@@ -275,9 +278,20 @@ export function UserIssuesPage() {
                     </Badge>
                   </div>
                   <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                    {/* 状态图标（官方：open=绿圈 / closed=紫圈叉） */}
+                    {issue.state === "open" ? (
+                      <CircleDot className="size-3.5 text-[#1a7f37] dark:text-[#3fb950]" />
+                    ) : (
+                      <XCircle className="size-3.5 text-[#8250df] dark:text-[#a371f7]" />
+                    )}
                     <Badge
-                      variant={issue.state === "open" ? "default" : "secondary"}
-                      className="text-xs"
+                      variant="outline"
+                      className={cn(
+                        "border-transparent text-xs",
+                        issue.state === "open"
+                          ? STATE_BADGE_SOLID.open
+                          : STATE_BADGE_SOLID["issue-closed"],
+                      )}
                     >
                       {issue.state}
                     </Badge>
@@ -449,9 +463,18 @@ export function UserPullsPage() {
                       </Badge>
                     </div>
                     <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+                      {/* 状态图标（官方：open=绿 PR / closed=红闭合 PR） */}
+                      {pr.state === "open" ? (
+                        <GitPullRequest className="size-3.5 text-[#1a7f37] dark:text-[#3fb950]" />
+                      ) : (
+                        <GitPullRequestClosed className="size-3.5 text-[#cf222e] dark:text-[#f85149]" />
+                      )}
                       <Badge
-                        variant={pr.state === "open" ? "default" : "secondary"}
-                        className="text-xs"
+                        variant="outline"
+                        className={cn(
+                          "border-transparent text-xs",
+                          pr.state === "open" ? STATE_BADGE_SOLID.open : STATE_BADGE_SOLID.closed,
+                        )}
                       >
                         {pr.state}
                       </Badge>

@@ -9,7 +9,6 @@
 import { useState, type FormEvent } from "react";
 import { Link2, MessageSquare, Send } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent } from "@/components/ui/card";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { useDateFormat } from "@/hooks/useDateFormat";
@@ -108,33 +107,32 @@ export function CommentsSection({
           className="py-10"
         />
       ) : canWrite ? (
-        <Card>
-          <CardContent className="space-y-2 p-4">
-            <div className="flex items-center gap-1.5 text-sm font-medium">
-              <MessageSquare className="size-4" />
-              {t("comments.leaveComment")}
-            </div>
-            <form onSubmit={submit} className="space-y-2">
-              {/* MarkdownEditor（工具栏 + 补全 + Write/Preview；key 重建用于提交后清空） */}
-              <MarkdownEditor
-                key={resetKey}
-                owner={owner}
-                repo={repo}
-                defaultValue=""
-                placeholder={t("comments.placeholder")}
-                rows={5}
-                onChange={setBody}
-              />
-              {error && <InlineError message={error} size="sm" />}
-              <div className="flex justify-end">
-                <Button type="submit" size="sm" disabled={submitting || !body.trim()}>
-                  <Send className="size-3.5" />
-                  {submitting ? t("comments.submitting") : t("comments.submit")}
-                </Button>
-              </div>
-            </form>
-          </CardContent>
-        </Card>
+        <form onSubmit={submit} className="space-y-2">
+          {/* MarkdownEditor（工具栏 + 补全 + Write/Preview；key 重建用于提交后清空；
+              标题「发表评论」经 titleSlot 入工具栏行最左——官方编辑器标题与 Write/Preview 同排） */}
+          <MarkdownEditor
+            key={resetKey}
+            owner={owner}
+            repo={repo}
+            defaultValue=""
+            placeholder={t("comments.placeholder")}
+            rows={5}
+            onChange={setBody}
+            titleSlot={
+              <span className="flex shrink-0 items-center gap-1.5 text-sm font-medium">
+                <MessageSquare className="size-4" />
+                {t("comments.leaveComment")}
+              </span>
+            }
+          />
+          {error && <InlineError message={error} size="sm" />}
+          <div className="flex justify-end">
+            <Button type="submit" size="sm" disabled={submitting || !body.trim()}>
+              <Send className="size-3.5" />
+              {submitting ? t("comments.submitting") : t("comments.submit")}
+            </Button>
+          </div>
+        </form>
       ) : token ? (
         <p className="text-sm text-muted-foreground">{t("comments.writeRequired")}</p>
       ) : (
