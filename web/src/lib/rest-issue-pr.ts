@@ -112,8 +112,8 @@ export interface Issue {
   repository?: { full_name: string };
   /** 指派人（GraphQL 映射或 REST 原生；仅详情/部分列表提供） */
   assignees?: { login: string; avatar_url?: string }[];
-  /** 里程碑（仅详情/部分列表提供） */
-  milestone?: { title: string } | null;
+  /** 里程碑（仅详情/部分列表提供；number 供侧栏编辑清除/保持） */
+  milestone?: { title: string; number?: number } | null;
   /** 当前用户订阅状态（GraphQL viewerSubscription；SUBSCRIBED/UNSUBSCRIBED/IGNORED） */
   subscription?: string | null;
 }
@@ -142,8 +142,8 @@ export interface PullRequest {
   base?: { ref: string; label: string; sha?: string };
   /** 指派人（GraphQL 映射或 REST 原生；仅详情/部分列表提供） */
   assignees?: { login: string; avatar_url?: string }[];
-  /** 里程碑（仅详情/部分列表提供） */
-  milestone?: { title: string } | null;
+  /** 里程碑（仅详情/部分列表提供；number 供侧栏编辑清除/保持） */
+  milestone?: { title: string; number?: number } | null;
   /** 标签（GraphQL 映射；仅列表提供） */
   labels?: { name: string; color: string }[];
   /** 当前用户订阅状态（GraphQL viewerSubscription） */

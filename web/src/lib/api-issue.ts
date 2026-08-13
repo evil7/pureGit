@@ -124,7 +124,7 @@ interface GraphQLIssueNode {
   comments: { totalCount: number };
   labels?: { nodes: { name: string; color: string }[] };
   assignees?: { nodes: { login: string; avatarUrl?: string }[] } | null;
-  milestone?: { title: string } | null;
+  milestone?: { title: string; number?: number } | null;
 }
 
 /** GraphQL issue 节点 → REST Issue（id 用 databaseId 保证列表 key 唯一） */
@@ -143,7 +143,7 @@ function toIssue(g: GraphQLIssueNode): Issue {
     body: g.body,
     labels: g.labels?.nodes ?? [],
     assignees: g.assignees?.nodes.map((a) => ({ login: a.login, avatar_url: a.avatarUrl })) ?? [],
-    milestone: g.milestone ?? null,
+    milestone: g.milestone ? { title: g.milestone.title, number: g.milestone.number } : null,
     subscription: g.viewerSubscription ?? null,
   };
 }
@@ -181,7 +181,7 @@ interface GraphQLPullNode {
   baseRepository: { owner: { login: string } } | null;
   labels?: { nodes: { name: string; color: string }[] };
   assignees?: { nodes: { login: string; avatarUrl?: string }[] } | null;
-  milestone?: { title: string } | null;
+  milestone?: { title: string; number?: number } | null;
   /** PR 详情完整查询（PULL_DETAIL_FULL_QUERY）附加：评审摘要字段（Reviewers 栏 / 合并判定 / merge 操作 node id） */
   id?: string;
   reviewDecision?: string | null;
@@ -237,7 +237,7 @@ function toPull(g: GraphQLPullNode): PullRequest {
     },
     labels: g.labels?.nodes ?? [],
     assignees: g.assignees?.nodes.map((a) => ({ login: a.login, avatar_url: a.avatarUrl })) ?? [],
-    milestone: g.milestone ?? null,
+    milestone: g.milestone ? { title: g.milestone.title, number: g.milestone.number } : null,
   };
 }
 

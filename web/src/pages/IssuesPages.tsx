@@ -8,7 +8,6 @@ import {
   CircleDot,
   Link2,
   MessageSquare,
-  Milestone,
   Plus,
   SlidersHorizontal,
   User,
@@ -56,6 +55,7 @@ import { RepoSearchInput } from "@/components/RepoSearchInput";
 import { repoRawBase } from "@/lib/repo-raw";
 import { STATE_BADGE_SOLID } from "@/lib/state-colors";
 import { UserAvatar } from "@/components/UserAvatar";
+import { AssigneesEditor, LabelsEditor, MilestoneEditor } from "@/components/MetadataEditors";
 import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/format";
 import { getLabelStyle } from "@/lib/label-color";
@@ -426,7 +426,6 @@ export function IssueDetailPage() {
     number: string;
   }>();
   const { token, canWrite } = useAuth();
-  const isDark = useIsDark();
   const { t } = useI18n();
   const { fmt } = useDateFormat();
   const [issue, setIssue] = useState<Issue | null>(null);
@@ -562,62 +561,39 @@ export function IssueDetailPage() {
         node: (
           <aside className="space-y-5 text-sm">
             {/* Assignees */}
-            <section>
-              <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">
-                {t("issueDetail.assignees")}
-              </h3>
-              {issue.assignees && issue.assignees.length > 0 ? (
-                <ul className="space-y-1.5">
-                  {issue.assignees.map((a) => (
-                    <li key={a.login} className="flex items-center gap-2">
-                      <UserAvatar src={a.avatar_url} alt={a.login} />
-                      <Link to={`/${a.login}`} className="text-sm text-foreground hover:underline">
-                        {a.login}
-                      </Link>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p className="text-muted-foreground">{t("issueDetail.noAssignees")}</p>
-              )}
-            </section>
+            <AssigneesEditor
+              owner={owner!}
+              repo={repo!}
+              number={Number(number)}
+              current={issue.assignees ?? []}
+              onChange={(users) =>
+                setIssue((prev) => (prev ? { ...prev, assignees: users } : prev))
+              }
+              title={t("issueDetail.assignees")}
+              emptyText={t("issueDetail.noAssignees")}
+            />
 
             {/* Labels */}
-            <section>
-              <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">
-                {t("issueDetail.labels")}
-              </h3>
-              {issue.labels && issue.labels.length > 0 ? (
-                <div className="flex flex-wrap gap-1.5">
-                  {issue.labels.map((l) => (
-                    <Badge
-                      key={l.name}
-                      className="text-[11px] font-medium"
-                      style={getLabelStyle(l.color, isDark)}
-                    >
-                      {l.name}
-                    </Badge>
-                  ))}
-                </div>
-              ) : (
-                <p className="text-muted-foreground">{t("issueDetail.noLabels")}</p>
-              )}
-            </section>
+            <LabelsEditor
+              owner={owner!}
+              repo={repo!}
+              number={Number(number)}
+              current={issue.labels ?? []}
+              onChange={(labels) => setIssue((prev) => (prev ? { ...prev, labels } : prev))}
+              title={t("issueDetail.labels")}
+              emptyText={t("issueDetail.noLabels")}
+            />
 
             {/* Milestone */}
-            <section>
-              <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">
-                {t("issueDetail.milestone")}
-              </h3>
-              {issue.milestone ? (
-                <span className="flex items-center gap-1.5">
-                  <Milestone className="size-3.5 text-muted-foreground" />
-                  {issue.milestone.title}
-                </span>
-              ) : (
-                <p className="text-muted-foreground">{t("issueDetail.noMilestone")}</p>
-              )}
-            </section>
+            <MilestoneEditor
+              owner={owner!}
+              repo={repo!}
+              number={Number(number)}
+              current={issue.milestone ?? null}
+              onChange={(m) => setIssue((prev) => (prev ? { ...prev, milestone: m } : prev))}
+              title={t("issueDetail.milestone")}
+              emptyText={t("issueDetail.noMilestone")}
+            />
 
             {/* Notifications（订阅） */}
             <section>

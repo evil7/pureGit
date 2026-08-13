@@ -1067,6 +1067,7 @@ export const ISSUE_DETAIL_WITH_COMMENTS_QUERY = /* GraphQL */ `
         }
         milestone {
           title
+          number
         }
       }
     }
@@ -1139,6 +1140,7 @@ export const PULL_DETAIL_WITH_COMMENTS_QUERY = /* GraphQL */ `
         }
         milestone {
           title
+          number
         }
       }
     }
@@ -1217,6 +1219,7 @@ export const PULL_DETAIL_FULL_QUERY = /* GraphQL */ `
         }
         milestone {
           title
+          number
         }
         # 评审摘要（Reviewers 栏 / 合并判定 / merge-rebase 操作 node id）
         reviewDecision
