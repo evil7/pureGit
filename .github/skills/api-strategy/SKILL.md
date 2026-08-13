@@ -21,6 +21,19 @@
 4. **REST 熔断降级复用不废弃**：现有 `rest-*.ts` 代码继续使用（匿名直连 + 熔断降级）；降级链经 `withRestFallback(restFn, detail, gqlResp)` 包装。
 5. **REST 固定端点一律类型化方法**：`typedRequest` + `octokit.rest.*`；仅特殊语义端点（raw Accept / base64 / Link 头 / 无类型化方法）保留底层通道并注释理由。
 
+## 动手前：API 对照查询（apiidx 工具）
+
+> 新增 / 修改 API 接入前，先用 `scripts/apiidx.mjs` 查 REST 端点与 GraphQL schema，
+> **双端点「graph→rest 熔断对等」关系由人主观判断**（工具不强制提示对等兼容路径；结论沉淀于 `docs/api-compat.md`）。
+
+- **REST 侧**：`node scripts/apiidx.mjs rest <关键词>`（搜索）/ `rest-id <operationId>`（端点详情含参数）
+- **GraphQL 侧**（实时直连官方 `api.github.com/graphql`，需系统变量 `GITHUB_TOKEN`；无 token / 权限不足 / 网络受限自动降级本地 `@octokit/graphql-schema`）：
+  - `gql roots [query|mutation|all]` —— 枚举根字段
+  - `gql search <关键词>` —— 搜索根字段（名字/描述）
+  - `gql type <TypeName>` —— 递进：类型字段枚举（含嵌套 / Connection 字段；**这是判断「REST-only 是否有 GraphQL 等价」的关键**，旧索引只录根字段的盲区即在此）
+  - `gql field <Type.field>` —— 递进：字段详情（完整参数 + 返回类型）
+- **页面侧**：`page <关键词>`（页面搜索）/ `pageapi <关键词>`（页面 → 关联 API 闭环）
+
 ## 熔断日志规范（api-log.ts 统一工具）
 
 **格式（简洁无复杂缩进；`↪` 左右空格为图标间隔）**：

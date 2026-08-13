@@ -1,37 +1,46 @@
 /**
- * API / 页面对照索引查询 CLI（v0.0.1 工具基建）
+ * API / 页面对照查询 CLI（v0.0.1 工具基建 · v2 重写）
  *
- * 查询 `scripts/data/api-index.json`（API 对照：REST↔GraphQL 聚拢）与
- * `scripts/data/pages-index.json`（官方页面分类）——**新增 API / 新页面动手前先查索引**：
+ * 定位：综合性的「远端 + 本地」常驻 debug 辅助工具——REST 端点精确搜索 + GraphQL schema
+ * 递进枚举，**双端点「graph→rest 熔断对等」关系交由人主观判断**（不再用启发式自动配对强制提示）。
  *
- * 用法（子命令）：
- *   node scripts/apiidx.mjs search <关键词...>   按关键词/描述/端口搜索 API（多词 AND）
- *   node scripts/apiidx.mjs api <id>             查看单个 API 详情（REST operationId 或 gql: 前缀）
- *   node scripts/apiidx.mjs page <关键词...>     搜索页面分类（路由/模块/关键词）
- *   node scripts/apiidx.mjs pageapi <关键词>     页面 → 关联 API 闭环查询（从页面找接口）
- *   node scripts/apiidx.mjs dual [关键词]        列出全部/过滤双端点（smart 冗余熔断候选）
- *   node scripts/apiidx.mjs stats                索引统计
- *   node scripts/apiidx.mjs update               重跑两个生成器刷新索引（api-index + page-index）
+ * 数据源：
+ * - REST：`scripts/data/rest-index.json`（rest-index.mjs 生成，零下载转录 @octokit/openapi）
+ * - GraphQL：实时直连官方 `https://api.github.com/graphql`（GITHUB_TOKEN 鉴权）做 introspection，
+ *   失败/无 token 降级本地 `@octokit/graphql-schema`（见 gql-schema.mjs）
+ * - 页面：`scripts/data/pages-index.json`（page-index.mjs 生成）
  *
- * 输出：终端表格（无第三方依赖，Node 内置）。
+ * 子命令：
+ *   rest <关键词...>        REST 端点搜索（operationId/tags/path/summary/description）
+ *   rest-id <operationId>   REST 端点详情（含参数）
+ *   gql roots [scope]       枚举 GraphQL 根字段（query|mutation|all，默认 all）
+ *   gql search <关键词>     搜索 GraphQL 根字段（名字/描述）
+ *   gql type <TypeName>     递进：类型字段枚举（含参数/返回类型；▶ 标记 Connection）
+ *   gql field <Type.field>  递进：字段详情（完整参数 + 返回类型）
+ *   page <关键词>           页面分类搜索
+ *   pageapi <关键词>        页面 → 关联 API 闭环
+ *   stats                   索引统计（REST 操作 / GraphQL 类型 / 页面）
+ *   update                  重跑 rest-index + page-index 刷新索引
+ *
+ * 用法：`node scripts/apiidx.mjs <子命令> <参数...>`
  */
 import { readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { execSync } from "node:child_process";
+import { loadSchema, typeStr } from "./gql-schema.mjs";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DATA = join(root, "scripts", "data");
-
-const API_INDEX = join(DATA, "api-index.json");
+const REST_INDEX = join(DATA, "rest-index.json");
 const PAGES_INDEX = join(DATA, "pages-index.json");
 
 /* ── 数据加载 ── */
 
-function load(file) {
+function load(file, label) {
   if (!existsSync(file)) {
     console.error(
-      `[apiidx] 缺少数据文件 ${file}，请先运行 node scripts/api-index.mjs / page-index.mjs`,
+      `[apiidx] 缺少数据文件 ${file}（${label}），请先运行 node scripts/${label} 或 apiidx update`,
     );
     process.exit(1);
   }
@@ -54,7 +63,7 @@ function table(rows) {
   }
 }
 
-/** 中文 2-gram 展开：连续中文片段按相邻两字滑窗切分（"仓库首页" → 仓库,库首,首页） */
+/** 中文 2-gram 展开：连续中文片段按相邻两字滑窗切分 */
 function expandChinese(text) {
   const out = [];
   const m = text.match(/[\u4e00-\u9fff]+/g) || [];
@@ -65,7 +74,7 @@ function expandChinese(text) {
   return out;
 }
 
-/** 查询分词：英文单词 + 中文 2-gram；返回 { token, chinese } 列表 */
+/** 查询分词：英文单词 + 中文 2-gram */
 function tokenizeQuery(q) {
   const tokens = [];
   for (const part of q.toLowerCase().split(/\s+/).filter(Boolean)) {
@@ -91,36 +100,15 @@ function scoreHit(hay, tokens) {
   return hit;
 }
 
-/** API 条目一行展示 */
-function apiRow(it) {
-  const rest = it.rest ? `${it.rest.method} ${it.rest.path}` : "—";
-  const gql = it.graphql ? it.graphql.field : "—";
-  const dual = it.converge ? "🔀" : "  ";
-  return [
-    it.id,
-    it.tags.join(","),
-    rest.slice(0, 42),
-    gql.slice(0, 34),
-    dual,
-    it.desc.slice(0, 44),
-  ];
-}
+/* ── REST 子命令 ── */
 
-/* ── 子命令 ── */
-
-function cmdSearch(api, args) {
+function cmdRest(args) {
+  const rest = load(REST_INDEX, "rest-index.mjs");
   const q = args.join(" ");
   const tokens = tokenizeQuery(q);
-  const scored = api.items
+  const scored = rest.items
     .map((it) => {
-      const hay = [
-        it.id,
-        (it.tags || []).join(" "),
-        (it.keywords || []).join(" "),
-        it.desc,
-        it.rest ? it.rest.method + " " + it.rest.path : "",
-        it.graphql ? it.graphql.field + " " + it.graphql.syntax : "",
-      ]
+      const hay = [it.id, (it.tags || []).join(" "), it.path, it.summary, it.description]
         .join(" ")
         .toLowerCase();
       return { it, score: scoreHit(hay, tokens) };
@@ -128,48 +116,222 @@ function cmdSearch(api, args) {
     .filter((x) => x.score > 0)
     .sort((a, b) => b.score - a.score);
   if (!scored.length) {
-    console.log(`[apiidx] 未找到匹配「${q}」的 API`);
+    console.log(`[apiidx] 未找到匹配「${q}」的 REST 端点`);
     return;
   }
-  console.log(`[apiidx] search「${q}」→ ${scored.length} 条（🔀=双端点 smart 候选）`);
+  console.log(`[apiidx] rest「${q}」→ ${scored.length} 条`);
   table([
-    ["id", "tags", "rest", "graphql", "", "desc"],
-    ...scored.slice(0, 30).map((x) => apiRow(x.it)),
+    ["id", "method path", "tags", "summary"],
+    ...scored
+      .slice(0, 40)
+      .map(({ it }) => [
+        it.id,
+        `${it.method} ${it.path}`.slice(0, 46),
+        (it.tags || []).join(",").slice(0, 16),
+        it.summary.slice(0, 48),
+      ]),
   ]);
-  if (scored.length > 30) console.log(`… 共 ${scored.length} 条，用 api <id> 看详情`);
+  if (scored.length > 40) console.log(`… 共 ${scored.length} 条，用 rest-id <id> 看详情`);
 }
 
-function cmdApi(api, args) {
+function cmdRestId(args) {
+  const rest = load(REST_INDEX, "rest-index.mjs");
   const id = args[0];
-  if (!id) return cmdUsage();
-  const it = api.items.find((x) => x.id === id);
+  const it = rest.items.find((x) => x.id === id);
   if (!it) {
-    console.log(`[apiidx] 未找到 API id: ${id}`);
+    console.log(`[apiidx] 未找到 REST operationId: ${id}（可用 rest <关键词> 搜索）`);
     return;
   }
-  console.log(`id        : ${it.id}`);
-  console.log(`tags      : ${(it.tags || []).join(", ") || "—"}`);
-  console.log(`keywords  : ${(it.keywords || []).join(", ") || "—"}`);
-  console.log(`desc      : ${it.desc || "—"}`);
-  if (it.rest) console.log(`rest      : ${it.rest.method} ${it.rest.path}`);
-  else console.log(`rest      : —（无 REST 端点）`);
-  if (it.graphql) {
-    console.log(`graphql   : ${it.graphql.field} (${it.graphql.kind})`);
-    console.log(`  syntax  : ${it.graphql.syntax || "—"}`);
-    if (it.graphql.rootArgs?.length) {
-      console.log(
-        `  args    : ${it.graphql.rootArgs.map((a) => `${a.name}: ${a.type}`).join(", ")}`,
+  console.log(`id         : ${it.id}`);
+  console.log(`endpoint   : ${it.method} ${it.path}`);
+  console.log(`tags       : ${(it.tags || []).join(", ") || "—"}`);
+  console.log(`summary    : ${it.summary || "—"}`);
+  console.log(`desc       : ${it.description || "—"}`);
+  if (it.parameters?.length) {
+    console.log(`parameters :`);
+    for (const p of it.parameters) {
+      const req = p.required ? "必填" : "可选";
+      console.log(`  ${p.name} (${p.in}, ${req}, ${p.type}) ${p.desc ? "— " + p.desc : ""}`);
+    }
+  }
+}
+
+/* ── GraphQL 子命令 ── */
+
+/** 根字段（query/mutation）分组枚举 */
+async function cmdGql(args) {
+  const sub = args[0];
+  if (!sub) return gqlUsage();
+  const { __schema, source } = await loadSchema();
+  console.log(
+    `[apiidx] GraphQL schema 来源：${source === "remote" ? "官方实时" : source === "cache" ? "缓存(10min)" : "本地 @octokit/graphql-schema"}`,
+  );
+
+  const types = new Map(__schema.types.map((t) => [t.name, t]));
+  const queryName = __schema.queryType?.name;
+  const mutationName = __schema.mutationType?.name;
+  const rootOf = (name) =>
+    name === queryName ? "query" : name === mutationName ? "mutation" : null;
+
+  if (sub === "roots") {
+    const scope = args[1] || "all";
+    const groups = [];
+    if (scope === "all" || scope === "query") {
+      groups.push([`Query 根字段（${queryName}）`, types.get(queryName)]);
+    }
+    if (scope === "all" || scope === "mutation") {
+      groups.push([`Mutation 根字段（${mutationName}）`, types.get(mutationName)]);
+    }
+    for (const [label, t] of groups) {
+      if (!t) continue;
+      console.log(`\n${label}：`);
+      table(
+        t.fields.map((f) => [
+          f.name + (f.args?.length ? `(${f.args.map((a) => a.name).join(", ")})` : ""),
+          typeStr(f.type),
+          (f.description || "").split("\n")[0].slice(0, 56),
+        ]),
       );
     }
-  } else {
-    console.log(`graphql   : —（无 GraphQL 端点）`);
+    return;
   }
-  console.log(
-    `converge  : ${it.converge || "无"}${it.note ? "（" + it.note + "）" : ""}${it.converge === "curated" ? "【人工校正，双端点=smart 候选】" : it.converge === "auto" ? "【启发式配对，建议人工复核】" : it.rest && it.graphql ? "" : it.graphql ? "【GraphQL-only】" : "【REST-only】"}`,
-  );
+
+  if (sub === "search") {
+    const q = args.slice(1).join(" ");
+    const tokens = tokenizeQuery(q);
+    const allFields = [];
+    for (const name of [queryName, mutationName]) {
+      const t = types.get(name);
+      for (const f of t?.fields || []) allFields.push({ f, kind: rootOf(name) });
+    }
+    const scored = allFields
+      .map(({ f, kind }) => {
+        const hay = `${f.name} ${f.description || ""}`.toLowerCase();
+        return { f, kind, score: scoreHit(hay, tokens) };
+      })
+      .filter((x) => x.score > 0)
+      .sort((a, b) => b.score - a.score);
+    if (!scored.length) {
+      console.log(`[apiidx] 未找到匹配「${q}」的 GraphQL 根字段`);
+      return;
+    }
+    console.log(`[apiidx] gql 根字段「${q}」→ ${scored.length} 条`);
+    table([
+      ["kind", "field", "type", "desc"],
+      ...scored.map(({ f, kind }) => [
+        kind,
+        f.name + (f.args?.length ? `(${f.args.map((a) => a.name).join(", ")})` : ""),
+        typeStr(f.type),
+        (f.description || "").split("\n")[0].slice(0, 48),
+      ]),
+    ]);
+    return;
+  }
+
+  if (sub === "type") {
+    const name = args[1];
+    const t = types.get(name) || types.get(name?.toLowerCase());
+    if (!t) {
+      // 模糊匹配类型名（大小写不敏感包含）
+      const hits = __schema.types.filter((x) => x.name.toLowerCase().includes(name?.toLowerCase()));
+      if (hits.length) {
+        console.log(`[apiidx] 未精确匹配类型「${name}」，相近类型：`);
+        console.log(
+          hits
+            .slice(0, 20)
+            .map((x) => `  ${x.name} (${x.kind})`)
+            .join("\n"),
+        );
+      } else {
+        console.log(`[apiidx] 未找到 GraphQL 类型: ${name}`);
+      }
+      return;
+    }
+    const isConn = t.name.endsWith("Connection");
+    console.log(
+      `\n类型 ${t.name}（${t.kind}${isConn ? " · ▶Connection" : ""}）${
+        t.description ? " — " + t.description.split("\n")[0] : ""
+      }`,
+    );
+    if (t.kind === "ENUM") {
+      console.log(`枚举值：${(t.enumValues || []).map((e) => e.name).join(", ")}`);
+      return;
+    }
+    if (t.kind === "INPUT_OBJECT") {
+      console.log(`输入字段：`);
+      for (const f of t.inputFields || []) {
+        console.log(
+          `  ${f.name}: ${typeStr(f.type)}${f.description ? " — " + f.description.split("\n")[0] : ""}`,
+        );
+      }
+      return;
+    }
+    if (t.kind === "SCALAR") return;
+    if (!t.fields?.length) {
+      console.log(`（无字段；可能为 union/interface，用 gql type 查看 possibleTypes）`);
+      if (t.possibleTypes?.length) {
+        console.log(`possibleTypes：${t.possibleTypes.map((p) => p.name).join(", ")}`);
+      }
+      return;
+    }
+    console.log(`字段（${t.fields.length} 个）：`);
+    table(
+      t.fields.map((f) => [
+        f.name + (f.args?.length ? `(${f.args.map((a) => a.name).join(", ")})` : ""),
+        typeStr(f.type),
+        (f.description || "").split("\n")[0].slice(0, 56),
+      ]),
+    );
+    return;
+  }
+
+  if (sub === "field") {
+    const ref = args[1];
+    const dot = ref?.indexOf(".");
+    if (!ref || dot <= 0) {
+      console.log(`[apiidx] 用法：apiidx gql field <Type.field>（如 Repository.refs）`);
+      return;
+    }
+    const typeName = ref.slice(0, dot);
+    const fieldName = ref.slice(dot + 1);
+    const t = types.get(typeName) || types.get(typeName.toLowerCase());
+    const f = t?.fields?.find((x) => x.name === fieldName);
+    if (!f) {
+      console.log(`[apiidx] 未找到字段 ${ref}（先 gql type ${typeName} 枚举确认字段名）`);
+      return;
+    }
+    console.log(`字段      : ${typeName}.${fieldName}`);
+    console.log(`返回类型  : ${typeStr(f.type)}`);
+    if (f.description) console.log(`描述      : ${f.description.split("\n")[0]}`);
+    if (f.isDeprecated) console.log(`废弃      : ${f.deprecationReason || "是"}`);
+    if (f.args?.length) {
+      console.log(`参数      :`);
+      for (const a of f.args) {
+        console.log(
+          `  ${a.name}: ${typeStr(a.type)} ${a.description ? "— " + a.description.split("\n")[0] : ""}`,
+        );
+      }
+    } else {
+      console.log(`参数      : 无`);
+    }
+    return;
+  }
+
+  gqlUsage();
 }
 
-function cmdPage(pages, args) {
+function gqlUsage() {
+  console.log(`用法:
+  node scripts/apiidx.mjs gql roots [query|mutation|all]  枚举根字段
+  node scripts/apiidx.mjs gql search <关键词>             搜索根字段
+  node scripts/apiidx.mjs gql type <TypeName>             递进：类型字段枚举
+  node scripts/apiidx.mjs gql field <Type.field>          递进：字段详情`);
+}
+
+/* ── 页面子命令 ── */
+
+function cmdPage(args) {
+  const pages = load(PAGES_INDEX, "page-index.mjs");
   const q = args.join(" ");
   const tokens = tokenizeQuery(q);
   const scored = pages.items
@@ -181,7 +343,6 @@ function cmdPage(pages, args) {
         p.module,
         p.framework,
         (p.apiIds || []).join(" "),
-        (p.components || []).join(" "),
       ]
         .join(" ")
         .toLowerCase();
@@ -202,13 +363,14 @@ function cmdPage(pages, args) {
         p.route,
         p.module.slice(0, 40),
         p.status,
-        (p.apiIds || []).join(",").slice(0, 60),
+        (p.apiIds || []).join(",").slice(0, 56),
       ]),
   ]);
-  if (scored.length > 30) console.log(`… 共 ${scored.length} 条`);
 }
 
-function cmdPageApi(api, pages, args) {
+function cmdPageApi(args) {
+  const rest = load(REST_INDEX, "rest-index.mjs");
+  const pages = load(PAGES_INDEX, "page-index.mjs");
   const q = args.join(" ").toLowerCase();
   const page = pages.items.find(
     (p) =>
@@ -223,102 +385,82 @@ function cmdPageApi(api, pages, args) {
   console.log(`状态: ${page.status}`);
   console.log(`关联 API（${(page.apiIds || []).length} 个）:`);
   for (const id of page.apiIds || []) {
-    const it = api.items.find((x) => x.id === id);
-    if (!it) {
-      console.log(`  ${id}  （索引中不存在！）`);
+    if (id === "*") {
+      console.log(`  *  （全部端点，通配）`);
       continue;
     }
-    console.log(
-      `  ${it.id}${it.converge === "curated" ? " 🔀" : ""}  ${it.rest ? it.rest.method + " " + it.rest.path : ""}${it.graphql ? "  |  " + it.graphql.field : ""}`,
-    );
+    const it = rest.items.find((x) => x.id === id);
+    if (it) {
+      console.log(`  ${it.id}  ${it.method} ${it.path}`);
+    } else {
+      console.log(
+        `  ${id}  （gql: 前缀为 GraphQL 根字段，用 gql field 查；其余可能已改名，用 rest <关键词> 复核）`,
+      );
+    }
   }
 }
 
-function cmdDual(api, args) {
-  const q = args.join(" ").toLowerCase();
-  let hits = api.items.filter((it) => it.rest && it.graphql && it.converge);
-  if (q) {
-    const tokens = q.split(/\s+/).filter(Boolean);
-    hits = hits.filter((it) => {
-      const hay = (it.id + " " + it.desc + " " + (it.tags || []).join(" ")).toLowerCase();
-      return tokens.every((t) => hay.includes(t));
-    });
-  }
-  console.log(
-    `[apiidx] 双端点（smart 冗余熔断候选）${q ? "匹配「" + q + "」" : ""}：${hits.length} 条`,
-  );
-  table([
-    ["id", "rest", "graphql", "converge"],
-    ...hits
-      .slice(0, 40)
-      .map((it) => [
-        it.id,
-        `${it.rest.method} ${it.rest.path}`.slice(0, 40),
-        it.graphql.field.slice(0, 30),
-        it.converge,
-      ]),
-  ]);
-  if (hits.length > 40) console.log(`… 共 ${hits.length} 条`);
-}
+/* ── stats / update ── */
 
-function cmdStats(api, pages) {
-  const c = api.meta.counts;
-  const p = pages.meta.counts;
-  console.log(`API 对照索引（${api.meta.generatedAt}）`);
+async function cmdStats() {
+  const rest = load(REST_INDEX, "rest-index.mjs");
+  const pages = load(PAGES_INDEX, "page-index.mjs");
+  const { __schema, source } = await loadSchema();
+  const types = new Map(__schema.types.map((t) => [t.name, t]));
+  const queryName = __schema.queryType?.name;
+  const mutationName = __schema.mutationType?.name;
+  console.log(`API 索引（${rest.meta.generatedAt} · ${rest.meta.version}）`);
+  console.log(`  REST 操作：${rest.meta.counts.operations}`);
+  console.log(`GraphQL schema（来源：${source === "local" ? "本地" : "官方"}）`);
   console.log(
-    `  REST ${c.rest} 操作（${api.meta.restVersion}）× GraphQL ${c.graphql} 字段（${api.meta.graphqlVersion}）`,
-  );
-  console.log(`  聚拢 ${c.items} 条：双端点 ${c.dual}（人工校正 ${c.curated} + 启发式 ${c.auto}）`);
-  console.log(
-    `  单端点：REST-only ${c.items - c.dual - (c.graphql - c.dual)} / GraphQL-only ${c.graphql - c.dual}`,
+    `  类型 ${__schema.types.length} 个；Query 根字段 ${types.get(queryName)?.fields.length ?? 0}；Mutation 根字段 ${types.get(mutationName)?.fields.length ?? 0}`,
   );
   console.log(`页面分类索引（${pages.meta.generatedAt}）`);
-  console.log(
-    `  共 ${p.pages} 页：done ${p.done} / partial ${p.partial} / todo ${p.todo}（校正 ${p.covered} / 自动 ${p.autoOnly}）`,
-  );
+  const c = pages.meta.counts;
+  console.log(`  共 ${c.pages} 页：done ${c.done} / partial ${c.partial} / todo ${c.todo}`);
 }
 
 function cmdUpdate() {
-  console.log("[apiidx] 重新生成索引（api-index + page-index）…");
-  execSync("node scripts/api-index.mjs", { cwd: root, stdio: "inherit" });
+  console.log("[apiidx] 重新生成索引（rest-index + page-index）…");
+  execSync("node scripts/rest-index.mjs", { cwd: root, stdio: "inherit" });
   execSync("node scripts/page-index.mjs", { cwd: root, stdio: "inherit" });
 }
 
 function cmdUsage() {
   console.log(`用法:
-  node scripts/apiidx.mjs search <关键词...>    按关键词/描述/端口搜索 API
-  node scripts/apiidx.mjs api <id>              查看单个 API 详情（operationId 或 gql: 前缀）
-  node scripts/apiidx.mjs page <关键词...>       搜索页面分类（路由/模块/关键词）
-  node scripts/apiidx.mjs pageapi <关键词>       页面 → 关联 API 闭环查询
-  node scripts/apiidx.mjs dual [关键词]          列出双端点（smart 冗余熔断候选）
-  node scripts/apiidx.mjs stats                 索引统计
-  node scripts/apiidx.mjs update                重跑两个生成器刷新索引`);
+  node scripts/apiidx.mjs rest <关键词...>        搜索 REST 端点
+  node scripts/apiidx.mjs rest-id <operationId>   REST 端点详情（含参数）
+  node scripts/apiidx.mjs gql roots [scope]       枚举 GraphQL 根字段（query|mutation|all）
+  node scripts/apiidx.mjs gql search <关键词>     搜索 GraphQL 根字段
+  node scripts/apiidx.mjs gql type <TypeName>     递进：类型字段枚举
+  node scripts/apiidx.mjs gql field <Type.field>  递进：字段详情
+  node scripts/apiidx.mjs page <关键词>           搜索页面分类
+  node scripts/apiidx.mjs pageapi <关键词>        页面 → 关联 API 闭环
+  node scripts/apiidx.mjs stats                   索引统计
+  node scripts/apiidx.mjs update                  重跑生成器刷新索引`);
 }
 
 /* ── 入口 ── */
 
 const [cmd, ...args] = process.argv.slice(2);
-const api = load(API_INDEX);
-const pages = load(PAGES_INDEX);
-
 switch (cmd) {
-  case "search":
-    cmdSearch(api, args);
+  case "rest":
+    cmdRest(args);
     break;
-  case "api":
-    cmdApi(api, args);
+  case "rest-id":
+    cmdRestId(args);
+    break;
+  case "gql":
+    await cmdGql(args);
     break;
   case "page":
-    cmdPage(pages, args);
+    cmdPage(args);
     break;
   case "pageapi":
-    cmdPageApi(api, pages, args);
-    break;
-  case "dual":
-    cmdDual(api, args);
+    cmdPageApi(args);
     break;
   case "stats":
-    cmdStats(api, pages);
+    await cmdStats();
     break;
   case "update":
     cmdUpdate();

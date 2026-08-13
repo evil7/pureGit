@@ -1,5 +1,5 @@
 {
-  "_说明": "页面分类索引人工校正表（git 跟踪）。route 为 App.tsx 中的路由（支持 * 通配段匹配）；补充语义字段：keywords 关键词、module 页面/模块/组件、framework 框架及关联描述、apiIds 关联 API 对照索引的 id（REST operationId 或 gql: 前缀——仅 GraphQL-only 字段用 gql:，已配对的引用 REST id 即可，条目内含双端点）、status 状态（done/partial/todo）。新增页面时在此登记，然后重跑 scripts/page-index.mjs。",
+  "_说明": "页面分类索引人工校正表（git 跟踪）。route 为 App.tsx 中的路由（支持 * 通配段匹配）；补充语义字段：keywords 关键词、module 页面/模块/组件、framework 框架及关联描述、apiIds 关联 API id（REST operationId 或 gql: 前缀的 GraphQL 根字段）、status 状态（done/partial/todo）。新增页面时在此登记，然后重跑 scripts/page-index.mjs。",
   "pages": [
     {
       "route": "/",

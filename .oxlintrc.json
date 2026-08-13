@@ -27,7 +27,11 @@
     "no-return-assign": "error",
     "no-self-compare": "error",
     "no-sequences": "error",
-    "no-var": "error"
+    "no-var": "error",
+    "no-underscore-dangle": [
+      "error",
+      { "allow": ["__schema", "__typename", "__type", "__inputvalue", "__field", "__enumvalue"] }
+    ]
   },
   "overrides": [
     {

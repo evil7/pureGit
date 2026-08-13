@@ -1,11 +1,11 @@
 {
   "meta": {
-    "generatedAt": "2026-08-12",
+    "generatedAt": "2026-08-13",
     "counts": {
-      "pages": 63,
+      "pages": 65,
       "covered": 46,
-      "autoOnly": 17,
-      "todo": 17,
+      "autoOnly": 19,
+      "todo": 19,
       "done": 41,
       "partial": 5
     }
@@ -260,6 +260,28 @@
       "components": ["ProjectsPage"],
       "status": "partial",
       "covered": true
+    },
+    {
+      "id": "-pull",
+      "route": "/:owner/:repo/pull",
+      "keywords": [],
+      "module": "Navigate（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["Navigate"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-pull-",
+      "route": "/:owner/:repo/pull/:number",
+      "keywords": [],
+      "module": "PullDetailPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["PullDetailPage"],
+      "status": "todo",
+      "covered": false
     },
     {
       "id": "-pulls",

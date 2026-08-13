@@ -7,24 +7,28 @@
  * 2. **人工校正合并**：`scripts/data/page-curations.json`（git 跟踪）补充语义字段——
  *    keywords 关键词 / module 页面·模块·组件 / framework 框架及关联描述 / apiIds 关联接口 / status 状态
  *
- * 交叉校验：apiIds 逐一对照 `scripts/data/api-index.json`，不存在的 id 输出警告（防手误/防接口已改名）。
+ * 交叉校验：apiIds 逐一对照 `scripts/data/rest-index.json`（REST operationId）与本地
+ * `@octokit/graphql-schema` 根字段（gql: 前缀），不存在的 id 输出警告（防手误/防接口已改名）。
  *
  * 产出 `scripts/data/pages-index.json`：`{ meta, items[] }`，每条含
  * `id / route / keywords / module / framework / apiIds / components / status / auto(是否自动提取) / covered(是否有校正)`。
- * **用途**：新增页面/新功能前用 `scripts/apiidx.mjs page <关键词>` 查页面 → 关联接口 → 双端点冗余候选。
+ * **用途**：新增页面/新功能前用 `scripts/apiidx.mjs page <关键词>` 查页面 → 关联接口 → 再递进查双端点。
  *
  * 用法：`node scripts/page-index.mjs`（App.tsx 路由变更或校正表更新后重跑）
  */
 import { writeFileSync, readFileSync, existsSync } from "node:fs";
 import { join, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createRequire } from "node:module";
+
+const require = createRequire(import.meta.url);
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const DATA_DIR = join(root, "scripts", "data");
 const APP_TSX = join(root, "web", "src", "App.tsx");
 const CURATIONS_FILE = join(DATA_DIR, "page-curations.json");
 const OUT_FILE = join(DATA_DIR, "pages-index.json");
-const API_INDEX_FILE = join(DATA_DIR, "api-index.json");
+const REST_INDEX_FILE = join(DATA_DIR, "rest-index.json");
 
 /* ── 1) App.tsx 路由树解析 ── */
 
@@ -171,12 +175,26 @@ function loadJson(file, fallback) {
   }
 }
 
+/** 本地 GraphQL schema 根字段名集合（零下载，供 apiIds 的 gql: 前缀校验；仅对照根字段，不深入类型树） */
+function localGqlRootNames() {
+  const { schema } = require("../node_modules/@octokit/graphql-schema/index.js");
+  const __schema = schema.json.__schema;
+  const names = new Set();
+  for (const name of [__schema.queryType?.name, __schema.mutationType?.name]) {
+    const t = __schema.types.find((x) => x.name === name);
+    for (const f of t?.fields || []) names.add(f.name);
+  }
+  return names;
+}
+
 function buildPages() {
   const src = readFileSync(APP_TSX, "utf8");
   const routes = parseRoutes(src);
   const curations = loadJson(CURATIONS_FILE, { pages: [] }).pages || [];
-  const apiIndex = loadJson(API_INDEX_FILE, { items: [] }).items || [];
-  const apiIds = new Set(apiIndex.map((i) => i.id));
+  const restIndex = loadJson(REST_INDEX_FILE, { items: [] }).items || [];
+  const restIds = new Set(restIndex.map((i) => i.id));
+  const gqlRoots = localGqlRootNames();
+  const isValidApiId = (a) => (a.startsWith("gql:") ? gqlRoots.has(a.slice(4)) : restIds.has(a));
 
   // 校正表 → 按 route 索引（route 支持 * 前缀通配）
   const curByRoute = new Map();
@@ -206,9 +224,11 @@ function buildPages() {
     seen.add(dedupe);
 
     // 交叉校验 apiIds（* 通配引用跳过）
-    const bad = (cur?.apiIds || []).filter((a) => !a.includes("*") && !apiIds.has(a));
+    const bad = (cur?.apiIds || []).filter((a) => !a.includes("*") && !isValidApiId(a));
     if (bad.length) {
-      console.warn(`[page-index] ⚠ ${cur.route} 引用了 api-index 中不存在的 id: ${bad.join(", ")}`);
+      console.warn(
+        `[page-index] ⚠ ${cur.route} 引用了 rest-index/gql 根字段中不存在的 id: ${bad.join(", ")}`,
+      );
     }
 
     items.push({

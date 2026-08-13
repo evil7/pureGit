@@ -34,16 +34,17 @@
 
 ### 1.3 开发工具基建（`scripts/` 内部工具 + `scripts/data/` 数据）
 
-> **v0.0.1 新增**：项目自研内部开发工具，用于 API 对照与页面分类的随时查询。**新增 API / 新页面动手前先查索引**。
+> **v0.0.1 新增**：项目自研内部开发工具，用于 REST 端点精确搜索 + GraphQL schema 递进枚举 + 页面分类的随时查询。**新增 API / 新页面动手前先查索引**；双端点「graph→rest 熔断对等」关系由人主观判断，结论沉淀于 `api-compat.md`。
 
 | 工具 | 真实用意 | 使用方式 |
 |------|---------|---------|
-| `scripts/api-index.mjs` | **API 对照索引生成器**：octokit 零下载转录 REST 1108 操作 + GraphQL 272 字段，聚拢为双端点对照（`id/tags/keywords/desc/rest/graphql/converge`）；人工校正表 `scripts/data/api-curations.json` 优先，启发式兜底（Jaccard≥0.5） | `node scripts/api-index.mjs`（SDK 升级后重跑刷新） |
+| `scripts/rest-index.mjs` | **REST 端点索引生成器**：octokit 零下载转录 REST 1108 操作（`id/method/path/tags/summary/parameters`），**不再聚拢 GraphQL** | `node scripts/rest-index.mjs`（SDK 升级后重跑刷新） |
 | `scripts/page-index.mjs` | **官方页面分类索引生成器**：解析 `web/src/App.tsx` 路由树 + 人工校正表 `scripts/data/page-curations.json`（keywords/module/framework/apiIds/status），交叉校验 apiIds | `node scripts/page-index.mjs`（路由或校正表变更后重跑） |
-| `scripts/apiidx.mjs` | **查询 CLI**：search（关键词/端口搜索 API）/ api（单 API 详情）/ page（页面搜索）/ pageapi（页面→关联 API 闭环）/ dual（双端点 smart 候选）/ stats / update | `node scripts/apiidx.mjs <子命令> <关键词>` |
-| `scripts/data/api-index.json` | API 对照索引产物（生成） | 由 api-index.mjs 生成，git 跟踪 |
+| `scripts/apiidx.mjs` | **查询 CLI**：rest（REST 端点搜索）/ rest-id（端点详情含参数）/ gql（roots 枚举根字段 / search 搜索根字段 / type 类型字段递进 / field 字段详情）/ page / pageapi（页面→API 闭环）/ stats / update | `node scripts/apiidx.mjs <子命令> <参数>` |
+| `scripts/gql-schema.mjs` | **GraphQL schema 加载器**：实时直连官方 `api.github.com/graphql`（`GITHUB_TOKEN` 鉴权，introspection）+ 10min 缓存 + 失败降级本地 `@octokit/graphql-schema` | 由 `apiidx gql` 子命令自动调用 |
+| `scripts/data/rest-index.json` | REST 端点索引产物（生成） | 由 rest-index.mjs 生成，git 跟踪 |
 | `scripts/data/pages-index.json` | 页面分类索引产物（生成） | 由 page-index.mjs 生成，git 跟踪 |
-| `scripts/data/api-curations.json` / `page-curations.json` | 人工校正表（语义配对 / 页面语义字段） | git 跟踪，手工维护后重跑生成器 |
+| `scripts/data/page-curations.json` | 页面语义字段人工校正表 | git 跟踪，手工维护后重跑生成器 |
 
 ## 二、`.github/` 协作设施（Agent / vibe coding）
 
@@ -83,7 +84,7 @@
 
 - **版本阶段**：**v0.0.1 新概念状态**——由「简版 GitHub」升级为「**全量复刻 GitHub**」；0.0.x 内部试错阶段仍有效，可随时开展破坏性、不兼容的重构与尝试（package.json 版本 0.0.1）
 - **开发进度**：L0~L4 核心闭环完成（浏览/协作/账户/CLI）；进入 **v0.0.1 全量复刻**阶段——① 概念重构（文档重写）② 工具基建（API 对照索引 / 页面分类索引 / 查询 CLI）③ 官方页面分批对齐：**B1 评审工作流已完成**（三态评审/合并/Reviewers 栏/线程解决，2026-08-12）→ 下一步 B2 Webhooks / B3 Packages / B4 Pages / B5 深度安全…，路线图见内部 `plan.md`
-- **开发工具基建（2026-08-12 新增）**：`scripts/` 新增内部开发工具——`api-index.mjs`（octokit 零下载转录 REST 1108 操作 + GraphQL 272 字段并聚拢为双端点对照）、`page-index.mjs`（官方页面分类：路由/模块/组件/接口关联）、`apiidx.mjs`（查询 CLI）；数据存 `scripts/data/*.json`（双 JSON，零依赖），人工校正表 `api-curations.json` / `page-curations.json`
+- **开发工具基建（2026-08-13 v2 重构）**：`scripts/` 内部开发工具——`rest-index.mjs`（octokit 零下载转录 REST 1108 操作，不聚拢 GraphQL）、`page-index.mjs`（官方页面分类：路由/模块/组件/接口关联）、`apiidx.mjs`（查询 CLI：REST 搜索 + GraphQL 实时 introspection 递进 + 页面闭环）、`gql-schema.mjs`（GraphQL schema 加载：官方实时 + 本地降级）；双端点对等关系由人主观判断，结论沉淀于 `api-compat.md`
 - **文档体系规整（2026-08-10）**：**决策记录机制整体移除**——`decisions.md` 已删除、`architecture.md` 不再保留 ADR 索引表；`tasks.md` 只留需求基线、`plan.md` 只留依赖层级；注释规范为**总结性语义描述**（说明代码最终用意），不引用决策编号
 - **已部署**：Worker `puregit` + 自定义域名 `https://git.deepwn.io`（OAuth 回调与 CLI 镜像端点同域）
 - **已知待修复漏洞（持续跟踪）**：`undici` <7.24.0（WebSocket 3 个 CVE）经 `wrangler`/`vitest-pool-workers` → `miniflare` 引入——Cloudflare 工具链内部锁定版本，overrides 会破坏兼容，**等上游发版**；`nth-check` 已通过 `pnpm-workspace.yaml` overrides 修复（GHSA-rp65-9cf3-cjxr）
