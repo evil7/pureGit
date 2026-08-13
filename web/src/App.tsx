@@ -296,6 +296,9 @@ const router = createBrowserRouter([
           { path: "pulls", element: <PullsPage /> },
           { path: "pulls/new", element: <NewPullRequestPage /> },
           { path: "pulls/:number", element: <PullDetailPage /> },
+          /* 官方单数路径 github.com/:owner/:repo/pull/:id（/pull 无 id 容错跳转列表） */
+          { path: "pull", element: <Navigate to="pulls" replace /> },
+          { path: "pull/:number", element: <PullDetailPage /> },
           { path: "discussions", element: <DiscussionsPage /> },
           { path: "discussions/new/choose", element: <NewDiscussionChoosePage /> },
           { path: "discussions/new", element: <NewDiscussionPage /> },

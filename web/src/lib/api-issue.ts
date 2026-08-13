@@ -52,6 +52,7 @@ import {
   fetchPullReviewComments,
   addPullReviewComment,
   fetchPullReviews,
+  fetchPullRequestedReviewers,
   createPullReview,
   mergePullRequest,
   requestReviewers,
@@ -1338,21 +1339,24 @@ function toReviewSummary(g: GraphQLReviewSummaryNode): PullReviewSummary {
   };
 }
 
-/** REST 降级：reviews 列表 + reviewDecision 由最新非 COMMENTED 评审推断（REST 无 reviewDecision 字段） */
+/** REST 降级：reviews 列表 + reviewRequests + reviewDecision 由最新非 COMMENTED 评审推断（REST 无 reviewDecision 字段） */
 async function reviewSummaryFromRest(
   owner: string,
   repo: string,
   number: number,
   token?: string | null,
 ): Promise<PullReviewSummary> {
-  const reviews = await fetchPullReviews(owner, repo, number, token);
+  const [reviews, reviewRequests] = await Promise.all([
+    fetchPullReviews(owner, repo, number, token),
+    fetchPullRequestedReviewers(owner, repo, number, token),
+  ]);
   const latest = reviews.find((r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED");
   return {
     pullRequestId: "",
     reviewDecision: latest ? (latest.state as PullReviewSummary["reviewDecision"]) : null,
     mergeable: null,
     reviews,
-    reviewRequests: [],
+    reviewRequests,
   };
 }
 
@@ -1668,7 +1672,11 @@ export async function fetchPullProjectsSmart(
         } | null;
       } | null;
     }> = await graphqlRequest(PR_PROJECTS_QUERY, { owner, name: repo, number }, token);
-    if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest?.projectItems) return [];
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest?.projectItems) {
+      // GraphQL errors（侧栏非核心）→ 静默空，补 [Warn] 保留错误详情
+      logWarn("fetchPullProjectsSmart", `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`);
+      return [];
+    }
     return resp.data.repository.pullRequest.projectItems.nodes.map((n) => ({
       id: n.id,
       project: n.project,
@@ -1684,7 +1692,7 @@ export async function fetchPullProjectsSmart(
   }
 }
 
-/** PR 开发关联（GraphQL-only 只读：closingIssuesReferences + linkedBranches；失败静默空）。 */
+/** PR 开发关联（GraphQL-only 只读：closingIssuesReferences；PullRequest 无 linkedBranches 字段，关联分支不可得）。 */
 export type PullDevelopment = {
   issues: { number: number; title: string; state: string; url: string }[];
   branches: string[];
@@ -1703,11 +1711,15 @@ export async function fetchPullDevelopmentSmart(
           closingIssuesReferences: {
             nodes: Array<{ number: number; title: string; state: string; url: string }>;
           } | null;
-          linkedBranches: { nodes: Array<{ ref: { name: string } | null }> } | null;
         } | null;
       } | null;
     }> = await graphqlRequest(PR_DEVELOPMENT_QUERY, { owner, name: repo, number }, token);
     if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest) {
+      // GraphQL errors（侧栏非核心）→ 静默空，补 [Warn] 保留错误详情
+      logWarn(
+        "fetchPullDevelopmentSmart",
+        `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`,
+      );
       return { issues: [], branches: [] };
     }
     const pr = resp.data.repository.pullRequest;
@@ -1718,9 +1730,8 @@ export async function fetchPullDevelopmentSmart(
         state: n.state,
         url: n.url,
       })),
-      branches: (pr.linkedBranches?.nodes ?? [])
-        .map((n) => n.ref?.name)
-        .filter((b): b is string => Boolean(b)),
+      // PullRequest 无 linkedBranches 字段（GitHub schema 实测），关联分支不可得 → 恒空
+      branches: [],
     };
   } catch (e) {
     // 侧栏非核心 → 静默空，补 [Warn] 保留诊断
@@ -1892,7 +1903,11 @@ export async function fetchPullTimelineSmart(
         pullRequest: { timelineItems: { nodes: unknown[] } | null } | null;
       } | null;
     }> = await graphqlRequest(PR_TIMELINE_QUERY, { owner, name: repo, number }, token);
-    if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest?.timelineItems) return null;
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest?.timelineItems) {
+      // GraphQL errors → 降级 null（页面回退三段式渲染），补 [Warn] 保留错误详情
+      logWarn("fetchPullTimelineSmart", `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`);
+      return null;
+    }
     const nodes = resp.data.repository.pullRequest.timelineItems.nodes;
     const events: PullTimelineEvent[] = [];
     for (const raw of nodes) {

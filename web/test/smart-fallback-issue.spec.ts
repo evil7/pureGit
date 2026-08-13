@@ -47,6 +47,7 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     fetchPullDetail: vi.fn(),
     fetchIssueComments: vi.fn(),
     fetchPullReviews: vi.fn(),
+    fetchPullRequestedReviewers: vi.fn(),
   };
 });
 
@@ -69,6 +70,7 @@ import {
   fetchPullDetail,
   fetchIssueComments,
   fetchPullReviews,
+  fetchPullRequestedReviewers,
   type Issue,
   type PullRequest,
 } from "@/lib/rest";
@@ -83,6 +85,7 @@ const mockFetchPulls = vi.mocked(fetchPulls);
 const mockFetchPullDetail = vi.mocked(fetchPullDetail);
 const mockFetchIssueComments = vi.mocked(fetchIssueComments);
 const mockFetchPullReviews = vi.mocked(fetchPullReviews);
+const mockFetchPullRequestedReviewers = vi.mocked(fetchPullRequestedReviewers);
 
 /** GraphQL issue 节点夹具（GraphQLIssueNode 形状） */
 const gqlIssue = {
@@ -229,6 +232,7 @@ beforeEach(() => {
   mockFetchPullDetail.mockResolvedValue(restPull);
   mockFetchIssueComments.mockResolvedValue([]);
   mockFetchPullReviews.mockResolvedValue([]);
+  mockFetchPullRequestedReviewers.mockResolvedValue([]);
 });
 
 describe("fetchIssuesSmart（三级决策：REST 条件 / search / GraphQL 首选降级）", () => {
@@ -464,14 +468,19 @@ describe("fetchPullDetailSmart（GraphQL 首选 + 降级）", () => {
 
 describe("fetchPullDetailFullSmart（detail+comments+reviewSummary 复合查询）", () => {
   it("token 空 → REST 分步（pr + comments + reviewSummary 由 reviews 推断）", async () => {
+    mockFetchPullRequestedReviewers.mockResolvedValue([{ login: "dave", avatarUrl: "" }]);
     const r = await fetchPullDetailFullSmart("evil7", "puregit", 7, undefined);
     expect(mockGraphql).not.toHaveBeenCalled();
     expect(mockFetchPullDetail).toHaveBeenCalled();
     expect(mockFetchIssueComments).toHaveBeenCalled();
     expect(mockFetchPullReviews).toHaveBeenCalled();
+    expect(mockFetchPullRequestedReviewers).toHaveBeenCalled();
     expect(r.pr.id).toBe(2);
     expect(r.reviewSummary?.pullRequestId).toBe("");
     expect(r.reviewSummary?.reviewDecision).toBeNull();
+    // reviewRequests 经 REST list-requested-reviewers 降级补全（非空数组）
+    expect(r.reviewSummary?.reviewRequests).toHaveLength(1);
+    expect(r.reviewSummary?.reviewRequests[0].login).toBe("dave");
   });
 
   it("GraphQL 成功 → 一次查询返回 pr + comments + reviewSummary（含评审字段）", async () => {

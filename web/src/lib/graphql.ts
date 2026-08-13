@@ -2251,13 +2251,6 @@ export const PR_DEVELOPMENT_QUERY = /* GraphQL */ `
             url
           }
         }
-        linkedBranches(first: 10) {
-          nodes {
-            ref {
-              name
-            }
-          }
-        }
       }
     }
   }

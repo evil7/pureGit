@@ -763,6 +763,27 @@ export async function fetchPullReviews(
   );
 }
 
+/**
+ * 获取请求的评审者（GET /pulls/{n}/requested_reviewers）。
+ * 返回 SimpleUser[] | Team[] union——仅保留有 login 的 User（Team 无 login，用 name 标识，降级路径忽略）。
+ * 供 PR 详情 Reviewers 栏 reviewRequests 的 REST 熔断降级。
+ */
+export async function fetchPullRequestedReviewers(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<{ login: string; avatarUrl: string }[]> {
+  const list = await typedRequest<
+    Array<{ login?: string; avatar_url?: string | null; name?: string }>
+  >(token, (octokit) =>
+    octokit.rest.pulls.listRequestedReviewers({ owner, repo, pull_number: number }),
+  );
+  return list
+    .filter((x): x is { login: string; avatar_url?: string | null } => Boolean(x.login))
+    .map((x) => ({ login: x.login, avatarUrl: x.avatar_url ?? "" }));
+}
+
 /** 评审事件（三态提交：COMMENT 普通留言 / APPROVE 批准 / REQUEST_CHANGES 请求修改） */
 export type ReviewEvent = "COMMENT" | "APPROVE" | "REQUEST_CHANGES";
 

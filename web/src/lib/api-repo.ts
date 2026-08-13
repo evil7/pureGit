@@ -793,7 +793,11 @@ export async function fetchRecentBranchesSmart(
         refs: { nodes: Array<{ name: string; target: { committedDate: string } | null }> } | null;
       } | null;
     }> = await graphqlRequest(RECENT_BRANCHES_QUERY, { owner, name: repo }, token);
-    if (hasGraphQLErrors(resp) || !resp.data?.repository?.refs) return [];
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.refs) {
+      // GraphQL errors（提示条非核心）→ 静默空，补 [Warn] 保留错误详情
+      logWarn("fetchRecentBranchesSmart", `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`);
+      return [];
+    }
     const def = resp.data.repository.defaultBranchRef?.name ?? "main";
     return resp.data.repository.refs.nodes
       .filter((n) => n.name !== def && n.target?.committedDate)
