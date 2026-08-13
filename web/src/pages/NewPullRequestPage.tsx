@@ -108,7 +108,7 @@ export default function NewPullRequestPage() {
         base: base.trim(),
         head: head.trim(),
       });
-      navigate(`/${owner}/${repo}/pulls/${number}`);
+      navigate(`/${owner}/${repo}/pull/${number}`);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {

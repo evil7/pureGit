@@ -161,6 +161,15 @@ function DiscussionCategoryRedirect() {
   );
 }
 
+/** PR 作者路径（官方 /:owner/:repo/pulls/{author}）→ 列表页 ?author={author} 重定向
+ * 官方语义：/pulls/{author} 等价作者搜索 author:{author}（搜索框整体显示 is:open is:pr author:{author}）。 */
+function PullsAuthorRedirect() {
+  const { owner, repo, author } = useParams();
+  return (
+    <Navigate to={`/${owner}/${repo}/pulls?author=${encodeURIComponent(author ?? "")}`} replace />
+  );
+}
+
 /**
  * 路由 errorElement：errorElement 会替换发生错误的 route 层级——根 route 的
  * errorElement 替换整个 AppLayout，故此处自备完整 chrome（Nav + main + Footer），
@@ -295,9 +304,10 @@ const router = createBrowserRouter([
           { path: "issues/:number", element: <IssueDetailPage /> },
           { path: "pulls", element: <PullsPage /> },
           { path: "pulls/new", element: <NewPullRequestPage /> },
-          { path: "pulls/:number", element: <PullDetailPage /> },
+          /* 官方 /:owner/:repo/pulls/{author} 路径 = 作者搜索（author:{author}）→ 列表 ?author= */
+          { path: "pulls/:author", element: <PullsAuthorRedirect /> },
           /* 官方单数路径 github.com/:owner/:repo/pull/:id（/pull 无 id 容错跳转列表） */
-          { path: "pull", element: <Navigate to="pulls" replace /> },
+          { path: "pull", element: <Navigate to="../pulls" replace /> },
           { path: "pull/:number", element: <PullDetailPage /> },
           { path: "discussions", element: <DiscussionsPage /> },
           { path: "discussions/new/choose", element: <NewDiscussionChoosePage /> },

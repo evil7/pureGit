@@ -454,7 +454,7 @@ export function UserPullsPage() {
                   <CardContent className="space-y-2 p-4">
                     <div className="flex items-start justify-between gap-2 min-w-0">
                       <Link
-                        to={`/${owner}/${repo}/pulls/${pr.number}`}
+                        to={`/${owner}/${repo}/pull/${pr.number}`}
                         className="min-w-0 text-primary hover:underline line-clamp-2"
                       >
                         {pr.title}

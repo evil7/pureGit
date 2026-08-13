@@ -728,7 +728,7 @@ export function PullRow({
           {/* 标题行：标题 + checks 状态图标（tooltip 详情）+ 标签 badges（官方标题后布局） */}
           <div className="flex flex-wrap items-center gap-2">
             <Link
-              to={`/${owner}/${repo}/pulls/${pr.number}`}
+              to={`/${owner}/${repo}/pull/${pr.number}`}
               className="line-clamp-2 font-medium text-foreground transition-colors hover:text-primary hover:underline"
             >
               {pr.title}
