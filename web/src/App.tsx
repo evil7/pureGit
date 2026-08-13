@@ -45,7 +45,7 @@ const FileEditorPage = lazy(() =>
 );
 const IssuesPage = lazy(() => import("@/pages/IssuesPages"));
 const IssueDetailPage = lazy(() =>
-  import("@/pages/IssuesPages").then((m) => ({ default: m.IssueDetailPage })),
+  import("@/pages/IssueDetailPage").then((m) => ({ default: m.IssueDetailPage })),
 );
 const PullsPage = lazy(() => import("@/pages/PullsPages"));
 const PullDetailPage = lazy(() =>

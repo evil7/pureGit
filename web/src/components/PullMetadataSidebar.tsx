@@ -12,11 +12,10 @@
  * 数据源 smart 双通道，详见 api-compat.md §2.1。
  */
 import { useEffect, useState } from "react";
-import { Bell, BellRing, GitPullRequest, Lock, LockOpen } from "lucide-react";
+import { GitPullRequest, Lock, LockOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
-import { UserAvatar } from "@/components/UserAvatar";
 import { apiErrorMessage, type GitHubUser } from "@/lib/rest";
 import {
   setPullLockedSmart,
@@ -26,6 +25,8 @@ import {
   type PullDevelopment,
 } from "@/lib/api";
 import { toastSuccess, toastError } from "@/lib/toast";
+import { SidebarSection, SubscribeButton } from "@/components/SidebarSection";
+import { ParticipantsSection } from "@/components/ParticipantsSection";
 import {
   AssigneesEditor,
   LabelsEditor,
@@ -134,8 +135,7 @@ export function PullMetadataSidebar({
       />
 
       {/* Projects（GraphQL-only 只读） */}
-      <section>
-        <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">项目</h3>
+      <SidebarSection title="项目">
         {projects === null ? (
           <p className="text-muted-foreground">—</p>
         ) : projects.length === 0 ? (
@@ -159,7 +159,7 @@ export function PullMetadataSidebar({
             ))}
           </ul>
         )}
-      </section>
+      </SidebarSection>
 
       {/* Milestone */}
       <MilestoneEditor
@@ -173,8 +173,7 @@ export function PullMetadataSidebar({
       />
 
       {/* Development（GraphQL-only 只读） */}
-      <section>
-        <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">开发</h3>
+      <SidebarSection title="开发">
         {development === null ? (
           <p className="text-muted-foreground">—</p>
         ) : development.issues.length === 0 && development.branches.length === 0 ? (
@@ -196,46 +195,24 @@ export function PullMetadataSidebar({
             ))}
           </ul>
         )}
-      </section>
+      </SidebarSection>
 
-      {/* Participants：官方「{n} participants」计数 + AvatarStack（最多 5 个头像，超出 +n） */}
-      <section>
-        <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">
-          {t("pullDetail.participants").replace("{n}", String(participants.length))}
-        </h3>
-        {participants.length > 0 && (
-          <div className="flex items-center">
-            <div className="flex -space-x-2">
-              {participants.slice(0, 5).map((u) => (
-                <UserAvatar
-                  key={u.login}
-                  src={u.avatar_url}
-                  alt={u.login}
-                  title={u.login}
-                  className="size-6 ring-2 ring-background"
-                />
-              ))}
-            </div>
-            {participants.length > 5 && (
-              <span className="ml-2 text-xs text-muted-foreground">+{participants.length - 5}</span>
-            )}
-          </div>
-        )}
-      </section>
+      {/* Participants：官方「{n} participants」计数 + 重叠头像栈（超出 +n） */}
+      <ParticipantsSection
+        title={t("pullDetail.participants").replace("{n}", String(participants.length))}
+        participants={participants}
+      />
 
-      {/* 底部操作组：分割线 + 无框按钮（取消订阅 / 锁定会话；用户指定：不单独设通知/锁定板块） */}
+      {/* 底部操作组：分割线 + 无框按钮（订阅 / 锁定会话；用户指定：不单独设通知/锁定板块） */}
       {token && (
         <div className="space-y-1 border-t pt-3">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-full justify-start px-2 text-xs text-muted-foreground"
-            onClick={onToggleSubscribe}
-            disabled={subscribing}
-          >
-            {subscribed ? <BellRing className="size-3.5" /> : <Bell className="size-3.5" />}
-            {subscribing ? "…" : subscribed ? "取消订阅" : "订阅"}
-          </Button>
+          <SubscribeButton
+            subscribed={subscribed}
+            busy={subscribing}
+            onToggle={onToggleSubscribe}
+            subscribeLabel="订阅"
+            unsubscribeLabel="取消订阅"
+          />
           <Button
             variant="ghost"
             size="sm"

@@ -26,6 +26,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsDark } from "@/hooks/useIsDark";
 import { UserAvatar } from "@/components/UserAvatar";
+import { SidebarHeading } from "@/components/SidebarSection";
 import {
   updatePullAssignees,
   updatePullLabels,
@@ -47,23 +48,18 @@ export type SidebarAssignee = { login: string; avatar_url?: string };
 /** 侧栏里程碑类型（title + 可选 number，与 issue.milestone / pr.milestone 一致） */
 export type SidebarMilestone = { title: string; number?: number };
 
-/* ── 标题 + 右侧齿轮图标 ── */
+/* ── 标题右侧齿轮编辑入口 ── */
 
-function SectionHeading({ title, onEdit }: { title: string; onEdit?: () => void }) {
+function EditAction({ label, onClick }: { label: string; onClick: () => void }) {
   return (
-    <h3 className="mb-1.5 flex items-center justify-between text-xs font-semibold text-muted-foreground">
-      <span>{title}</span>
-      {onEdit && (
-        <button
-          type="button"
-          onClick={onEdit}
-          aria-label={`编辑${title}`}
-          className="-mr-1 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-        >
-          <Settings className="size-3.5" />
-        </button>
-      )}
-    </h3>
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={`编辑${label}`}
+      className="-mr-1 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <Settings className="size-3.5" />
+    </button>
   );
 }
 
@@ -169,7 +165,10 @@ export function AssigneesEditor({
 
   return (
     <section>
-      <SectionHeading title={title} onEdit={canWrite ? openDialog : undefined} />
+      <SidebarHeading
+        title={title}
+        action={canWrite ? <EditAction label={title} onClick={openDialog} /> : undefined}
+      />
       {current.length > 0 ? (
         <ul className="space-y-1.5">
           {current.map((a) => (
@@ -288,7 +287,10 @@ export function LabelsEditor({
 
   return (
     <section>
-      <SectionHeading title={title} onEdit={canWrite ? openDialog : undefined} />
+      <SidebarHeading
+        title={title}
+        action={canWrite ? <EditAction label={title} onClick={openDialog} /> : undefined}
+      />
       {current.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
           {current.map((l) => (
@@ -409,7 +411,10 @@ export function MilestoneEditor({
 
   return (
     <section>
-      <SectionHeading title={title} onEdit={canWrite ? openDialog : undefined} />
+      <SidebarHeading
+        title={title}
+        action={canWrite ? <EditAction label={title} onClick={openDialog} /> : undefined}
+      />
       {current ? (
         <span className="flex items-center gap-1.5">
           <MilestoneIcon className="size-3.5 text-muted-foreground" />
