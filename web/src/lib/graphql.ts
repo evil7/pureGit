@@ -710,14 +710,16 @@ export const ISSUE_DETAIL_QUERY = /* GraphQL */ `
   }
 `;
 
-/** PR 列表（states: OPEN/CLOSED/MERGED 数组；orderBy 由官方 Sort 菜单驱动） */
+/** PR 列表（states: OPEN/CLOSED/MERGED 数组；orderBy 由官方 Sort 菜单驱动）
+ * ⚠️ orderBy 参数类型是 IssueOrder（非 PullRequestOrder）：Repository.pullRequests 连接复用了
+ * Issue 的排序枚举（PR 是 Issue 子类型），故 $orderField 须声明为 IssueOrderField!。 */
 export const PULLS_QUERY = /* GraphQL */ `
   query RepoPulls(
     $owner: String!
     $name: String!
     $states: [PullRequestState!]
     $first: Int!
-    $orderField: PullRequestOrderField!
+    $orderField: IssueOrderField!
     $orderDir: OrderDirection!
   ) {
     repository(owner: $owner, name: $name) {
@@ -1924,6 +1926,22 @@ export const RECENT_BRANCHES_QUERY = /* GraphQL */ `
               committedDate
             }
           }
+        }
+      }
+    }
+  }
+`;
+
+/** 仓库里程碑（Pulls/Issues 过滤下拉；仅 OPEN 态，与 REST listMilestones state:open 一致） */
+export const REPO_MILESTONES_QUERY = /* GraphQL */ `
+  query RepoMilestones($owner: String!, $name: String!) {
+    repository(owner: $owner, name: $name) {
+      milestones(states: [OPEN], first: 100) {
+        nodes {
+          number
+          title
+          state
+          description
         }
       }
     }

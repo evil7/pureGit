@@ -37,6 +37,7 @@ import {
   REPO_BRANCHES_QUERY,
   REPO_LABELS_QUERY,
   REPO_ASSIGNEES_QUERY,
+  REPO_MILESTONES_QUERY,
   PR_PROJECTS_QUERY,
   PR_DEVELOPMENT_QUERY,
   PR_TIMELINE_QUERY,
@@ -51,6 +52,7 @@ import {
   fetchBranches,
   fetchRepoLabels,
   fetchRepoAssignees,
+  fetchRepoMilestones,
   fetchIssueComments,
   addIssueComment,
   fetchPullReviewComments,
@@ -85,6 +87,7 @@ import type {
   ReviewEvent,
   PullMergeMethod,
   RepoLabel,
+  RepoMilestone,
 } from "./rest";
 import { searchIssuesSmart } from "./api-search";
 import { toRelease } from "./api-repo";
@@ -477,7 +480,7 @@ function searchSortQualifier(sort?: string): string {
   return "";
 }
 
-/** 官方 Sort 菜单值 → GraphQL PullRequestOrderField（GitHub 无按评论数排序 → comments 归并 CREATED_AT） */
+/** 官方 Sort 菜单值 → GraphQL IssueOrderField（pullRequests 连接复用 Issue 排序枚举；无按评论数排序 → comments 归并 CREATED_AT） */
 function graphqlPullOrderField(sort?: string): string {
   if (sort === "updated" || sort === "updated-asc") return "UPDATED_AT";
   return "CREATED_AT";
@@ -1054,6 +1057,49 @@ export async function fetchBranchesSmart(
   }
   // 匿名强制 REST
   return fetchBranches(owner, repo, 100, token);
+}
+
+/** 智能获取仓库里程碑：GraphQL repository.milestones 首选，失败降级 REST。 */
+export async function fetchRepoMilestonesSmart(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<RepoMilestone[]> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          milestones: {
+            nodes: { number: number; title: string; state: string; description?: string | null }[];
+          };
+        } | null;
+      }> = await graphqlRequest(REPO_MILESTONES_QUERY, { owner, name: repo }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        return resp.data.repository.milestones.nodes.map((m) => ({
+          number: m.number,
+          title: m.title,
+          // 归一化为 REST 语义（小写 open/closed），避免与 REST 降级路径大小写不一致
+          state: m.state.toLowerCase(),
+          description: m.description ?? null,
+        }));
+      }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchRepoMilestones(owner, repo, token),
+        "fetchRepoMilestonesSmart",
+        resp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchRepoMilestones(owner, repo, token),
+        "fetchRepoMilestonesSmart",
+        undefined,
+      );
+    }
+  }
+  // 匿名强制 REST
+  return fetchRepoMilestones(owner, repo, token);
 }
 
 /** 智能获取仓库 labels：GraphQL repository.labels 首选，失败降级 REST。 */

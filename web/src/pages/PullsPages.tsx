@@ -50,6 +50,9 @@ import {
   fetchPullTimelineSmart,
   requestReviewersSmart,
   updatePullRequestStateSmart,
+  fetchRepoLabelsSmart,
+  fetchRepoAssigneesSmart,
+  fetchRepoMilestonesSmart,
 } from "@/lib/api";
 import {
   apiErrorMessage,
@@ -57,11 +60,8 @@ import {
   fetchPullCheckRuns,
   fetchPullCommits,
   fetchPullFiles,
-  fetchRepoAssignees,
   fetchRepoLabelCount,
-  fetchRepoLabels,
   fetchRepoMilestoneCount,
-  fetchRepoMilestones,
   normalizeApiError,
   ApiError,
   type CheckRunsSummary,
@@ -145,9 +145,9 @@ export default function PullsPage() {
       fetchRepoLabelCount(owner!, repo!, token),
       fetchRepoMilestoneCount(owner!, repo!, token),
       fetchContributors(owner!, repo!, token).catch(() => []),
-      fetchRepoLabels(owner!, repo!, token).catch(() => []),
-      fetchRepoMilestones(owner!, repo!, token).catch(() => []),
-      fetchRepoAssignees(owner!, repo!, token).catch(() => []),
+      fetchRepoLabelsSmart(owner!, repo!, token).catch(() => []),
+      fetchRepoMilestonesSmart(owner!, repo!, token).catch(() => []),
+      fetchRepoAssigneesSmart(owner!, repo!, token).catch(() => []),
     ])
       .then(([lc, mc, cs, rls, rms, as]) => {
         if (!cancelled) {
