@@ -306,7 +306,10 @@ function trackedFetch(
     fetch(url, init).then((res) => {
       let path = "";
       try {
-        path = new URL(String(url)).pathname;
+        const u = new URL(String(url));
+        // pathname + search（如 /search/repositories?q=xxx&sort=stars）——REST 日志补记 query 参数，
+        // 便于审计实际请求的过滤/分页条件（token 走 Authorization header，不在 query，无泄露面）
+        path = u.pathname + u.search;
       } catch {
         path = String(url);
       }

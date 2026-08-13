@@ -149,7 +149,7 @@ flowchart TD
 ```
 YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | vars: {"aa":"bb","cc":11} error(1) 45B 32ms   ← 主请求（异常时状态打 error(n)/network-error）
 YYYY-MM-DD 12:23:34:125 [Fallback#3] fetchXxxSmart | error: Resource not found          ← 降级触发（#n = fallback 会话序号）
-YYYY-MM-DD 12:23:34:126 ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms                   ← fallback（每请求一行）
+YYYY-MM-DD 12:23:34:126 ↪ [Rest] GET /search/repositories?q=xxx&sort=stars  200  123KB  32ms   ← fallback（每请求一行；REST 含 query 参数）
 ```
 
 通用级别日志（补 catch 块中被静默吞掉的错误/信号）：

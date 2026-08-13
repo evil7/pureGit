@@ -9,7 +9,7 @@
  * 日志格式：
  *   YYYY-MM-DD 12:23:34:123 [Graph] PullRequest | vars: {"aa":"bb"} error(1) 45B 32ms
  *   YYYY-MM-DD 12:23:34:125 [Fallback#3] fetchPullsSmart | error: Resource not found
- *   YYYY-MM-DD 12:23:34:126 ↪ [Rest] GET /repos/a/b/pulls 200 123KB 32ms
+ *   YYYY-MM-DD 12:23:34:126 ↪ [Rest] GET /search/repositories?q=xxx&sort=stars 200 123KB 32ms
  *
  * 规则：
  * - 主请求（GraphQL 主通道 / 匿名 REST 直连）无图标
