@@ -41,6 +41,7 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     createIssue: vi.fn(),
     fetchDirContents: vi.fn(),
     fetchReadme: vi.fn(),
+    fetchRootFiles: vi.fn(),
   };
 });
 
@@ -55,6 +56,7 @@ import {
   createIssueSmart,
   fetchDirContentsSmart,
   fetchReadmeSmart,
+  fetchRootFilesSmart,
 } from "@/lib/api-repo";
 import { graphqlRequest } from "@/lib/api-core";
 import {
@@ -66,6 +68,7 @@ import {
   createIssue,
   fetchDirContents,
   fetchReadme,
+  fetchRootFiles,
   type Repository,
 } from "@/lib/rest";
 
@@ -78,6 +81,7 @@ const mockCreateRepository = vi.mocked(createRepository);
 const mockCreateIssue = vi.mocked(createIssue);
 const mockFetchDirContents = vi.mocked(fetchDirContents);
 const mockFetchReadme = vi.mocked(fetchReadme);
+const mockFetchRootFiles = vi.mocked(fetchRootFiles);
 
 /** 最小 REST Repository 夹具（REST 降级路径返回值） */
 const restRepo: Repository = {
@@ -142,6 +146,7 @@ beforeEach(() => {
   mockFetchRepository.mockResolvedValue(restRepo);
   mockFetchDirContents.mockResolvedValue([]);
   mockFetchReadme.mockResolvedValue(null);
+  mockFetchRootFiles.mockResolvedValue(null);
   mockFetchLanguages.mockResolvedValue({});
   // 默认 null（REST 降级时 data 保持 restRepo 原样，`toBe(restRepo)` 断言不受影响）
   mockFetchOpenPullsCount.mockResolvedValue(null);
@@ -457,5 +462,47 @@ describe("fetchReadmeSmart（README 定位 + 内容 GraphQL 主通道 + REST 熔
     const r = await fetchReadmeSmart("evil7", "puregit", "gho_x");
     expect(mockFetchReadme).toHaveBeenCalled();
     expect(r?.content).toBe("rest readme");
+  });
+});
+
+describe("fetchRootFilesSmart（根文件探测 GraphQL Tree.entries 主通道 + REST 熔断）", () => {
+  it("token 空 → 直 REST（GraphQL 不调用）", async () => {
+    mockFetchRootFiles.mockResolvedValue(["README.md", "LICENSE"]);
+    const r = await fetchRootFilesSmart("evil7", "puregit", "main", undefined);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchRootFiles).toHaveBeenCalledWith("evil7", "puregit", "main", undefined);
+    expect(r).toEqual(["README.md", "LICENSE"]);
+  });
+
+  it("GraphQL 成功 → Tree.entries 顶层名数组（REST 不调用）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          object: {
+            entries: [
+              { name: "README.md", path: "README.md", type: "blob", size: 100 },
+              { name: "src", path: "src", type: "tree", size: null },
+            ],
+          },
+        },
+      },
+    } as never);
+    const r = await fetchRootFilesSmart("evil7", "puregit", "main", "gho_x");
+    expect(mockFetchRootFiles).not.toHaveBeenCalled();
+    expect(r).toEqual(["README.md", "src"]);
+  });
+
+  it("GraphQL errors → 熔断降级 REST", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "boom" }] } as never);
+    mockFetchRootFiles.mockResolvedValue(["LICENSE"]);
+    const r = await fetchRootFilesSmart("evil7", "puregit", "main", "gho_x");
+    expect(mockFetchRootFiles).toHaveBeenCalled();
+    expect(r).toEqual(["LICENSE"]);
+  });
+
+  it("GraphQL 抛异常 → 熔断降级 REST", async () => {
+    mockGraphql.mockRejectedValue(new TypeError("fetch failed"));
+    await fetchRootFilesSmart("evil7", "puregit", "main", "gho_x");
+    expect(mockFetchRootFiles).toHaveBeenCalled();
   });
 });

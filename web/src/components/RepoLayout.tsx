@@ -18,7 +18,7 @@ import {
   normalizeApiError,
   type ApiError,
 } from "@/lib/rest";
-import { fetchRepoHomeSmart, fetchRootFiles, type Repository } from "@/lib/api";
+import { fetchRepoHomeSmart, fetchRootFilesSmart, type Repository } from "@/lib/api";
 import type { Release } from "@/lib/rest";
 import { RepoDataContext } from "@/lib/repo-context";
 import { PAGE_SHELL } from "@/lib/layout";
@@ -141,7 +141,7 @@ export default function RepoLayout() {
     // 失败 null → 非必须项隐藏，不影响页面）
     if (hideAbout || !data) return;
     let cancelled = false;
-    fetchRootFiles(owner!, repo!, data.default_branch, token)
+    fetchRootFilesSmart(owner!, repo!, data.default_branch, token)
       .then((files) => !cancelled && setRootFiles(files))
       .catch(() => {});
     return () => {

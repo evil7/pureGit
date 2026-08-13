@@ -46,14 +46,9 @@ import {
   fetchIssuesSmart,
   setIssueSubscriptionSmart,
   fetchIssueDetailWithCommentsSmart,
+  updateIssueStateSmart,
 } from "@/lib/api";
-import {
-  apiErrorMessage,
-  fetchIssueSubscription,
-  normalizeApiError,
-  updateIssueState,
-  ApiError,
-} from "@/lib/rest";
+import { apiErrorMessage, fetchIssueSubscription, normalizeApiError, ApiError } from "@/lib/rest";
 import type { Issue, IssueComment } from "@/lib/rest";
 import { CommentsSection } from "@/components/CommentsSection";
 import { MarkdownView } from "@/components/MarkdownView";
@@ -500,7 +495,7 @@ export function IssueDetailPage() {
     if (!token) return;
     setClosing(true);
     try {
-      const updated = await updateIssueState(owner!, repo!, Number(number), state, token);
+      const updated = await updateIssueStateSmart(owner!, repo!, Number(number), state, token);
       setIssue((prev) =>
         prev ? { ...prev, state: updated.state, closed_at: updated.closed_at } : prev,
       );

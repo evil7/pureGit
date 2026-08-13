@@ -42,6 +42,10 @@ import {
   PR_TIMELINE_QUERY,
   LOCK_PULL_REQUEST_MUTATION,
   UNLOCK_PULL_REQUEST_MUTATION,
+  CLOSE_PULL_REQUEST_MUTATION,
+  REOPEN_PULL_REQUEST_MUTATION,
+  CLOSE_ISSUE_MUTATION,
+  REOPEN_ISSUE_MUTATION,
 } from "./graphql";
 import {
   fetchBranches,
@@ -57,6 +61,7 @@ import {
   mergePullRequest,
   requestReviewers,
   updatePullRequestState,
+  updateIssueState,
   lockPullRequest,
   unlockPullRequest,
   subscribeIssue,
@@ -1563,15 +1568,104 @@ export async function requestReviewersSmart(
   await requestReviewers(owner, repo, number, reviewers, token);
 }
 
-/** 智能更新 PR 状态（关闭/重新打开）：GraphQL 无直接 mutation（closePullRequest 需 node id），统一 REST。 */
+/** 智能更新 PR 状态（关闭/重新打开）：GraphQL closePullRequest/reopenPullRequest 首选（需 pullRequestId），
+ * 无 pullRequestId（如 REST 降级详情）/ GraphQL 失败 → 熔断降级 REST PATCH /pulls/{n}。 */
 export async function updatePullRequestStateSmart(
   owner: string,
   repo: string,
   number: number,
   state: "open" | "closed",
   token: string,
+  pullRequestId?: string,
 ): Promise<PullRequest> {
+  if (token && pullRequestId) {
+    try {
+      const resp: GraphQLResponse<{
+        closePullRequest?: { pullRequest: { id: string; state: string } };
+        reopenPullRequest?: { pullRequest: { id: string; state: string } };
+      }> = await graphqlRequest(
+        state === "closed" ? CLOSE_PULL_REQUEST_MUTATION : REOPEN_PULL_REQUEST_MUTATION,
+        { pullRequestId },
+        token,
+      );
+      if (!hasGraphQLErrors(resp)) {
+        const pr = (resp.data?.closePullRequest ?? resp.data?.reopenPullRequest)?.pullRequest;
+        // 调用点乐观更新（忽略返回值），仅回填 state
+        if (pr) return { state: pr.state.toLowerCase() } as PullRequest;
+      }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => updatePullRequestState(owner, repo, number, state, token),
+        "updatePullRequestStateSmart",
+        resp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => updatePullRequestState(owner, repo, number, state, token),
+        "updatePullRequestStateSmart",
+        undefined,
+      );
+    }
+  }
+  // 无 pullRequestId / 匿名 → REST
   return updatePullRequestState(owner, repo, number, state, token);
+}
+
+/** 智能更新 issue 状态（关闭/重新打开）：GraphQL closeIssue/reopenIssue 首选（需 ISSUE_ID_QUERY 前置查 node id），
+ * 前置查 id 或 mutation 失败 → 熔断降级 REST PATCH /issues/{n}。 */
+export async function updateIssueStateSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  state: "closed" | "open",
+  token: string,
+): Promise<Issue> {
+  if (token) {
+    try {
+      // 前置：issue node id（GraphQL mutation 需要）
+      const idResp: GraphQLResponse<{
+        repository: { issue: { id: string } | null } | null;
+      }> = await graphqlRequest(ISSUE_ID_QUERY, { owner, name: repo, number }, token);
+      const issueId = idResp.data?.repository?.issue?.id;
+      if (issueId && !hasGraphQLErrors(idResp)) {
+        const mutResp: GraphQLResponse<{
+          closeIssue?: { issue: { id: string; state: string } };
+          reopenIssue?: { issue: { id: string; state: string } };
+        }> = await graphqlRequest(
+          state === "closed" ? CLOSE_ISSUE_MUTATION : REOPEN_ISSUE_MUTATION,
+          { issueId },
+          token,
+        );
+        if (!hasGraphQLErrors(mutResp)) {
+          const issue = (mutResp.data?.closeIssue ?? mutResp.data?.reopenIssue)?.issue;
+          // 调用点乐观更新（忽略返回值），仅回填 state
+          if (issue) return { state: issue.state.toLowerCase() } as Issue;
+        }
+        // mutation 失败 → 熔断降级 REST
+        return withRestFallback(
+          () => updateIssueState(owner, repo, number, state, token),
+          "updateIssueStateSmart",
+          mutResp,
+        );
+      }
+      // node id 缺失 → 熔断降级 REST
+      return withRestFallback(
+        () => updateIssueState(owner, repo, number, state, token),
+        "updateIssueStateSmart",
+        idResp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => updateIssueState(owner, repo, number, state, token),
+        "updateIssueStateSmart",
+        undefined,
+      );
+    }
+  }
+  // 匿名强制 REST
+  return updateIssueState(owner, repo, number, state, token);
 }
 
 /** 解决/取消解决评审线程（GraphQL-only——REST 无端点；需 reviewThread node id，由评论的 threadId 提供）。 */

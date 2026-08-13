@@ -116,7 +116,9 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchIssueCommentsSmart` / `addIssueCommentSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchPullReviewCommentsSmart` / `addPullReviewCommentSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchBranchesSmart` | ✅ | ✅ | — | — | ✅ |
+| `updateIssueStateSmart`（关闭/重开 issue；GraphQL closeIssue/reopenIssue 需 ISSUE_ID 前置） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchDirContentsSmart` / `fetchReadmeSmart`（目录列举 / README 定位，GraphQL Tree.entries + blob 主通道） | ✅ | ✅ | — | — | ✅ |
+| `fetchRootFilesSmart`（About Resources 根文件探测，GraphQL Tree.entries 单层） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchRepoLabelsSmart` / `fetchRepoAssigneesSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchSshKeysSmart` / `addSshKeySmart` / `deleteSshKeySmart` | ✅ | ✅ | — | — | ✅ |
 | `isFollowingSmart` / `setFollowingSmart` | ✅ | ✅ | — | — | ✅ |
@@ -136,7 +138,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `mergePullRequestSmart`（merge/squash/rebase） | ✅ | ✅ 降级 | — | — | ✅ |
 | `requestReviewersSmart`（GraphQL 需 userIds 前置查询；REST 直接 reviewers 数组） | ✅ | ✅ 降级 | — | — | ✅ |
 | `setReviewThreadResolvedSmart`（线程解决/取消解决） | ✅ | ✗（REST 无端点） | — | — | ✅（GraphQL-only） |
-| `updatePullRequestStateSmart`（关闭/重新打开） | ✗（需 node id 前置） | ✅ | — | — | ✅（REST） |
+| `updatePullRequestStateSmart`（关闭/重新打开；GraphQL closePullRequest/reopenPullRequest 需 pullRequestId） | ✅ | ✅ 降级 | — | — | ✅ |
 | `pulls/update` 更新 PR 标题/body（fetchPullDetail 已含） | ✅ | ✅ | — | — | ✅ |
 | **仓库 Overview** | | | | | |
 | `fetchRecentBranchesSmart`（Recently touched branches 提示条：refs committedDate 排序取非默认分支；仅登录，失败静默空——GraphQL RefOrderField 仅 ALPHABETICAL/TAG_COMMIT_DATE 无 PUSHED_DATE，故前端排序） | ✅ | ✗（REST branches 无提交时间） | — | — | ✅（GraphQL-only + 静默） |
@@ -164,14 +166,14 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchJobLogs`（Actions 日志） | ✗ | ✅ | — | — | ❌ | 4.5 text/plain 非 JSON；GraphQL 无 actions 通道 |
 | Actions 全家（`fetchWorkflows`/`fetchWorkflowRuns`/`fetchWorkflowRunDetail`/`fetchWorkflowRunJobs`/`fetchRunArtifacts`/`dispatchWorkflow`） | ✗ | ✅ | — | — | ❌ | 4.5 GraphQL 无 actions 查询 |
 | `fetchFileTree`/`fetchLanguages`/`fetchFileContent`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.6 无 GraphQL 等价 / raw Accept；`fetchFileContent` 支持 `branch` 参数（默认 HEAD，非默认分支 404 修复）。**REST contents 上限 1MB→100MB**（1MB~100MB 必须 raw Accept）；smart 层 `fetchFileContentSmart` 分层（登录 GraphQL isTruncated→REST→$raw 保底 / 匿名 REST→raw 直连保底）；**目录列举 / README 已迁 GraphQL 主通道**（fetchDirContentsSmart / fetchReadmeSmart，见 §2.1） |
-| `fetchRootFiles`（About Resources 根文件探测，git trees 顶层；有 object(expression) Tree.entries 等价） | ⚠️ | ✅ | — | — | ⚠️ | 4.6 有 GraphQL 适配（Tree.entries 单层即可）——**待迁移** |
+| `fetchRootFiles`（REST 版） | ✅ | ✅ | — | — | ✅ | smart 已接管（fetchRootFilesSmart），REST 版仅作降级底层 |
 | `fetchContributorsCount` | ✗ | ✅ | — | — | ❌ | 4.7 Link header 分页计数（contributors 无 GraphQL totalCount 等价；releases 计数已迁 GraphQL，见 §2.1 fetchReleasesCountSmart） |
 | 通知/邀请（`fetchNotifications`/`markNotificationThreadRead`/`fetchRepoInvitations`/`acceptRepoInvitation`/`declineRepoInvitation`） | ✗ | ✅ | — | — | ❌ | 4.8 GraphQL 无对应 |
 | `updateDefaultBranch`（PATCH /user master_branch） | ✗ | ✅ | — | — | ❌ | 4.8 专属字段 |
 | `fetchRateLimit` | ✗ | ✅ | — | — | ❌ | 4.8 专属端点 |
 | `fetchPullFiles`/`fetchPullCommits`/`fetchPullCheckRuns`/`fetchPullReviewComments`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.5/4.6 无 GraphQL 等价 |
 | `transferRepository`/`leaveOrganization` | ✗ | ✅ | — | — | ❌ | 4.9 GraphQL 无 transferRepository/leaveOrganization mutation |
-| `updateIssueState`（关闭/重开 issue） | ⚠️ | ✅ | — | — | ⚠️ | 4.9 有 closeIssue/reopenIssue mutation——**待迁移** |
+| `updateIssueState`（关闭/重开 issue；已由 updateIssueStateSmart 接管，REST 版仅作降级底层） | ✅ | ✅ | — | — | ✅ |
 | **组织管理（全部固定 REST）** | | | | | | |
 | `fetchOrgMembersWithRoles`（成员含角色/2FA，两请求合并） | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL membersWithRole 无角色/2FA 字段；角色=admin 子集合并 |
 | `setOrgMemberRole` / `removeOrgMember`（PUT/DELETE memberships） | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL 无 members 写 mutation |
@@ -251,7 +253,7 @@ export async function fetchXxxSmart(
 | 4.6 | 文件内容 / 树 / 语言 | GraphQL 无 raw content 通道；contents API 需 `application/vnd.github.raw` 自定义 Accept。**修订**：REST contents **上限 100MB**（官方 2022-05 起，1MB~100MB 必须 raw Accept）；GraphQL Blob 仍 ~1MB 截断（**`isTruncated` 必须检查**——>1MB 时 text 非 null 但含部分内容）；官方无分段读取参数——>100MB 仅 git clone/archive 可达。**分层通道**：登录 API smart（GraphQL→REST）→ `$raw` 保底（会话 token 透传）；匿名 REST → raw 直连保底。**目录列举 / README 已迁 GraphQL**（Tree.entries + blob 有等价）；**文件树 get-tree recursive 保留 REST**（`Tree.entries` 无递归参数，全量树 GraphQL 需 N+1 逐层下钻，大仓库退化） |
 | 4.7 | 计数（Contributors） | `per_page=1` 读 Link header 末页；releases 计数已迁 GraphQL totalCount（`fetchReleasesCountSmart`），仅 contributors 保留 Link header。 |
 | 4.8 | 通知 / 邀请 / default branch / rate_limit | GraphQL 无对应端点或专属字段。（Saved replies 已从本项移除：端点被 GitHub 整体下线，见 §3 已下线表） |
-| 4.9 | 低频管理写操作（transferRepository / leaveOrganization） | GraphQL **无对应 mutation**（transferRepository/leaveOrganization 均无）；updateIssueState 有 closeIssue/reopenIssue mutation（**有适配待迁移**，见 §2.2 ⚠️）。 |
+| 4.9 | 低频管理写操作（transferRepository / leaveOrganization） | GraphQL **无对应 mutation**（transferRepository/leaveOrganization 均无）；updateIssueState 已迁 closeIssue/reopenIssue mutation（见 §2.1 updateIssueStateSmart）。 |
 | 4.10 | Wiki | API 无 wiki 端点（实测 404）；前端直连 raw 被墙 → worker `/$wiki` 代理。 |
 | 4.11 | `deleteSshKey` | GraphQL 需 node id，REST 数字 id 无法可靠映射到 GraphQL id → smart 函数内部直连 REST（入口统一，避免页面误用）。 |
 | 4.12 | 修改用户名（Change username） | `PATCH /user` body **无 login 字段**（仅 name/email/blog/company/location/hireable/bio/twitter/pronouns）；改名走网页内部端点 + 密码验证，API 不可达（C9 调研确认）。 |

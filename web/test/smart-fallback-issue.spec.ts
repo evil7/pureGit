@@ -48,6 +48,8 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     fetchIssueComments: vi.fn(),
     fetchPullReviews: vi.fn(),
     fetchPullRequestedReviewers: vi.fn(),
+    updateIssueState: vi.fn(),
+    updatePullRequestState: vi.fn(),
   };
 });
 
@@ -58,6 +60,8 @@ import {
   fetchPullsSmart,
   fetchPullDetailSmart,
   fetchPullDetailFullSmart,
+  updateIssueStateSmart,
+  updatePullRequestStateSmart,
 } from "@/lib/api-issue";
 import { graphqlRequest } from "@/lib/api-core";
 import { searchIssuesSmart } from "@/lib/api-search";
@@ -71,6 +75,8 @@ import {
   fetchIssueComments,
   fetchPullReviews,
   fetchPullRequestedReviewers,
+  updateIssueState,
+  updatePullRequestState,
   type Issue,
   type PullRequest,
 } from "@/lib/rest";
@@ -86,6 +92,8 @@ const mockFetchPullDetail = vi.mocked(fetchPullDetail);
 const mockFetchIssueComments = vi.mocked(fetchIssueComments);
 const mockFetchPullReviews = vi.mocked(fetchPullReviews);
 const mockFetchPullRequestedReviewers = vi.mocked(fetchPullRequestedReviewers);
+const mockUpdateIssueState = vi.mocked(updateIssueState);
+const mockUpdatePullRequestState = vi.mocked(updatePullRequestState);
 
 /** GraphQL issue 节点夹具（GraphQLIssueNode 形状） */
 const gqlIssue = {
@@ -233,6 +241,8 @@ beforeEach(() => {
   mockFetchIssueComments.mockResolvedValue([]);
   mockFetchPullReviews.mockResolvedValue([]);
   mockFetchPullRequestedReviewers.mockResolvedValue([]);
+  mockUpdateIssueState.mockResolvedValue(restIssue);
+  mockUpdatePullRequestState.mockResolvedValue(restPull);
 });
 
 describe("fetchIssuesSmart（三级决策：REST 条件 / search / GraphQL 首选降级）", () => {
@@ -520,5 +530,69 @@ describe("fetchPullDetailFullSmart（detail+comments+reviewSummary 复合查询�
     expect(mockFetchPullDetail).toHaveBeenCalled();
     expect(mockFetchPullReviews).toHaveBeenCalled();
     expect(r.pr.id).toBe(2);
+  });
+});
+
+describe("updatePullRequestStateSmart（GraphQL close/reopen PR 主通道 + REST 熔断）", () => {
+  it("无 pullRequestId → 直 REST（GraphQL 不调用）", async () => {
+    const r = await updatePullRequestStateSmart("evil7", "puregit", 7, "closed", "gho_x");
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockUpdatePullRequestState).toHaveBeenCalledWith(
+      "evil7",
+      "puregit",
+      7,
+      "closed",
+      "gho_x",
+    );
+    expect(r).toBe(restPull);
+  });
+
+  it("GraphQL 成功 → closePullRequest 返回 state（REST 不调用）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: { closePullRequest: { pullRequest: { id: "PR_7", state: "CLOSED" } } },
+    } as never);
+    const r = await updatePullRequestStateSmart("evil7", "puregit", 7, "closed", "gho_x", "PR_7");
+    expect(mockUpdatePullRequestState).not.toHaveBeenCalled();
+    expect(r.state).toBe("closed");
+  });
+
+  it("GraphQL errors → 熔断降级 REST", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "boom" }] } as never);
+    await updatePullRequestStateSmart("evil7", "puregit", 7, "closed", "gho_x", "PR_7");
+    expect(mockUpdatePullRequestState).toHaveBeenCalled();
+  });
+});
+
+describe("updateIssueStateSmart（GraphQL close/reopen issue 主通道 + REST 熔断）", () => {
+  it("token 空 → 直 REST（GraphQL 不调用）", async () => {
+    await updateIssueStateSmart("evil7", "puregit", 42, "closed", "");
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockUpdateIssueState).toHaveBeenCalledWith("evil7", "puregit", 42, "closed", "");
+  });
+
+  it("GraphQL 成功 → 前置查 id + closeIssue（REST 不调用）", async () => {
+    mockGraphql
+      .mockResolvedValueOnce({ data: { repository: { issue: { id: "I_42" } } } } as never)
+      .mockResolvedValueOnce({
+        data: { closeIssue: { issue: { id: "I_42", state: "CLOSED" } } },
+      } as never);
+    const r = await updateIssueStateSmart("evil7", "puregit", 42, "closed", "gho_x");
+    expect(mockGraphql).toHaveBeenCalledTimes(2);
+    expect(mockUpdateIssueState).not.toHaveBeenCalled();
+    expect(r.state).toBe("closed");
+  });
+
+  it("前置查 id 失败（issue null）→ 熔断降级 REST", async () => {
+    mockGraphql.mockResolvedValue({ data: { repository: { issue: null } } } as never);
+    await updateIssueStateSmart("evil7", "puregit", 42, "closed", "gho_x");
+    expect(mockUpdateIssueState).toHaveBeenCalled();
+  });
+
+  it("mutation errors → 熔断降级 REST", async () => {
+    mockGraphql
+      .mockResolvedValueOnce({ data: { repository: { issue: { id: "I_42" } } } } as never)
+      .mockResolvedValueOnce({ errors: [{ message: "boom" }] } as never);
+    await updateIssueStateSmart("evil7", "puregit", 42, "closed", "gho_x");
+    expect(mockUpdateIssueState).toHaveBeenCalled();
   });
 });

@@ -47,6 +47,7 @@ import {
   fetchFileMeta,
   fetchDirContents,
   fetchReadme,
+  fetchRootFiles,
 } from "./rest";
 import { FILE_RAW_QUERY, FILE_EDIT_QUERY, TREE_ENTRIES_QUERY, repoRawBase } from "./repo-raw";
 import { fetchRawContentSmart } from "./raw-proxy";
@@ -1101,6 +1102,49 @@ export async function fetchReadmeSmart(
   }
   // 匿名强制 REST
   return fetchReadme(owner, repo, token, dir);
+}
+
+/**
+ * 智能获取仓库根目录文件名数组（About Resources 探测 CoC/Contributing/Security/license）。
+ * 登录：GraphQL repository.object(expression:"HEAD:") → Tree.entries 顶层名（单层，无需 recursive）；
+ * 匿名 / GraphQL 失败 → 熔断降级 REST fetchRootFiles（get-tree 非递归）。
+ */
+export async function fetchRootFilesSmart(
+  owner: string,
+  repo: string,
+  branch: string,
+  token?: string | null,
+): Promise<string[] | null> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: { object: { entries: TreeEntryNode[] | null } | null } | null;
+      }> = await graphqlRequest(
+        TREE_ENTRIES_QUERY,
+        { owner, name: repo, expr: `${branch}:` },
+        token,
+      );
+      const entries = resp.data?.repository?.object?.entries;
+      if (!hasGraphQLErrors(resp) && entries) {
+        return entries.map((e) => e.name).filter(Boolean);
+      }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchRootFiles(owner, repo, branch, token),
+        "fetchRootFilesSmart",
+        resp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchRootFiles(owner, repo, branch, token),
+        "fetchRootFilesSmart",
+        undefined,
+      );
+    }
+  }
+  // 匿名强制 REST
+  return fetchRootFiles(owner, repo, branch, token);
 }
 
 // ===== 编辑页数据一次查（blob 内容 + metadata）=====

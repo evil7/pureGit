@@ -1144,6 +1144,7 @@ export function PullDetailPage() {
                           Number(number),
                           "closed",
                           token,
+                          reviewSummary?.pullRequestId,
                         );
                         setPr((p) => (p ? { ...p, state: "closed" } : p));
                         toastSuccess("已关闭 PR");

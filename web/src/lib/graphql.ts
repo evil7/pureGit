@@ -2292,6 +2292,54 @@ export const UNLOCK_PULL_REQUEST_MUTATION = /* GraphQL */ `
   }
 `;
 
+/** 关闭 PR（mutation；pullRequestId 为 PR node id） */
+export const CLOSE_PULL_REQUEST_MUTATION = /* GraphQL */ `
+  mutation ClosePullRequest($pullRequestId: ID!) {
+    closePullRequest(input: { pullRequestId: $pullRequestId }) {
+      pullRequest {
+        id
+        state
+      }
+    }
+  }
+`;
+
+/** 重新打开 PR（mutation） */
+export const REOPEN_PULL_REQUEST_MUTATION = /* GraphQL */ `
+  mutation ReopenPullRequest($pullRequestId: ID!) {
+    reopenPullRequest(input: { pullRequestId: $pullRequestId }) {
+      pullRequest {
+        id
+        state
+      }
+    }
+  }
+`;
+
+/** 关闭 issue（mutation；issueId 为 issue node id） */
+export const CLOSE_ISSUE_MUTATION = /* GraphQL */ `
+  mutation CloseIssue($issueId: ID!) {
+    closeIssue(input: { issueId: $issueId }) {
+      issue {
+        id
+        state
+      }
+    }
+  }
+`;
+
+/** 重新打开 issue（mutation） */
+export const REOPEN_ISSUE_MUTATION = /* GraphQL */ `
+  mutation ReopenIssue($issueId: ID!) {
+    reopenIssue(input: { issueId: $issueId }) {
+      issue {
+        id
+        state
+      }
+    }
+  }
+`;
+
 /** 删除仓库（mutation；危险操作，需所有者） */
 export const DELETE_REPOSITORY_MUTATION = /* GraphQL */ `
   mutation DeleteRepository($repositoryId: ID!) {

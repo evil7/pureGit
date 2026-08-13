@@ -3,13 +3,7 @@
  * Board file. See rest.ts barrel for full export surface & docs/api-compat.md.
  */
 
-import {
-  ApiError,
-  githubFetchPublic,
-  typedRequest,
-  fetchWithTimeout,
-  GITHUB_API,
-} from "./rest-core";
+import { ApiError, typedRequest, fetchWithTimeout, GITHUB_API } from "./rest-core";
 import type { GitHubUser } from "./rest-core";
 import type { Repository, PullFile } from "./rest-issue-pr";
 
@@ -894,7 +888,8 @@ export async function fetchLatestRelease(
 }
 
 /** 仓库根目录文件名数组（保留原始大小写；About Resources 探测 CoC/Contributing/Security/license
- * 是否存在——探测用小写比较、链接用原始名（blob 路由大小写敏感）；失败返回 null） */
+ * 是否存在——探测用小写比较、链接用原始名（blob 路由大小写敏感）；失败返回 null）。
+ * 非递归顶层树（getTree 默认不递归，对应 recursive=0） */
 export async function fetchRootFiles(
   owner: string,
   repo: string,
@@ -902,10 +897,8 @@ export async function fetchRootFiles(
   token?: string | null,
 ): Promise<string[] | null> {
   try {
-    const tree = await githubFetchPublic<{ tree?: { path?: string }[] }>(
-      `/repos/${owner}/${repo}/git/trees/${encodeURIComponent(branch)}?recursive=0`,
-      undefined,
-      token,
+    const tree = await typedRequest<{ tree?: { path?: string }[] }>(token, (octokit) =>
+      octokit.rest.git.getTree({ owner, repo, tree_sha: branch }),
     );
     if (!tree?.tree) return null;
     return tree.tree.map((t) => t.path ?? "").filter(Boolean);
