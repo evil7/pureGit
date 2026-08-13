@@ -1,6 +1,6 @@
 # PureGit 文档中心
 
-> **中心思想**：通过 GitHub 官方 API **全量复刻 GitHub 前端**，功能完成度对齐官方（分批推进），界面干净整洁、操作由繁化简——「简约」仅限前端 UX，不再作为功能范围判据。**（详见 [vision.md](./vision.md)，全项目最高纲领；v0.0.1 新概念 2026-08-12 定稿）**
+> **中心思想**：通过 GitHub 官方 API **全量复刻 GitHub 前端**，功能完成度对齐官方（分批推进），界面干净整洁、操作由繁化简——「简约」仅限前端 UX，不作为功能范围判据。（详见 [vision.md](./vision.md)，全项目最高纲领）
 
 本文件是**项目文档体系的总导航**：准确说明 `docs/` 与 `.github/` 下所有协作文件的真实用意、使用方式与适用场景。新开发者 / 新会话（含 AI 编码助手）请从本页开始。
 
@@ -12,7 +12,7 @@
 
 | 文档 | 真实用意 | 何时读 / 用 | 使用方式 |
 |------|---------|------------|---------|
-| [vision.md](./vision.md) | **中心思想与产品定位（最高纲领，v0.0.1 全量复刻新概念）**：项目做什么、为什么存在、功能取舍判据 | 任何新功能/新页面**动手前**；方向性取舍时 | 功能是否入范围判据，先读 |
+| [vision.md](./vision.md) | **中心思想与产品定位（最高纲领）**：项目做什么、为什么存在、功能取舍判据 | 任何新功能/新页面**动手前**；方向性取舍时 | 功能是否入范围判据，先读 |
 | [design.md](./design.md) | **UI/UX 设计规范（Design System）**：框架层级/单双三栏模板/组件定义/响应式/动画/验收清单 | 写任何 UI/布局/组件**之前** | 对照验收清单自查；`ui-layout` skill 是其速查版 |
 | [architecture.md](./architecture.md) | 架构设计：前端 / Worker / CLI 镜像代理、数据流、职责边界、关键技术约束 | 涉及跨层改动、API 数据流、新增端点时 | 先读总体架构图与组件职责边界再动手 |
 | [api-compat.md](./api-compat.md) | **API 兼容性对照表单与实施指导**：全量 API 实现方式一览（**GraphQL 唯一主通道 / REST 匿名直连与保留路由 / selfcode fetch / worker 代理 / smart 状态**）+ 不可抗力清单 + 新增 API CheckList | **新增 API / 新页面接入前必读**；审计 API 实现方式时 | 先查 §2 对照表定通道；双端点走 §3 smart 模板；不可抗力查 §4 |
@@ -34,7 +34,7 @@
 
 ### 1.3 开发工具基建（`scripts/` 内部工具 + `scripts/data/` 数据）
 
-> **v0.0.1 新增**：项目自研内部开发工具，用于 REST 端点精确搜索 + GraphQL schema 递进枚举 + 页面分类的随时查询。**新增 API / 新页面动手前先查索引**；双端点「graph→rest 熔断对等」关系由人主观判断，结论沉淀于 `api-compat.md`。
+> 项目自研内部开发工具，用于 REST 端点精确搜索 + GraphQL schema 递进枚举 + 页面分类的随时查询。**新增 API / 新页面动手前先查索引**；双端点「graph→rest 熔断对等」关系由人主观判断，结论沉淀于 `api-compat.md`。
 
 | 工具 | 真实用意 | 使用方式 |
 |------|---------|---------|
@@ -57,7 +57,7 @@
 | `.github/skills/shadcn-ui` | shadcn/ui 组件添加流程、目录约定、主题定制 | 任务关键词匹配时自动加载 |
 | `.github/skills/replica-workflow` | **官方页面复刻工作流**（6 步：调研/评估/讨论/实施/升华/文档同步） | 复刻/改造官方页面的任务 |
 | `.github/skills/ui-layout` | 全 UI/UX 规范**速查**（权威版指向 `design.md`） | 任何 UI/布局任务 |
-| `.github/skills/api-strategy` | **API 策略速查**（v0.0.1 新方案：GraphQL 唯一主通道 + REST 熔断降级复用 rest 层；权威版指向 `architecture.md`「API 模式」与 `api-compat.md`） | 新增/修改 API 接入、smart 封装、GraphQL 模板、REST 降级逻辑 |
+| `.github/skills/api-strategy` | **API 策略速查**（GraphQL 唯一主通道 + REST 熔断降级复用 rest 层；权威版指向 `architecture.md`「API 模式」与 `api-compat.md`） | 新增/修改 API 接入、smart 封装、GraphQL 模板、REST 降级逻辑 |
 | `.github/skills/cf-worker-auth` | Worker OAuth2 令牌管理（端点/KV 会话/密钥安全） | Worker 鉴权任务 |
 | `.github/skills/cli-git-mirror` | git 镜像端点自动代理（智能 HTTP 协议/转发） | CLI 代理任务 |
 | `.github/skills/project-qc` | **项目质量控制方法论**（宏观 PDCA：第一性原理验收基线、按功能补全测试、覆盖度纠正、变更控制；产出单文件《质量控制计划》`qc-plan-*.md`） | 质量控制/测试补全/覆盖度/验收基线任务 |
@@ -80,14 +80,12 @@
 - **开发路线图** → `docs/plan.md`（内部）
 - **公共组件专项**（代码展示/Diff/Markdown 编辑器/回复）→ `04-公共组件层.md`
 
-## 当前状态（2026-08-12）
+## 当前状态
 
-- **版本阶段**：**v0.0.1 新概念状态**——由「简版 GitHub」升级为「**全量复刻 GitHub**」；0.0.x 内部试错阶段仍有效，可随时开展破坏性、不兼容的重构与尝试（package.json 版本 0.0.1）
-- **开发进度**：L0~L4 核心闭环完成（浏览/协作/账户/CLI）；进入 **v0.0.1 全量复刻**阶段——① 概念重构（文档重写）② 工具基建（API 对照索引 / 页面分类索引 / 查询 CLI）③ 官方页面分批对齐：**B1 评审工作流已完成**（三态评审/合并/Reviewers 栏/线程解决，2026-08-12）→ 下一步 B2 Webhooks / B3 Packages / B4 Pages / B5 深度安全…，路线图见内部 `plan.md`
-- **开发工具基建（2026-08-13 v2 重构）**：`scripts/` 内部开发工具——`rest-index.mjs`（octokit 零下载转录 REST 1108 操作，不聚拢 GraphQL）、`page-index.mjs`（官方页面分类：路由/模块/组件/接口关联）、`apiidx.mjs`（查询 CLI：REST 搜索 + GraphQL 实时 introspection 递进 + 页面闭环）、`gql-schema.mjs`（GraphQL schema 加载：官方实时 + 本地降级）；双端点对等关系由人主观判断，结论沉淀于 `api-compat.md`
-- **文档体系规整（2026-08-10）**：**决策记录机制整体移除**——`decisions.md` 已删除、`architecture.md` 不再保留 ADR 索引表；`tasks.md` 只留需求基线、`plan.md` 只留依赖层级；注释规范为**总结性语义描述**（说明代码最终用意），不引用决策编号
-- **已部署**：Worker `puregit` + 自定义域名 `https://git.deepwn.io`（OAuth 回调与 CLI 镜像端点同域）
-- **已知待修复漏洞（持续跟踪）**：`undici` <7.24.0（WebSocket 3 个 CVE）经 `wrangler`/`vitest-pool-workers` → `miniflare` 引入——Cloudflare 工具链内部锁定版本，overrides 会破坏兼容，**等上游发版**；`nth-check` 已通过 `pnpm-workspace.yaml` overrides 修复（GHSA-rp65-9cf3-cjxr）
+- **版本阶段**：**v0.0.1 全量复刻**；0.0.x 内部试错阶段仍有效，可随时开展破坏性、不兼容的重构与尝试（package.json 版本 0.0.1）。
+- **开发进度**：L0~L4 核心闭环完成（浏览/协作/账户/CLI）；官方页面分批对齐路线图见内部 `plan.md`。
+- **已部署**：Worker `puregit` + 自定义域名 `https://git.deepwn.io`（OAuth 回调与 CLI 镜像端点同域）。
+- **已知待修复漏洞（持续跟踪）**：`undici` <7.24.0（WebSocket 3 个 CVE）经 `wrangler`/`vitest-pool-workers` → `miniflare` 引入——Cloudflare 工具链内部锁定版本，overrides 会破坏兼容，**等上游发版**；`nth-check` 已通过 `pnpm-workspace.yaml` overrides 修复（GHSA-rp65-9cf3-cjxr）。
 - **开发环境**：**`pnpm dev`（双进程，唯一模式）**——纯 vite 前端 5173 + 独立 `wrangler dev` worker 8787，vite proxy 只转发 `/$auth` 与 git 端点；启动自动 `wrangler types`；构建 `pnpm --filter web build`（详见 copilot-instructions.md「构建与测试」）；**提交前门禁**：`pnpm lint`（oxlint 零警告）+ `pnpm format` / `pnpm format:check`（oxfmt 格式一致）+ `pnpm test`（vitest 质量门——**node 纯函数 + happy-dom 组件双层**：node 层覆盖 API 封装/smart 降级/工具纯函数，组件层（`@testing-library/react`，文件级 `// @vitest-environment happy-dom`）覆盖 Pager/FileTree/CommentsSection 等核心组件与 UI 一致性，`/$debug` 相关改动必跑）；**依赖更新**：`pnpm update:all`（递归更新根/web/worker 全部依赖至现有 semver 范围内最新 + 高危漏洞审计；audit 显式走官方 registry `https://registry.npmjs.org`——npmmirror 镜像不提供审计端点，故不可省略 `--registry`）；**high 漏洞处置**：先调研（`pnpm why` 定位引入链、判断生产/工具链影响）→ 查 advisory 安全版本 → 可选 a. `pnpm-workspace.yaml` overrides 强制修复（补丁级兼容）或 b. 代码层缓解（上游未发版时），流程详见 copilot-instructions.md「依赖安全与更新风控」
 - **本地 OAuth 调试**：通用 `local-dev` App（loopback `127.0.0.1` 回调端口可任意），`.dev.vars` 填 `http://127.0.0.1:5173/$auth/callback` + local-dev 凭据
 

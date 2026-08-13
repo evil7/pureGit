@@ -1,6 +1,6 @@
 # PureGit 架构设计
 
-> **中心思想**：全量复刻 GitHub 前端（详见 [vision.md](./vision.md)，v0.0.1 新概念）。本架构服务于该定位——前端承载全部业务（浏览/搜索/管理/协作），Worker 只做身份与 CLI 代理，数据一律来自官方 API。
+> **中心思想**：全量复刻 GitHub 前端（详见 [vision.md](./vision.md)）。本架构服务于该定位——前端承载全部业务（浏览/搜索/管理/协作），Worker 只做身份与 CLI 代理，数据一律来自官方 API。
 
 ## 总体架构
 
@@ -37,9 +37,9 @@ flowchart LR
 - 登录态：token 仅存**内存变量**（刷新页面后经 Worker `/$auth/session` 恢复）；**不写入 localStorage 明文**
 - **未登录访问策略**：仅开放仓库 Code 浏览（根/tree/blob/new/edit）；其余仓库 tab 在 `RepoLayout.RepoContent` 拦截 → LoginPrompt 登录墙（聚光灯指引右上角登录，URL 驱动登录后回落）；About 侧栏同条件隐藏（省匿名配额）。首页/搜索/用户主页保持匿名可浏览。
 - **未登录全强制 REST**：GitHub GraphQL 端点匿名请求**恒 403**（实测）；`graphql.ts` 原始 `graphqlRequest` 与 `api-core.ts` smart 层 `graphqlRequest` 均加**匿名守卫**——token 为空直接短路返回 errors → smart 函数自动降级 REST（不消耗配额、不产生 403 噪音），任何调用方（api-*.ts / repo-raw.ts）匿名时**绝不再发 GraphQL**；匿名 REST 配额 60/h 耗尽（403，错误响应无 CORS 头 → 浏览器报 CORS 错误）时，仓库目录页等显示**限流提示**（登录解锁 5000/h），不再误报「目录为空」
-- **路由架构（data router）**：`App.tsx` 由 declarative `<BrowserRouter><Routes>` 迁移 **`createBrowserRouter` + `RouterProvider`**（React Router v7 data router）——根 layout route（`AppLayout`：Nav + main/Suspense/Outlet + Footer）携带 **`errorElement={<RouteErrorPage/>}`**；页面级整页致命错误（404/限流/5xx）render 中 throw `ApiError` → 冒泡至 errorElement 分类渲染全局错误页；`path="*"` → `NotFoundPage`（未知路径兜底）。**错误分层**：整页级（仓库/用户/详情/列表页加载失败）→ 全局错误页（`ErrorPages.tsx`：`NotFoundPage`/`RateLimitPage`/`ErrorPage`，`ApiError` 携带 `rawBody/parsed` 供错误页 `<details>` 展开原始 JSON）；局部区块（表单/评论/列表子区）→ `InlineError` + toast
+- **路由架构（data router）**：`App.tsx` 使用 **`createBrowserRouter` + `RouterProvider`**（React Router v7 data router）——根 layout route（`AppLayout`：Nav + main/Suspense/Outlet + Footer）携带 **`errorElement={<RouteErrorPage/>}`**；页面级整页致命错误（404/限流/5xx）render 中 throw `ApiError` → 冒泡至 errorElement 分类渲染全局错误页；`path="*"` → `NotFoundPage`（未知路径兜底）。**错误分层**：整页级（仓库/用户/详情/列表页加载失败）→ 全局错误页（`ErrorPages.tsx`：`NotFoundPage`/`RateLimitPage`/`ErrorPage`，`ApiError` 携带 `rawBody/parsed` 供错误页 `<details>` 展开原始 JSON）；局部区块（表单/评论/列表子区）→ `InlineError` + toast
 - 使用 shadcn/ui 组件体系，禁止手写重复基础组件
-- **仓库页布局**（仿 GitHub 简化版）：RepoHeader 全 tab（**官方顺序**：Code/Issues/Pull requests/Discussions/Actions/Projects/Wiki/Security/Insights/Releases/Settings，Features 开关联动显隐）+ About 右侧栏（描述/语言/star/fork/topics/license）；Code tab 提供树状文件树 + **CodeMirror 6 代码高亮/编辑**（全面迁移，Shiki 移除）
+- **仓库页布局**（仿 GitHub 简化版）：RepoHeader 全 tab（**官方顺序**：Code/Issues/Pull requests/Discussions/Actions/Projects/Wiki/Security/Insights/Releases/Settings，Features 开关联动显隐）+ About 右侧栏（描述/语言/star/fork/topics/license）；Code tab 提供树状文件树 + **CodeMirror 6 代码高亮/编辑**
 - **复刻原则**：功能做全（对齐官方页面，按 tasks.md 分批路线图推进，深度功能如评审工作流/Webhooks/Packages/Pages 分批纳入）、呈现做简（官方布局骨架 + shadcn/ui + 一步直达交互）
 - **技术限制**：Discussions/Projects 无公开 REST API（仅 GraphQL 需认证）
 - **布局（对齐官方 2026 新版 code view）**：内容区 `max-w-7xl`（1280px）；仓库名行 = 头像 + 名称 + Public/Private 标签 + Star/Fork（行最右侧，对应官方 `repo-header-actions`）；tabs 独立一行；blob 页面包屑横跨全宽（左树右内容之上）；代码带行号（CSS counter）+ 文件头显示 branch/commit 信息；操作栏含分支计数（`N branch`）；About 侧栏含 About 标题 + stars/forks 文本统计（无"更新于"）
@@ -60,7 +60,7 @@ flowchart LR
 | `SIDEBAR_STICKY_SCROLL` | `md:sticky md:top-20 md:max-h-[calc(100svh-7rem-1px)] md:overflow-y-auto` 工具型 sticky 侧栏（文件树等内部滚动） |
 | `SIDEBAR_STICKY_SCROLL_HEAD` | `md:sticky md:top-25 md:max-h-[calc(100svh-7rem-1px)] md:overflow-y-auto` 内容区内工具型 sticky（blob symbols 面板，对齐操作头） |
 | `CONTENT_FILL` | `md:min-h-[calc(100svh-5rem-1px)]` 内容区 min-h（撑满视口剩余；PageLayout 有侧栏时自动加） |
-| ~~`GRID_2COL_240/260/280/300`~~ | ⚠️ **已弃用**：由 PageLayout `left` 取代（历史：两栏网格，items-start 内置） |
+| ~~`GRID_2COL_240/260/280/300`~~ | ⚠️ **已弃用**：由 PageLayout `left` 取代 |
 
 > ⚠️ 关键坑：① 外层容器禁 `py-*`（滚到底推 sticky）；② sticky 侧栏作 grid item 必须 `items-start`（PageLayout 内置，否则 stretch 拉满 → sticky 失效）；③ 导航型侧栏禁 `max-h+overflow`（嵌套滚动条），仅工具型用 SCROLL。
 
@@ -113,7 +113,7 @@ git config --global url.https://<worker域名>/.insteadOf https://github.com/
 
 之后 `git clone https://github.com/owner/repo.git` 实际请求 `https://<worker域名>/owner/repo.git`，由 Worker **自动代理**转发到 GitHub。git 凭据使用 **Personal Access Token（PAT）** 作为用户名/密码。
 
-**实现（worker/src/git-proxy.ts，M4 已落地）**：
+**实现（worker/src/git-proxy.ts）**：
 
 - `isGitRequest(path)`：识别 `owner/repo[.git]/(info/refs|git-upload-pack|git-receive-pack)` 请求
 - `handleGitProxy(request)`：URL 重写为 `https://github.com<path>`，透传 method/body/关键 headers（Content-Type、Accept、Authorization），移除 host/content-length 由 fetch 重算；响应原样透传状态与头
@@ -121,14 +121,7 @@ git config --global url.https://<worker域名>/.insteadOf https://github.com/
 
 ## API 模式（登录强制 GraphQL 唯一主通道 + 匿名强制 REST + REST 熔断降级）
 
-> **v0.0.1 定稿（2026-08-13）**：通道铁律三则（取代旧「三步走」过程性描述）：
-> 1. **登录态强制 GraphQL 唯一主通道（不评估收益/复杂度）**：凡有 GraphQL 适配的双端点 API，登录时一律走 GraphQL（smart 函数 = GraphQL 请求模板 + 变量）；**唯一例外 = GraphQL 无适配**（schema 无对应字段/端点/能力，如 Actions 查询、contributors、security-advisories、events、通知/邀请/团队、block、mergeUpstream、get-tree 无递归参数、compare 缺 patch、gpgKey 缺字段等）→ 保留 REST。
-> 2. **匿名态强制 REST**：GraphQL 匿名恒 403（实测），匿名时 smart 层短路走 REST 数据层。
-> 3. **GraphQL 失败 → `withRestFallback` 熔断降级 REST**（复用 rest 层，日志 `↪` 标记）。
->
-> **为什么登录强制 Graph（不限收益）**：GraphQL → REST 实际是**一对多**（一个 GraphQL 复合查询聚合的字段对应 2~5 个 REST 端点）。登录态 GraphQL 主通道已全量定型（73+ smart 函数，有 GraphQL 等价的 REST 调用点已清零）——「收益低 / 繁琐 / 复杂度高」**不再构成例外**，只有「GraphQL 无适配」才是保留 REST 的合法理由。
->
-> 实施状态：**已完成**（全量 smart 迁移 + REST 熔断降级链；无适配清单固化于 `api-compat.md` §4；技术债全部清零）。
+> 通道铁律三则见 `api-compat.md` §0.1；本节省略重复表述，仅记架构层结论（smart 层结构、熔断机制、日志规范）。
 
 ### 策略
 
@@ -144,7 +137,7 @@ flowchart TD
 ```
 
 - **GraphQL 唯一主通道**：登录态全部功能经 GraphQL（`api.github.com/graphql`）；无「REST 优先」模式选项。
-- **熔断机制框架保留**：额度跟踪（REST core / GraphQL 双桶）、cooldown（网络错误 60s）、in-flight 去重、响应缓存——与「双通道」时期一致；**降级目标 = 立即经 `withRestFallback` 走 REST 降级链**（复用 rest 层现有实现）。
+- **熔断机制框架**：额度跟踪（REST core / GraphQL 双桶）、cooldown（网络错误 60s）、in-flight 去重、响应缓存；**降级目标 = 立即经 `withRestFallback` 走 REST 降级链**（复用 rest 层现有实现）。
 - **匿名强制 REST**（硬约束非降级）：GitHub GraphQL 匿名恒 403（实测），匿名时 smart 层短路直接走 REST 数据层（`rest-*.ts`，公开数据匿名可用）。**这是保留 REST 数据层的核心原因**（另一原因是熔断降级复用）。
 - **路径参数 → 请求模板变量**：路由参数（owner/repo/number/login 等）不做字符串拼查询，统一映射为 GraphQL 模板的变量对象（模板集中 `graphql.ts`，变量由 smart 函数组装）。
 - **双额度**：REST core 与 GraphQL 分开计数（认证 REST 5000/时、GraphQL 5000 点/时）；footer/偏好页展示。
@@ -169,30 +162,9 @@ YYYY-MM-DD 12:23:34:130 [Info]  graphqlRequest | anonymous → REST          ←
 
 实现：`web/src/lib/api-log.ts`（`logMainRequest`/`logGraphqlMain`/`logFallback`/`logError`/`logWarn`/`logInfo`/`beginFallback`/`inFallback`）；`withRestFallback`（api-core.ts）内部调 `beginFallback` 取得降级会话序号并打 `[Fallback#n]`，降级链 REST 日志自动带 `↪` 图标，`restFn` 失败 → `logError` 后 rethrow（不吞错误）；序号为值传递（同步递增），并发场景下仍能正确关联「哪次降级触发了哪些 REST」；静默 catch（返回空/默认值/null）必补 `logWarn`；日志仅 DEV 输出（测试 `setApiLogDev(true)` 开启）。
 
-### 覆盖范围
+---
 
-| 数据 | 主通道（GraphQL） | REST 熔断降级 | 现状 |
-|------|------------------|--------------|------|
-| 仓库信息/详情 | ✅ 按需字段 | ✅ withRestFallback | ✅ 已接入（fetchRepositorySmart） |
-| 当前用户画像 | ✅ viewer | ✅ withRestFallback | ✅ 已接入（fetchViewerSmart） |
-| 用户/组织主页 | ✅ user(login)/organization | ✅ withRestFallback | ✅ 已接入（fetchUserProfileSmart/fetchOrgProfileSmart） |
-| issue 列表/详情 | ✅ repository.issues / issue(number) | ✅ withRestFallback | ✅ 已接入（fetchIssuesSmart/fetchIssueDetailSmart，GraphQL 天然排除 PR） |
-| PR 列表/详情 | ✅ repository.pullRequests / pullRequest(number) | ✅ withRestFallback | ✅ 已接入（fetchPullsSmart/fetchPullDetailSmart，MERGED 映射 closed+merged_at） |
-| Releases 列表/详情 | ✅ repository.releases / release(tagName) | ✅ withRestFallback | ✅ 已接入（fetchReleasesSmart/fetchReleaseDetailSmart） |
-| 仓库/用户/issue 搜索 | ✅ search(query, type) | ✅ withRestFallback | ✅ 已接入（searchRepositoriesSmart/searchUsersSmart/searchIssuesSmart） |
-| 创建 issue | ✅ createIssue mutation | ✅ withRestFallback | ✅ 已接入（createIssueSmart） |
-| star/unstar | ✅ addStar/removeStar mutation | ✅ withRestFallback | ✅ 已接入（setStarredSmart） |
-| fork | ✗ 无 fork mutation | REST 直连 | REST-only（smart 入口统一，内部直连 REST） |
-| 创建 PR | ✅ createPullRequest mutation | ✅ withRestFallback | ✅ 已接入（createPullRequestSmart：同仓库查 base id / 跨仓库复合查询双 id） |
-| 更新仓库 | ✅ updateRepository + archiveRepository（hybrid） | ✅ REST 增补 + 熔断 | ✅ 已接入（updateRepositorySmart：private/default_branch 增补 REST） |
-| 仓库列表（趋势） | ⚠️ search 无趋势语义 | REST 直连 | REST（趋势本身为 hack 模拟） |
-| 文件内容 | ✅ blob（isTruncated 门控） | ✅ withRestFallback（REST→$raw） | ✅ 已接入（fetchFileContentSmart） |
-| 目录列举 / README | ✅ Tree.entries + blob | ✅ withRestFallback | ✅ 已接入（fetchDirContentsSmart/fetchReadmeSmart） |
-| 文件树 | ✗ Tree.entries 无 recursive 参数 | REST 直连 | REST（get-tree recursive 无 GraphQL 等价） |
-| 语言统计 | ✅ repository.languages | ✅ withRestFallback | ✅ 已接入（fetchRepositorySmart 复合查询含 languages） |
-
-> ⚠️ = GraphQL 支持但能力缺失（无递归参数/缺字段）或需多步取 id，保留 REST 直连，不纳入熔断降级范围（「繁琐/收益低」不构成例外）。
-> **匿名强制 REST**：GraphQL 强制要求认证（匿名 401/403），匿名时 smart 层直接走 REST 数据层（公开数据匿名可用）——REST 数据层保留的核心原因；匿名 REST core 限 60 次/时（按 IP），通过 `ApiError.isRateLimit` 识别并展示「限流请稍后刷新」。
+> 全量 smart 函数清单与 REST-only 不可抗力登记见 `api-compat.md`（§2 对照表 + §4 不可抗力）。
 
 ### 熔断判定（GraphQL 不可用 → withRestFallback 降级 / 匿名走 REST）
 

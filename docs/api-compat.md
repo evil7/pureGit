@@ -1,14 +1,12 @@
 # API 兼容性对照表单与实施指导（api-compat）
 
-> 权威文档 · API 实施指导
-> 目的：**一页审计全部 API 的实现方式**；新增 API / 新页面接入时的**唯一实施指导**。
-> 配套：`architecture.md`（架构设计）。本文档为 API 策略（**登录强制 GraphQL 唯一主通道 + 匿名强制 REST + REST 熔断降级**）的**执行落地表单**；**§0 为智能熔断接口开发准则（先读）**。
+> 权威文档 · API 实施指导。**一页审计全部 API 实现方式**；新增 API / 新页面接入的唯一实施指导（§0 准则先读）。配套 `architecture.md`。
 
 ---
 
-## 0. 智能熔断接口开发准则（v0.0.1 定稿）
+## 0. 智能熔断接口开发准则（先读）
 
-> 本文是「GraphQL 主通道 + REST 熔断降级」的**开发准则**——新增/修改任何 API 接入前必读，取代过程性的「三步走」描述。
+通道铁律 + 四分类判断 + 实施顺序；新增/修改任何 API 接入前必读。
 
 ### 0.1 通道铁律（三则）
 
@@ -19,7 +17,7 @@
 ### 0.2 实施逻辑（判断一个 API 走哪条通道）
 
 1. **查 schema（用 apiidx 工具）**：`apiidx rest <关键词>` 定位 REST 端点 → `apiidx gql type <Type>` / `gql field <Type.field>` 递进确认有无 GraphQL 等价（**必须递进到嵌套 / Connection 字段**——根字段列表不含嵌套等价）。
-2. **三分类**：
+2. **四分类**：
    - **有 GraphQL 适配** → smart 化（登录 GraphQL 主通道 + `withRestFallback` 熔断降级；匿名短路 REST）；
    - **无 GraphQL 适配** → 保留 REST，登记 §4 不可抗力；
    - **GraphQL-only**（REST 无端点）→ 固定 GraphQL（匿名自然降级到空/降级路径）；
@@ -40,7 +38,7 @@
 - **GraphQL 能力缺失 ≠ 无适配**：如 `git/get-tree` 有 `Tree.entries` 但**无 `recursive` 参数**（全量树 GraphQL 需 N+1 逐层下钻）——属「能力缺失」，仍保留 REST（§4.6）。
 - **匿名强制 REST 是硬约束非降级**：smart 函数 `if (!token) return fetchXxx(...)` 短路，绝不发起 GraphQL（不消耗配额、不产生 403 噪音）。
 - **熔断降级复用不废弃**：rest 层代码继续用于匿名直连 + 降级链（`withRestFallback` 包装）。
-- **「收益低/繁琐」已废止**：不再作为保留 REST 的理由；技术债已全部清零（旧 4.2/4.9 的「收益低」表述已清洗并完成迁移）。
+- **REST 固定端点一律 `typedRequest` + `octokit.rest.*` 类型化方法**；仅特殊语义端点（raw Accept / base64 / Link 头 / 无类型化方法）保留底层通道并注释理由。
 
 ---
 
@@ -50,7 +48,7 @@
 页面 / 组件
    │  只允许 import "@/lib/api"（smart 层）—— 例外见 §5
    ▼
-web/src/lib/api.ts ─── 桶（barrel，17 行）：re-export api 板块 + rest 全量
+web/src/lib/api.ts ─── 桶（barrel）：re-export api 板块 + rest 全量
    ├─ api-core.ts       graphqlRequest GraphQL 唯一通道包装 + 日志/熔断工具 + hasGraphQLErrors/GraphQLResponse
    ├─ api-user.ts       viewer/账户/邮箱/组织列表/SSH/关注
    ├─ api-repo.ts       仓库详情/创建/star/fork/主题/订阅/删除/计数
@@ -58,9 +56,9 @@ web/src/lib/api.ts ─── 桶（barrel，17 行）：re-export api 板块 + r
   ├─ api-issue.ts      issue/PR + 评论/评审 + 页面级合并查询
   ├─ api-discussions.ts Discussions
   └─ api-search.ts     搜索
-web/src/lib/rest.ts ── 桶（17 行）：re-export rest 板块（REST 全量，匿名直连 + 保留 REST 路由）
+web/src/lib/rest.ts ── 桶（barrel）：re-export rest 板块（REST 全量，匿名直连 + 保留 REST 路由）
    ├─ rest-core.ts      底层（restRequest/githubFetch/typedRequest/ApiError/通用类型）
-   ├─ rest-account.ts   账户（emails/SSH/GPG/blocked/saved-replies）
+   ├─ rest-account.ts   账户（emails/SSH/GPG/blocked）
    ├─ rest-user-org.ts  用户主页 + 关注 + 组织
    ├─ rest-repo.ts      仓库浏览/管理 + 代码内容 + Release
    ├─ rest-issue-pr.ts  Issue/PR + 评论 + 类型
@@ -73,22 +71,16 @@ web/src/lib/wiki.ts ── Wiki（唯一 selfcode_fetch → worker /$wiki 代理
 worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 ```
 
-**三条铁律（v0.0.1 定稿，2026-08-13）**：
-1. **登录态强制 GraphQL 唯一主通道（不评估收益/复杂度）**——凡有 GraphQL 适配的双端点 API，登录时一律走 GraphQL；**唯一例外 = GraphQL 无适配**（schema 无对应字段/端点/能力，如 Actions 查询、contributors、security-advisories、events、通知/邀请/团队、get-tree 无递归参数、compare 缺 patch、gpgKey 缺字段等）→ 保留 REST。**GraphQL 失败 → `withRestFallback` 熔断降级 REST**（复用 rest 层现有实现，日志 `↪` 标记，见 `architecture.md`「API 模式」）。**匿名强制 REST**（GraphQL 匿名恒 403）——匿名时 smart 层短路走 `rest-*.ts`（REST 数据层保留的核心原因）。
-2. **REST 固定端点一律 `typedRequest` + `octokit.rest.*` 类型化方法**（URL 模板/参数编码/返回类型由 SDK 生成代码保证）；仅特殊语义端点（raw Accept / base64 解码 / Link 头分页 / Octokit 无类型化方法的端点）保留 `githubFetch`/`fetchWithTimeout`（`octokit.request` 底层，注释说明理由），**禁止新增手拼 URL 调用**。
-3. **双端点 API 一律 smart 包装**：页面从 `@/lib/api` import `fetchXxxSmart`；smart 函数 = **GraphQL 请求模板 + 路径参数变量**（模板在 `graphql.ts` 集中管理），匿名短路 REST 数据层。
-
 **文件组织**：
-- 原 `github.ts`（2829 行）/ `api.ts`（2362 行）按业务板块拆分为「板块文件 + 桶」；桶 re-export 全部符号，**页面 import 面零改动**。
 - **命名**：REST 数据层 = `rest.ts` + `rest-*.ts`（匿名直连 + 保留 REST 路由）；smart 层 = `api.ts` + `api-*.ts`；GraphQL 请求模板 = `graphql.ts`；SDK 基础设施 = `octokit.ts`。
-- 新增 API 归属：**GraphQL 模板放 `graphql.ts`（模板 + 变量组装）**，smart 包装放对应 `api-*.ts`，匿名/保留 REST 放对应 `rest-*.ts`，REST 熔断降级（GraphQL 定型后）补写在对应 `rest-*.ts` 并标注路由关联。
-- 板块文件 >800 行时再拆（`api-issue.ts` 已拆出 `api-discussions.ts`/`api-search.ts`）。
+- **新增 API 归属**：GraphQL 模板放 `graphql.ts`，smart 包装放对应 `api-*.ts`，匿名/保留 REST 放对应 `rest-*.ts`。
+- 板块文件 >800 行时再拆。
 
 ---
 
 ## 2. 全量 API 兼容性对照表单
 
-> 列含义：`octokit_graphQL`=有 GraphQL 端点且已接入（**主通道**）；`octokit_rest`=有 REST 端点（经 SDK，**匿名直连 / 熔断降级复用 / 保留 REST 路由**）；`selfcode_fetch`=原生 fetch 绕过 SDK；`worker_proxy`=走 Cloudflare Worker 代理；`already_smart_now`=已做 **GraphQL 唯一主通道 + REST 熔断降级（withRestFallback）** 包装（v0.0.1 新定义）。
+> 列含义：`octokit_graphQL`=有 GraphQL 端点且已接入（**主通道**）；`octokit_rest`=有 REST 端点（经 SDK，**匿名直连 / 熔断降级复用 / 保留 REST 路由**）；`selfcode_fetch`=原生 fetch 绕过 SDK；`worker_proxy`=走 Cloudflare Worker 代理；`already_smart_now`=已做 **GraphQL 唯一主通道 + REST 熔断降级（withRestFallback）** 包装。
 > `✅`=已实现　`✗`=无此通道　`—`=不适用　`❌`=应做未做（禁）　`⚠️`=有通道但合理保留 REST（理由见 §4）
 
 ### 2.1 智能封装层（smart，GraphQL 唯一主通道 + REST 熔断降级）—— ✅ 全部就绪
@@ -161,22 +153,17 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 |---|---|---|---|---|---|---|
 | `fetchCompare`（compare 页/新 PR diff） | ⚠️ | ✅ | — | — | ❌ | 4.1 GraphQL Comparison.files 缺 patch；**`compareCommitsWithBasehead` 类型化方法，basehead 整串传参（跨仓库 `owner:repo:branch` 全冒号格式）** |
 | `mergeUpstream`（Sync fork → Update branch） | ✗ | ✅ | — | — | ❌ | GraphQL 无 merge-upstream；**`repos.mergeUpstream` 类型化方法** |
-| `forkRepositorySmart`（smart 入口统一，内部 REST-only） | ✗ | ✅ | — | — | ✅ | GraphQL 无 fork mutation（仅 forking 设置 mutation）；smart 入口存在但内部直连 REST |
-| `createPullRequestSmart`（已迁 GraphQL 主通道，REST 版仅作降级底层） | ✅ | ✅ | — | — | ✅ | createPullRequest mutation：同仓库查 base id / 跨仓库复合查询双 id；失败熔断 REST |
-| `updateRepository`（REST 版，仅作 hybrid 的 private/default_branch 增补与熔断底层） | ⚠️ | ✅ | — | — | ✅ | 已由 updateRepositorySmart 接管（hybrid）；private/default_branch 无 GraphQL 通道 |
 | `fetchGpgKeys`/`addGpgKey`/`deleteGpgKey` | ⚠️ | ✅ | — | — | ❌ | 4.3 GraphQL gpgKey 仅 5 字段，REST 需 emails/subkeys/can_* |
 | `blockUser`/`unblockUser` | ⚠️ | ✅ | — | — | ❌ | 4.4 GraphQL 无 block mutation |
 | `fetchJobLogs`（Actions 日志） | ✗ | ✅ | — | — | ❌ | 4.5 text/plain 非 JSON；GraphQL 无 actions 通道 |
 | Actions 全家（`fetchWorkflows`/`fetchWorkflowRuns`/`fetchWorkflowRunDetail`/`fetchWorkflowRunJobs`/`fetchRunArtifacts`/`dispatchWorkflow`） | ✗ | ✅ | — | — | ❌ | 4.5 GraphQL 无 actions 查询 |
-| `fetchFileTree`/`fetchLanguages`/`fetchFileContent`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.6 无 GraphQL 等价 / raw Accept；`fetchFileContent` 支持 `branch` 参数（默认 HEAD，非默认分支 404 修复）。**REST contents 上限 1MB→100MB**（1MB~100MB 必须 raw Accept）；smart 层 `fetchFileContentSmart` 分层（登录 GraphQL isTruncated→REST→$raw 保底 / 匿名 REST→raw 直连保底）；**目录列举 / README 已迁 GraphQL 主通道**（fetchDirContentsSmart / fetchReadmeSmart，见 §2.1） |
-| `fetchRootFiles`（REST 版） | ✅ | ✅ | — | — | ✅ | smart 已接管（fetchRootFilesSmart），REST 版仅作降级底层 |
-| `fetchContributorsCount` | ✗ | ✅ | — | — | ❌ | 4.7 Link header 分页计数（contributors 无 GraphQL totalCount 等价；releases 计数已迁 GraphQL，见 §2.1 fetchReleasesCountSmart） |
+| `fetchFileTree`/`fetchLanguages`/`fetchFileContent`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.6 无 GraphQL 等价 / raw Accept；`fetchFileContent` 支持 `branch` 参数（默认 HEAD，非默认分支 404 修复）。**REST contents 上限 1MB→100MB**（1MB~100MB 必须 raw Accept）；smart 层 `fetchFileContentSmart` 分层（登录 GraphQL isTruncated→REST→$raw 保底 / 匿名 REST→raw 直连保底）；目录列举 / README 走 GraphQL 主通道（fetchDirContentsSmart / fetchReadmeSmart，见 §2.1） |
+| `fetchContributorsCount` | ✗ | ✅ | — | — | ❌ | 4.7 Link header 分页计数（contributors 无 GraphQL totalCount 等价；releases 计数走 GraphQL，见 §2.1 fetchReleasesCountSmart） |
 | 通知/邀请（`fetchNotifications`/`markNotificationThreadRead`/`fetchRepoInvitations`/`acceptRepoInvitation`/`declineRepoInvitation`） | ✗ | ✅ | — | — | ❌ | 4.8 GraphQL 无对应 |
 | `updateDefaultBranch`（PATCH /user master_branch） | ✗ | ✅ | — | — | ❌ | 4.8 专属字段 |
 | `fetchRateLimit` | ✗ | ✅ | — | — | ❌ | 4.8 专属端点 |
 | `fetchPullFiles`/`fetchPullCommits`/`fetchPullCheckRuns`/`fetchPullReviewComments`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.5/4.6 无 GraphQL 等价 |
 | `transferRepository`/`leaveOrganization` | ✗ | ✅ | — | — | ❌ | 4.9 GraphQL 无 transferRepository/leaveOrganization mutation |
-| `updateIssueState`（关闭/重开 issue；已由 updateIssueStateSmart 接管，REST 版仅作降级底层） | ✅ | ✅ | — | — | ✅ |
 | **组织管理（全部固定 REST）** | | | | | | |
 | `fetchOrgMembersWithRoles`（成员含角色/2FA，两请求合并） | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL membersWithRole 无角色/2FA 字段；角色=admin 子集合并 |
 | `setOrgMemberRole` / `removeOrgMember`（PUT/DELETE memberships） | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL 无 members 写 mutation |
@@ -185,7 +172,6 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchTeamMembers` / `addTeamMember` / `removeTeamMember` | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL 无团队成员管理等价 |
 | `updateOrganizationSmart` 成员权限字段（`default_repository_permission` / `members_allowed_repository_creation_type`） | ✗（仅 Profile 字段走 GraphQL） | ✅ | — | — | ⚠️ | 4.17 权限字段仅 REST；smart 检测到权限字段时直接走 REST 分支（避免 GraphQL 成功后静默丢失） |
 | `fetchOrgDetailSmart` 权限字段（`default_repository_permission`） | ✗ | ✅ | — | — | ⚠️ | 4.17 GraphQL Organization 无 `defaultRepositoryPermission` 字段（实测 404）；GraphQL 成功后轻量 REST 补丁该字段 |
-| `fetchRepoSubscription`/`setRepoSubscription`（REST 版） | ⚠️ | ✅ | — | — | ❌ | smart 已接管，REST 版仅作降级底层 |
 | **Wiki** | | | | | | |
 | `fetchWikiPage`（读） | ✗ | ✗ | ✅ | ✅ `/$wiki/{o}/{r}/{p}` | ❌ | 4.10 API 无 wiki 端点 + raw 被墙，worker 代理唯一解；**写**：无官方 API，仅 git 协议 push `.wiki.git` → 走本项目 git 镜像代理（`git-proxy.ts` 正则天然匹配 `pureGit.wiki.git`） |
 | **Raw 代理** | | | | | | |
@@ -196,9 +182,8 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | git 镜像端点代理（clone/pull/push） | — | — | — | ✅ | — | worker 专属 |
 | **已下线** | | | | | | |
 | ~~`/$debug/session` 身份校验 API~~ | — | — | — | ~~✅~~ | — | **已删除**：`/$debug` 为纯前端路由（`web/src/App.tsx` lazy 页），worker 完全不参与，`DEBUG_ROUTE_ENABLE` 环境变量一并移除；调试页前端直连 api.github.com（复用主站会话 token 或匿名） |
-| **已下线** | | | | | | |
 | ~~`fetchRepoProjects`~~（`GET /repos/{o}/{r}/projects`） | ✗ | ~~✅~~ | — | — | — | **legacy Projects REST API 已随 GitHub 官方公告移除（2026-08 实测全 404，CORS 亦异常）**；Projects v2 仅 GraphQL。`RepositoryProject`/`fetchRepoProjects` 已删除 |
-| ~~Saved replies 全家~~（`fetchSavedReplies`/`createSavedReply`/`updateSavedReply`/`deleteSavedReply`，`GET/POST/PATCH/DELETE /user/saved_replies`） | ✗ | ~~✅~~ | — | — | — | **GitHub 已移除 Saved replies REST API**（2024-07 官方公告；实测 `docs.github.com/en/rest/users/saved-replies` 文档页与 `api.github.com/user/saved_replies` 均 404）；官方仅保留网页版（github.com/settings/replies）。`SavedReply`/4 函数/页面/侧栏项/i18n 键已删除 |
+| ~~Saved replies 全家~~（`fetchSavedReplies`/`createSavedReply`/`updateSavedReply`/`deleteSavedReply`，`GET/POST/PATCH/DELETE /user/saved_replies`） | ✗ | ~~✅~~ | — | — | — | **GitHub 已移除 Saved replies REST API**（2024-07 官方公告）；官方仅保留网页版（github.com/settings/replies）。`SavedReply`/4 函数/页面/侧栏项/i18n 键已删除 |
 | **Projects v2（GraphQL only）** | | | | | | |
 | `fetchRepoProjectsV2Smart`（仓库 Projects v2 列表） | ✅ 固定 GraphQL | ✗ | — | — | — | **无 REST 等价**（legacy 已下线）；smart 层固定 GraphQL（`REPO_PROJECTS_V2_QUERY`）。**scope 铁律**：GraphQL `projectsV2` 字段运行时**强制要求 `read:project`/`project` scope**（实测，repo 不涵盖！官方 scopes 文档描述有误导）→ 登录 scope 已含（worker `buildGitHubScope`）；查漏补缺基准见 `lib/scopes.ts` |
 
@@ -206,7 +191,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 
 ## 3. smart 包装实施模板（新增双端点 API 时照抄）
 
-**v0.0.1 新路径（GraphQL 唯一主通道 + REST 熔断降级）**：在 `graphql.ts` 加模板（路径参数 → 变量）→ `api.ts` 加 smart 函数（**GraphQL 唯一实现 + withRestFallback 降级**）→ 页面从 `@/lib/api` import。
+在 `graphql.ts` 加模板（路径参数 → 变量）→ `api.ts` 加 smart 函数（**GraphQL 唯一实现 + withRestFallback 降级**）→ 页面从 `@/lib/api` import。
 
 ```ts
 // graphql.ts —— 请求模板（路径参数 :owner/:repo → 变量 $owner/$name）
@@ -244,19 +229,19 @@ export async function fetchXxxSmart(
 
 ## 4. 不可抗力清单（GraphQL 无适配 → 保持 REST；审计时先查这里）
 
-> 本节仅收录 **GraphQL 无适配**（schema 无对应字段/端点/能力）的 REST 保留项。有 GraphQL 适配的 API 已全部迁移（§2.1），无适配才在此登记。
+> 本节仅登记 **GraphQL 无适配**（schema 无对应字段/端点/能力）的 REST 保留项；有 GraphQL 适配的 API 见 §2.1。
 
 | # | API | 理由 |
 |---|---|---|
 | 4.1 | `fetchCompare` | GraphQL `Comparison.files` 只有 path/additions/deletions，**无 patch 内容**；DiffView 渲染需要 patch。 |
-| 4.2 | `updateRepository` | GraphQL 有 `updateRepository` mutation（name/description/homepageUrl/has*Enabled）+ 独立 archiveRepository/unarchiveRepository；但 **private（可见性）与 default_branch 无 GraphQL mutation**——已迁 hybrid（updateRepositorySmart：可 GraphQL 字段走 mutation，private/default_branch 增补 REST，熔断全 REST）。 |
+| 4.2 | `updateRepository` | GraphQL 有 `updateRepository` mutation（name/description/homepageUrl/has*Enabled）+ 独立 archiveRepository/unarchiveRepository；但 **private（可见性）与 default_branch 无 GraphQL mutation**——走 hybrid（updateRepositorySmart：可 GraphQL 字段走 mutation，private/default_branch 增补 REST，熔断全 REST）。 |
 | 4.3 | GPG keys | GraphQL `gpgKey` 仅 id/publicKey/email/createdAt/verified；页面需 key_id/emails/can_sign（REST 有）。 |
 | 4.4 | block / unblock | GraphQL **无 block mutation**（仅 unblock）；block 保留 REST。 |
 | 4.5 | Actions / Job 日志 | GraphQL **无 actions 查询通道**；`fetchJobLogs` 是 text/plain 流，非 JSON。 |
-| 4.6 | 文件内容 / 树 / 语言 | GraphQL 无 raw content 通道；contents API 需 `application/vnd.github.raw` 自定义 Accept。**修订**：REST contents **上限 100MB**（官方 2022-05 起，1MB~100MB 必须 raw Accept）；GraphQL Blob 仍 ~1MB 截断（**`isTruncated` 必须检查**——>1MB 时 text 非 null 但含部分内容）；官方无分段读取参数——>100MB 仅 git clone/archive 可达。**分层通道**：登录 API smart（GraphQL→REST）→ `$raw` 保底（会话 token 透传）；匿名 REST → raw 直连保底。**目录列举 / README 已迁 GraphQL**（Tree.entries + blob 有等价）；**文件树 get-tree recursive 保留 REST**（`Tree.entries` 无递归参数，全量树 GraphQL 需 N+1 逐层下钻，大仓库退化） |
-| 4.7 | 计数（Contributors） | `per_page=1` 读 Link header 末页；releases 计数已迁 GraphQL totalCount（`fetchReleasesCountSmart`），仅 contributors 保留 Link header。 |
-| 4.8 | 通知 / 邀请 / default branch / rate_limit | GraphQL 无对应端点或专属字段。（Saved replies 已从本项移除：端点被 GitHub 整体下线，见 §3 已下线表） |
-| 4.9 | 低频管理写操作（transferRepository / leaveOrganization） | GraphQL **无对应 mutation**（transferRepository/leaveOrganization 均无）；updateIssueState 已迁 closeIssue/reopenIssue mutation（见 §2.1 updateIssueStateSmart）。 |
+| 4.6 | 文件内容 / 树 / 语言 | GraphQL 无 raw content 通道；contents API 需 `application/vnd.github.raw` 自定义 Accept。REST contents **上限 100MB**（1MB~100MB 必须 raw Accept）；GraphQL Blob 仍 ~1MB 截断（**`isTruncated` 必须检查**——>1MB 时 text 非 null 但含部分内容）；官方无分段读取参数——>100MB 仅 git clone/archive 可达。**分层通道**：登录 API smart（GraphQL→REST）→ `$raw` 保底（会话 token 透传）；匿名 REST → raw 直连保底。目录列举 / README 走 GraphQL 主通道（Tree.entries + blob 有等价）；文件树 get-tree recursive 保留 REST（`Tree.entries` 无递归参数，全量树需 N+1 逐层下钻，大仓库退化） |
+| 4.7 | 计数（Contributors） | `per_page=1` 读 Link header 末页；releases 计数走 GraphQL totalCount（`fetchReleasesCountSmart`），仅 contributors 保留 Link header。 |
+| 4.8 | 通知 / 邀请 / default branch / rate_limit | GraphQL 无对应端点或专属字段。 |
+| 4.9 | 低频管理写操作（transferRepository / leaveOrganization） | GraphQL **无对应 mutation**（transferRepository/leaveOrganization 均无）。 |
 | 4.10 | Wiki | API 无 wiki 端点（实测 404）；前端直连 raw 被墙 → worker `/$wiki` 代理。 |
 | 4.11 | `deleteSshKey` | GraphQL 需 node id，REST 数字 id 无法可靠映射到 GraphQL id → smart 函数内部直连 REST（入口统一，避免页面误用）。 |
 | 4.12 | 修改用户名（Change username） | `PATCH /user` body **无 login 字段**（仅 name/email/blog/company/location/hireable/bio/twitter/pronouns）；改名走网页内部端点 + 密码验证，API 不可达（C9 调研确认）。 |
