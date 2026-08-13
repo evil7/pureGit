@@ -58,8 +58,6 @@ argument-hint: "需要开发/修复哪个页面的 UI/布局/组件，或参考�
 | `SIDEBAR_STICKY_SCROLL` | `md:sticky md:top-20 md:max-h-[calc(100svh-7rem-1px)] md:overflow-y-auto` | **工具型**侧栏（文件树等需内部滚动） |
 | `SIDEBAR_STICKY_SCROLL_HEAD` | `md:sticky md:top-25 md:max-h-[calc(100svh-7rem-1px)] md:overflow-y-auto` | 内容区内工具型 sticky（blob symbols 面板，对齐 sticky 操作头） |
 | `CONTENT_FILL` | `md:min-h-[calc(100svh-5rem-1px)]` | 内容区撑满视口剩余（PageLayout 有侧栏时自动加） |
-| ~~`GRID_2COL_240/260/280/300`~~ | — | ⚠️ **已弃用**：由 PageLayout `left` 取代 |
-| ~~`GRID_2COL_ASIDE_280`~~ | — | ⚠️ **已弃用**：由 PageLayout `right` 取代 |
 
 ## 4. 五大禁则（代码审计红线）
 

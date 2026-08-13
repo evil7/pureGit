@@ -2,7 +2,7 @@
 
 > Use when: PureGit 项目中新增/修改任何 API 接入、smart 封装、GraphQL 模板、REST 降级逻辑、熔断日志的讨论与实施。触发词：API 策略、GraphQL、REST、熔断、降级、smart、请求模板、路径参数、api-compat、api-log、api-strategy。
 
-## 核心认知（v0.0.1 定稿 2026-08-13）
+## 核心认知
 
 **通道铁律**：**登录态强制 GraphQL 唯一主通道（不评估收益/复杂度）+ 匿名强制 REST + REST 熔断降级**。
 
@@ -69,24 +69,7 @@ YYYY-MM-DD 12:23:34:130 [Info]  graphqlRequest | anonymous → REST          ←
 - 匿名分支：`if (!token) return fetchXxx(owner, repo, token)`（走 rest-*.ts）
 - 失败分支：`withRestFallback(() => fetchXxx(...), "fetchXxxSmart", resp)`（统一降级链 + ↪ 日志）
 
-```ts
-export async function fetchXxxSmart(owner: string, repo: string, token?: string | null) {
-  if (!token) {
-    // 匿名强制 REST（GraphQL 匿名恒 403）——REST 数据层保留的唯一原因
-    return fetchXxx(owner, repo, token);
-  }
-  try {
-    const resp = await graphqlRequest(XXX_QUERY, { owner, name: repo }, token);
-    if (!hasGraphQLErrors(resp) && resp.data?.repository) {
-      return toXxx(resp.data.repository);
-    }
-    // GraphQL 失败 → 熔断降级 REST（复用 rest 层；日志自动 ↪ 前缀）
-    return withRestFallback(() => fetchXxx(owner, repo, token), "fetchXxxSmart", resp);
-  } catch (e) {
-    return withRestFallback(() => fetchXxx(owner, repo, token), "fetchXxxSmart");
-  }
-}
-```
+> 完整模板代码见 `docs/api-compat.md` §3（graphql.ts 模板 + api.ts smart 函数 + withRestFallback 降级）。
 
 ### 第 2 步：全量迁移 + 模板调优 + 降级链
 

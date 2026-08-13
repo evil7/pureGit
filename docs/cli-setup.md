@@ -26,7 +26,7 @@ git 智能 HTTP 协议的四个请求均被 Worker 自动转发：
 git config --global url.https://git.deepwn.io/.insteadOf https://github.com/
 ```
 
-> 生产域名：`git.deepwn.io`（Q03 已确认）
+> 生产域名：`git.deepwn.io`
 > 本地开发：`http://localhost:8787`
 > ⚠️ 他人部署：将下面所有 `git.deepwn.io` 替换为你自己的部署域名。
 

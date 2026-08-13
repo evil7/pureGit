@@ -80,32 +80,12 @@ web/public/debug/
 
 **关键取舍**：原始 deref 24MB 中，**responses 完整 schema 占 ~11.3MB（85%）**——但那是响应示例文档，不是请求/补全所需。req（1.1MB raw）+ res-min（245KB raw）即覆盖全部「查看端点 + 构造请求 + body 补全」能力；res-full 仅文档浏览需要，按需加载。**不砍任何 requestBody schema**（字段级补全的数据完整保留）。
 
-## 5. 体积实测数据（决策依据，2026-08-10 实测）
+## 5. 体积实测结论
 
 > 传输量以 **brotli** 为准（Cloudflare Pages 静态资源自动 gzip/brotli，免费）。
 
-### REST 按 tag 拆分（raw / gzip / brotli）
-
-| tag | req (br) | res-min (br) | res-full (br) |
-|---|---|---|---|
-| repos | 22KB | 3KB | 41KB |
-| actions | 10KB | 2KB | 19KB |
-| orgs | 10KB | 1KB | 21KB |
-| issues | 4KB | 1KB | 13KB |
-| codespaces | 4KB | 1KB | 10KB |
-| 其余 38 tag | 各 ≤ 4KB | 各 ≤ 1KB | 各 ≤ 12KB |
-| **合计** | **97KB** | **13KB** | **277KB** |
-
-### GraphQL 原数据
-
-| 数据 | raw | gzip | brotli |
-|---|---|---|---|
-| `schema.json`（完整 introspection，1606 类型 / 6262 字段） | 2584KB | 204KB | **117KB** |
-
-### 结论
-
-- **全部 schema 数据 brotli 后 ~490KB**，最大单文件 117KB（GraphQL）——任何单文件加载毫秒级，**无进度条需求**，仅需骨架屏
-- **brotli 压缩率惊人**（res-full raw 12.2MB → 277KB，44×）：JSON 重复结构（key/类型模式）被字典式压缩器自动吸收
+- **全部 schema 数据 brotli 后 ~490KB**（REST req 97KB + res-min 13KB + res-full 277KB；GraphQL `schema.json` 117KB），最大单文件 117KB——任何单文件加载毫秒级，**无进度条需求**，仅需骨架屏
+- **brotli 压缩率惊人**（res-full raw 12.2MB → 277KB，44×）：JSON 重复结构被字典式压缩器自动吸收
 - 因此**不引入任何额外压缩/序列化库**（msgpack/zstd/lz-string 等在 brotli 后无增益），见 §9
 
 ## 6. 前端加载策略：懒加载 + 后台预热

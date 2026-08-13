@@ -1,26 +1,6 @@
-# Debug 页面 REST 能力 —— 强化再造设计方案（决策版 + 实施记录）
+# Debug 页面 REST 能力 —— 强化设计
 
-> 状态：**决策已定 + 实施中**，本文件为执行依据与实施状态记录。
-> 定位：**反哺对照文档**——GraphQL 面板已完成系列强化（`debug-graphql-redesign.md`），
-> 本文件对照检查 REST 面板在**相同位置、相同功能维度**的差异，制定统一改进 / 协调一致任务，
-> 使双协议面板（GraphQL / REST）逐步对齐，形成**完整、整体性强、模块化程度高、随时可扩展、
-> 支持双类型接口**的 debug 工具。
-> 生成日期：2026-08-11（内部试错阶段，可破坏性重构）
-
----
-
-## 0. 实施状态（2026-08-11）
-
-### 0.1 已完成
-
-| 里程碑 | 状态 | 实际实现 |
-|---|---|---|
-| **R1** REST 端点搜索框 | ✅ | `RestTree` 顶部搜索框（第一行）+ `filterRestEndpoints` 纯函数（`lib/debug-openapi.ts`，**只搜顶层**：tag/方法/路径/label——不搜 desc/summary 长文本噪音）+ 搜索模式平铺命中端点（tag 徽章前缀）虚拟滚动保留 + i18n keys + 单元测试。数据源 `getAllEndpoints()`（预热后命中缓存毫秒级） |
-| **R2** body 结构化编辑（toggle 模式） | ✅ | **方案（用户定稿）**：统一 toggle——默认 JSON 编辑器 ↔ 结构化列表视图；切换按钮放 tab 右侧工具栏（格式化按钮旁）；**JSON 模式才有格式化按钮**。**实现**：① `lib/debug-rest-structured.ts` `openApiSchemaToStructured`（OpenAPI deref schema → `StructuredField`：object→input/array→list/string+enum→enum/boolean→boolean/integer→Int/number→Float/string→String；oneOf/anyOf 取首分支、allOf 合并、无 type 隐含 object；**必填排最上**）；② `BodyStructuredPanel.tsx`（body JSON 文本 ↔ 结构化行双向序列化，复用 M5.5 序列化层 + StructuredTable）；③ **GqlVariablesPanel 双模式**（`viewMode`：json 默认 CodeEditor 直编 / structured 现有 KV 表格 + M5.5 值格展开；校验分流——json 模式 parseVariablesJson + validateVariables、structured 模式表格序列化校验）；④ RequestEditor 工具栏（REST json bodyType：SegmentedControl + [格式化] + [切换]；GraphQL Variables tab：[格式化 variables] + [切换]；格式化按 tab 分流）；⑤ 测试：`debug-rest-structured.spec.ts` 9 用例 + **schema-integration 第 8 断言**（1108 端点 × 8，303 个 JSON body 全部可转换 + 必填排序）——总 9052 全绿 |
-
-### 0.2 待办（见 §4 任务清单）
-
-R2（body 结构化编辑）→ R3（自动刷新）→ R4（hover 对齐）等
+> REST 面板对照 GraphQL 面板的能力差异分析与统一协调任务，使双协议面板对齐。
 
 ---
 
@@ -63,7 +43,7 @@ R2（body 结构化编辑）→ R3（自动刷新）→ R4（hover 对齐）等
 
 ---
 
-## 3. 核心决策（D1–D4）
+## 3. 核心设计
 
 | # | 决策 | 内容 |
 |---|---|---|
@@ -78,21 +58,11 @@ R2（body 结构化编辑）→ R3（自动刷新）→ R4（hover 对齐）等
 
 | # | 任务 | 对照 | 优先级 | 状态 |
 |---|---|---|---|---|
-| **R1** | **端点搜索框**：RestTree 顶部搜索框（`/` 快捷键、X 清除）；`filterRestEndpoints` 纯函数匹配 tag/方法/路径/summary/desc/label；搜索模式平铺命中 + tag 徽章 + 结果计数 + 空态；虚拟滚动保留 | F9 | P0 | ✅ 2026-08-11 |
-| **R2** | **body 结构化编辑（统一 toggle）**：REST body 与 GraphQL variables 统一「默认 JSON 编辑器 ↔ 结构化列表视图」toggle；切换按钮放 tab 右侧工具栏（格式化按钮旁），JSON 模式有格式化按钮；复用 M5.5 StructuredTable 与序列化层，仅新增结构模型构建层（`openApiSchemaToStructured`）；json-schema-completion 补全保留（JSON 模式） | M5.5 | P1 | ✅ 2026-08-11 |
+| **R1** | **端点搜索框**：RestTree 顶部搜索框（`/` 快捷键、X 清除）；`filterRestEndpoints` 纯函数匹配 tag/方法/路径/label；搜索模式平铺命中 + tag 徽章 + 结果计数 + 空态；虚拟滚动保留 | F9 | P0 | ✅ |
+| **R2** | **body 结构化编辑（统一 toggle）**：REST body 与 GraphQL variables 统一「默认 JSON 编辑器 ↔ 结构化列表视图」toggle；切换按钮放 tab 右侧工具栏，JSON 模式有格式化按钮；复用 M5.5 StructuredTable 与序列化层，仅新增结构模型构建层（`openApiSchemaToStructured`）；json-schema-completion 补全保留（JSON 模式） | M5.5 | P1 | ✅ |
 | **R3** | **产物自动刷新**：登录态 + 版本落后 → 后台重拉 index/tag 写 IndexedDB（对照 F13 的 getGqlSchemaFetchedAt + saveGqlSchemaOnline 模式）；RestTree 手动刷新保留 | F13 | P2 | ⏳ |
 | **R4** | **hover 详情对齐**：EndpointRow title 确认 desc 全文（F12 已改 GraphQL 侧不截断，REST 侧同规则）；如有截断统一 | F12 | P1 | ⏳ |
-| **R5** | **搜索组件提取共享**：GqlTree / RestTree 搜索框 UI（样式/`/` 快捷键/X 清除/placeholder）提取共享组件（如 `TreeSearchInput`），双协议零复制；**第二行标题栏共享 `SchemaHeader`**（版本徽章 hover 统一 `schema data by pkg@ver`）+ **刷新/加载占位共享 `TreeListSkeleton`** | F9 / R1 | P1 | ✅（R1 落地 + 2026-08-11 统一） |
+| **R5** | **搜索组件提取共享**：GqlTree / RestTree 搜索框 UI 提取共享组件（如 `TreeSearchInput`），双协议零复制；**第二行标题栏共享 `SchemaHeader`** + **刷新/加载占位共享 `TreeListSkeleton`** | F9 / R1 | P1 | ✅ |
 | **R6** | **测试门对齐**：filterRestEndpoints 用例纳入 debug-openapi.spec.ts；R2/R3 新增纯函数全量覆盖；schema-integration 1108 端点断言保持全绿 | §14 | 持续 | ⏳ |
 
 ---
-
-## 5. 实施顺序
-
-1. **R1（P0）** ✅：`filterRestEndpoints` 纯函数 + 测试 → RestTree 搜索框 UI → i18n → 门禁
-2. **R2（P1）** ✅：`openApiSchemaToStructured`（`debug-rest-structured.ts`）→ BodyStructuredPanel → GqlVariablesPanel 双模式 → RequestEditor 工具栏（格式化 + 切换）→ i18n → 全量门禁（9052）→ 浏览器验证
-3. **R3（P2）**：产物版本落后检测 → 后台刷新 → 测试
-4. **R4（P1）**：hover 对齐检查（顺手）
-5. **R5（P1）**：搜索组件提取共享（顺手）
-
-> 每步保持 `pnpm test` 全绿（纯函数先行、UI 后置、测试先行驱动）；新增组件 → `pnpm build` rebuild（开发规范 6）。

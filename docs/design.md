@@ -35,7 +35,7 @@
 ```
 
 - **TOP_BAR**：Logo + 搜索框 + 操作图标组（Create new/Issues/PRs/Repos/Gist/通知）+ 用户头像；`sticky top-0 z-50`，半透明背景 + 底部 1px 边框。
-- **PAGE_SHELL**（`web/src/lib/layout.ts`）：`mx-auto max-w-7xl px-4 pt-[23px]`。⚠️ **禁止 `py-*` 底部 padding**（滚动到底会推 sticky 侧栏）。**顶距 23px（抖动修复）**：topbar 57px + 23px = 80px = sticky 锚 `top-20` → 内容顶与锚点对齐，滚动即吸附、无「跟随→吸附」9px 跳变区间。
+- **PAGE_SHELL**（`web/src/lib/layout.ts`）：`mx-auto max-w-7xl px-4 pt-[23px]`。⚠️ **禁止 `py-*` 底部 padding**（滚动到底会推 sticky 侧栏）。**顶距 23px**：topbar 57px + 23px = 80px = sticky 锚 `top-20` → 内容顶与锚点对齐，滚动即吸附、无「跟随→吸附」9px 跳变区间。
 - **Footer（AppFooter 修订）**：全站常驻页脚（`<main>` 之后）——`mt-8 border-t`（**与 content 留 32px 间距**，PAGE_SHELL 禁 py-* 故间距由 footer 顶部提供）+ `max-w-7xl` 同宽 + `py-4 text-xs text-muted-foreground`，**左右分栏**（flex justify-between，窄屏换行）：左侧 = 项目仓库链接（**GitHub 官方 mark 图标 + PureGit，a 标签涵盖 star 计数**：Star 图标 + 简写数字，仓库不存在/私有则隐藏 star；**无 copyright**）；右侧 = GitHub API 状态点（绿=可用/红=不可达）+ 额度剩余（**插头 Plug 图标 + 简写数字**，hover title 显示完整 remaining/limit；不用文字）。**额度数据**：订阅 `octokit.ts` 统一 limit 缓存（`subscribeUsageChange`）——每次接口响应头 `x-ratelimit-*` 实时写入全局缓存并通知 footer/设置页，页面任意 REST/GraphQL 活动即时刷新；缓存为空（全站无请求）时才一次 `/rate_limit` 兜底回填（`setApiUsage`）。随页面滚动，不参与 sticky 吸附。
 
 ### 1.2 统一布局组件：PageLayout（定稿）
@@ -148,10 +148,10 @@
 | `SIDEBAR_STICKY` | `md:sticky md:top-20` | **导航型** sticky 侧栏（PageLayout `sticky:"nav"`；官方式：超高裁切，不做内部滚动；锚点留 23px 间隔） |
 | `SIDEBAR_STICKY_SCROLL` | `md:sticky md:top-20 md:max-h-[calc(100svh-7rem-1px)] md:overflow-y-auto` | **工具型** sticky 侧栏（PageLayout `sticky:"tool"`；需内部滚动，如过滤栏 / blob 树；锚点下留 32px 底余量。blob 树亦用此版，原通底 `SIDEBAR_FILL` 已删） |
 | `CONTENT_FILL` | `md:min-h-[calc(100svh-5rem-1px)]` | 内容区 min-h（PageLayout 有侧栏时自动加；内容顶 80px + 剩余 → 底≈视口底留 1px 防滚动条抖动；grid ≥ 视口 → sticky 有吸附空间） |
-| ~~`GRID_2COL_240/260/280/300`~~ | — | ⚠️ **已弃用**：由 PageLayout `left` 取代（历史：侧栏在左两栏网格，items-start 内置） |
-| ~~`GRID_2COL_ASIDE_280`~~ | — | ⚠️ **已弃用**：由 PageLayout `right` 取代（历史：侧栏在右，详情页 metadata） |
+| ~~`GRID_2COL_240/260/280/300`~~ | — | ⚠️ **已弃用**：由 PageLayout `left` 取代 |
+| ~~`GRID_2COL_ASIDE_280`~~ | — | ⚠️ **已弃用**：由 PageLayout `right` 取代 |
 
-**sticky 术语**：nav 高 3.5rem（h-14）+ border 1px = 57px；内容顶 = 57 + PAGE_SHELL 顶距 23px = **80px = sticky 锚点 `top-20`**（内容顶与锚点对齐，无跟随区 抖动修复）；底部余量 2rem；工具型合计 `7rem + 1px`（SIDEBAR_STICKY_SCROLL 的 max-h = 锚 80px + 底余量 32px）。
+**sticky 术语**：nav 高 3.5rem（h-14）+ border 1px = 57px；内容顶 = 57 + PAGE_SHELL 顶距 23px = **80px = sticky 锚点 `top-20`**（内容顶与锚点对齐，无跟随区）；底部余量 2rem；工具型合计 `7rem + 1px`（SIDEBAR_STICKY_SCROLL 的 max-h = 锚 80px + 底余量 32px）。
 
 ### 2.1 侧栏滚动策略（官方定稿）
 
@@ -165,7 +165,7 @@
 
 1. ❌ 外层容器**禁止 `py-*`**（底部 padding 滚到底推 sticky）
 2. ❌ 导航型侧栏**禁止 `max-h`/`overflow-y-auto`**（制造嵌套滚动条——侧栏内滚而非页面滚动）
-3. ✅ **必须 `items-start`**：单层 sticky 侧栏作 grid item 时，必须 `items-start`（`GRID_2COL_*` 已内置）——否则 item 被 stretch 拉满行高 → sticky 元素=父容器高度 → **无吸附空间 → sticky 失效/滚出**（本次问题根因之一）
+3. ✅ **必须 `items-start`**：单层 sticky 侧栏作 grid item 时，必须 `items-start`（`GRID_2COL_*` 已内置）——否则 item 被 stretch 拉满行高 → sticky 元素=父容器高度 → **无吸附空间 → sticky 失效/滚出**
 4. ❌ 禁止手写散落 `sticky`/`top-14`/`top-20`/`max-h-[calc(...)]` 类名（必须用共享常量）
 5. ❌ 内容区**禁止裸放**（必须 `min-w-0` + `CONTENT_FILL`，防长内容撑破 grid / 短内容无吸附空间）
 
