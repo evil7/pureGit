@@ -106,6 +106,7 @@ export async function searchUsersSmart(
             name: string | null;
             avatarUrl: string | null;
             bio: string | null;
+            description: string | null;
           }[];
         };
       }> = await graphqlRequest(SEARCH_USERS_QUERY, { q, first: 20 }, token);
@@ -117,7 +118,8 @@ export async function searchUsersSmart(
             login: n.login,
             name: n.name ?? undefined,
             avatar_url: n.avatarUrl ?? undefined,
-            bio: n.bio ?? undefined,
+            // User 有 bio、Organization 有 description，二者归一为 bio 展示
+            bio: n.bio ?? n.description ?? undefined,
           })),
         };
       }

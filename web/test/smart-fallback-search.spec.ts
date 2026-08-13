@@ -192,6 +192,31 @@ describe("searchUsersSmart", () => {
     });
   });
 
+  it("GraphQL 成功 → Organization 节点映射（description 归一为 bio；避免空卡片）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        search: {
+          userCount: 1,
+          nodes: [
+            {
+              login: "github",
+              name: "GitHub",
+              avatarUrl: "https://gh.png",
+              description: "org desc",
+            },
+          ],
+        },
+      },
+    } as never);
+    const r = await searchUsersSmart("github", "gho_x");
+    expect(r.items[0]).toEqual({
+      login: "github",
+      name: "GitHub",
+      avatar_url: "https://gh.png",
+      bio: "org desc",
+    });
+  });
+
   it("降级 REST 同分页行为", async () => {
     mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
     await searchUsersSmart("alice", "gho_x");

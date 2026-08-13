@@ -1507,6 +1507,12 @@ export const SEARCH_USERS_QUERY = /* GraphQL */ `
           avatarUrl
           bio
         }
+        ... on Organization {
+          login
+          name
+          avatarUrl
+          description
+        }
       }
     }
   }

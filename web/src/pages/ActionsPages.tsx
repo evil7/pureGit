@@ -21,8 +21,6 @@ import {
   Loader2,
   GitBranch,
   Search,
-  ChevronLeft,
-  ChevronRight,
   FileText,
   Package,
   Boxes,
@@ -67,6 +65,7 @@ import {
 } from "@/lib/api";
 import type { Workflow, WorkflowRun, WorkflowJob, RunArtifact } from "@/lib/rest";
 import { WriteGate } from "@/components/WriteGate";
+import { Pager } from "@/components/Pager";
 import PageLayout from "@/components/PageLayout";
 import { cn } from "@/lib/utils";
 
@@ -132,6 +131,26 @@ function runBadge(status: string, conclusion: string | null) {
           {conclusion ? conclusion.replace(/_/g, " ") : "Completed"}
         </Badge>
       );
+  }
+}
+
+/** 运行状态图标（列表行最左 / 左导航；仅图标，替代完整徽标） */
+function runStatusIcon(status: string, conclusion: string | null) {
+  if (status !== "completed") {
+    if (status === "in_progress") {
+      return <Loader2 className="size-4 shrink-0 animate-spin text-yellow-500" />;
+    }
+    return <Clock className="size-4 shrink-0 text-muted-foreground" />;
+  }
+  switch (conclusion) {
+    case "success":
+      return <CheckCircle2 className="size-4 shrink-0 text-green-600" />;
+    case "failure":
+      return <XCircle className="size-4 shrink-0 text-red-600" />;
+    case "cancelled":
+      return <XCircle className="size-4 shrink-0 text-muted-foreground" />;
+    default:
+      return <Clock className="size-4 shrink-0 text-muted-foreground" />;
   }
 }
 
@@ -213,8 +232,6 @@ export default function ActionsPage() {
     );
   }, [runs, query]);
 
-  const totalPages = Math.max(1, Math.ceil(totalCount / PER_PAGE));
-
   if (loading) {
     return (
       <PageLayout
@@ -251,9 +268,7 @@ export default function ActionsPage() {
             <>
               {/* Actions 分组 */}
               <section>
-                <h3 className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t("actions.group.actions")}
-                </h3>
+                <h3 className="mb-2 px-2 text-sm font-semibold">{t("actions.group.actions")}</h3>
                 <ul className="space-y-0.5">
                   <li>
                     <Link
@@ -273,9 +288,7 @@ export default function ActionsPage() {
 
               {/* Workflows 分组（短名 + 完整路径） */}
               <section>
-                <h3 className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t("actions.group.workflows")}
-                </h3>
+                <h3 className="mb-2 px-2 text-sm font-semibold">{t("actions.group.workflows")}</h3>
                 <ul className="space-y-0.5">
                   {workflows.map((w) => (
                     <li key={w.id}>
@@ -310,9 +323,7 @@ export default function ActionsPage() {
 
               {/* Management 分组（官方；外链官方或占位，去杂项） */}
               <section>
-                <h3 className="mb-1 px-2 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
-                  {t("actions.group.management")}
-                </h3>
+                <h3 className="mb-2 px-2 text-sm font-semibold">{t("actions.group.management")}</h3>
                 <ul className="space-y-0.5">
                   <ManagementLink
                     icon={Package}
@@ -453,30 +464,15 @@ export default function ActionsPage() {
             </ul>
           )}
 
-          {/* 分页（官方 Previous/Next） */}
-          <div className="flex items-center justify-between">
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page <= 1}
-              onClick={() => setPage((p) => p - 1)}
-            >
-              <ChevronLeft className="size-4" />
-              {t("actions.previous")}
-            </Button>
-            <span className="text-xs text-muted-foreground">
-              {page} / {totalPages}
-            </span>
-            <Button
-              variant="outline"
-              size="sm"
-              disabled={page >= totalPages}
-              onClick={() => setPage((p) => p + 1)}
-            >
-              {t("actions.next")}
-              <ChevronRight className="size-4" />
-            </Button>
-          </div>
+          {/* 分页（复用通用 Pager；官方 Previous/Next 语义） */}
+          <Pager
+            page={page}
+            totalPages={Math.ceil(totalCount / PER_PAGE)}
+            onChange={(p) => {
+              setPage(p);
+              window.scrollTo({ top: 0, behavior: "smooth" });
+            }}
+          />
         </div>
       </PageLayout>
     </div>
@@ -508,7 +504,7 @@ function ManagementLink({
   );
 }
 
-/** Run 行（官方结构：状态图标 + 标题；第二行 workflow名 #号: PR #号 by 作者；分支；时间·状态行尾） */
+/** Run 行（官方结构：状态图标最左 + 标题；元信息在左，时间/commit sha 在右） */
 function RunRow({
   r,
   owner,
@@ -521,8 +517,20 @@ function RunRow({
   fmt: (s: string) => string;
 }) {
   const { t } = useI18n();
+  const prDesc =
+    r.event === "pull_request" || r.event === "pull_request_target"
+      ? t("actions.prDesc")
+          .replace("{number}", String(r.run_number))
+          .replace(
+            "{mode}",
+            r.event === "pull_request_target" ? t("actions.target") : t("actions.synchronize"),
+          )
+      : "";
   return (
-    <li className="flex items-start gap-2 px-4 py-3 hover:bg-accent/50">
+    <li className="flex items-center gap-3 px-4 py-3 hover:bg-accent/50">
+      {/* 运行状态图标（最左） */}
+      <span className="shrink-0">{runStatusIcon(r.status, r.conclusion)}</span>
+      {/* 左：标题 + 元信息（分支 · workflow名 #号 · by 作者） */}
       <div className="min-w-0 flex-1">
         <Link
           to={`/${owner}/${repo}/actions/runs/${r.id}`}
@@ -530,33 +538,26 @@ function RunRow({
         >
           {r.display_title || r.name || `Run #${r.run_number}`}
         </Link>
-        <div className="mt-0.5 flex flex-wrap items-center gap-x-2 gap-y-0.5 text-xs text-muted-foreground">
-          <span>
-            {r.name} #{r.run_number}
-            {r.event === "pull_request" || r.event === "pull_request_target"
-              ? t("actions.prDesc")
-                  .replace("{number}", String(r.run_number))
-                  .replace(
-                    "{mode}",
-                    r.event === "pull_request_target"
-                      ? t("actions.target")
-                      : t("actions.synchronize"),
-                  )
-              : ""}
-          </span>
-          <span>{t("actions.by").replace("{actor}", r.actor?.login ?? "ghost")}</span>
+        <div className="mt-0.5 flex items-center gap-x-2 text-xs text-muted-foreground">
           {r.head_branch && (
-            <span className="flex items-center gap-0.5">
+            <span className="flex shrink-0 items-center gap-0.5">
               <GitBranch className="size-3" />
               {r.head_branch}
             </span>
           )}
-          {/* 时间 · 状态徽标（官方在行尾） */}
-          <span className="flex items-center gap-2">
-            {fmt(r.created_at)}
-            {runBadge(r.status, r.conclusion)}
+          <span className="truncate">
+            {r.name} #{r.run_number}
+            {prDesc}
+          </span>
+          <span className="shrink-0">
+            {t("actions.by").replace("{actor}", r.actor?.login ?? "ghost")}
           </span>
         </div>
+      </div>
+      {/* 右：时间 + commit sha */}
+      <div className="shrink-0 text-right text-xs text-muted-foreground">
+        <div className="whitespace-nowrap">{fmt(r.created_at)}</div>
+        <div className="font-mono text-[10px]">{r.head_sha.slice(0, 7)}</div>
       </div>
     </li>
   );
@@ -776,7 +777,7 @@ export function RunDetailPage() {
                 </span>
               </li>
               <li>
-                <span className="block px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <span className="block px-2 py-1 text-sm font-semibold">
                   {t("actions.allJobs")}
                 </span>
               </li>
@@ -784,14 +785,15 @@ export function RunDetailPage() {
                 <li key={j.id}>
                   <Link
                     to={`/${owner}/${repo}/actions/runs/${run.id}/job/${j.id}`}
-                    className="block truncate rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                    className="flex items-center gap-2 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
                   >
-                    {j.name}
+                    <span className="shrink-0">{runStatusIcon(j.status, j.conclusion)}</span>
+                    <span className="truncate">{j.name}</span>
                   </Link>
                 </li>
               ))}
               <li className="pt-2">
-                <span className="block px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <span className="block px-2 py-1 text-sm font-semibold">
                   {t("actions.runDetails")}
                 </span>
               </li>
@@ -1050,7 +1052,7 @@ export function JobDetailPage() {
                 </Link>
               </li>
               <li>
-                <span className="block px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <span className="block px-2 py-1 text-sm font-semibold">
                   {t("actions.allJobs")}
                 </span>
               </li>
@@ -1059,18 +1061,19 @@ export function JobDetailPage() {
                   <Link
                     to={`/${owner}/${repo}/actions/runs/${run.id}/job/${j.id}`}
                     className={cn(
-                      "block truncate rounded-md px-2 py-1 text-sm transition-colors",
+                      "flex items-center gap-2 rounded-md px-2 py-1 text-sm transition-colors",
                       j.id === job.id
                         ? "bg-accent font-medium text-foreground"
                         : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                     )}
                   >
-                    {j.name}
+                    <span className="shrink-0">{runStatusIcon(j.status, j.conclusion)}</span>
+                    <span className="truncate">{j.name}</span>
                   </Link>
                 </li>
               ))}
               <li className="pt-2">
-                <span className="block px-2 py-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
+                <span className="block px-2 py-1 text-sm font-semibold">
                   {t("actions.runDetails")}
                 </span>
               </li>
