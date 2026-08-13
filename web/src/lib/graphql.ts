@@ -2795,6 +2795,136 @@ export const REOPEN_PULL_REQUEST_MUTATION = /* GraphQL */ `
   }
 `;
 
+// ===== PR commits / CI check-runs / 仓库协作者（GraphQL 主通道补全） =====
+
+/** PR commit 列表（PullRequest.commits → Commit；供 Commits tab，替代 GET /pulls/{n}/commits） */
+export const PR_COMMITS_QUERY = /* GraphQL */ `
+  query PullCommits($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        commits(first: 100) {
+          nodes {
+            commit {
+              oid
+              message
+              committedDate
+              author {
+                name
+                email
+                date
+                user {
+                  login
+                }
+                avatarUrl
+              }
+              committer {
+                user {
+                  login
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+/** PR head commit 的 CI check-runs（Commit.statusCheckRollup；替代 GET /commits/{sha}/check-runs） */
+export const PR_CHECK_RUNS_QUERY = /* GraphQL */ `
+  query PullCheckRuns($owner: String!, $name: String!, $expression: String!) {
+    repository(owner: $owner, name: $name) {
+      object(expression: $expression) {
+        ... on Commit {
+          statusCheckRollup {
+            contexts(first: 100) {
+              nodes {
+                ... on CheckRun {
+                  status
+                  conclusion
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+/** 仓库协作者（Repository.collaborators → User；替代 GET /repos/{o}/{r}/collaborators，reviewer 选人数据源） */
+export const REPO_COLLABORATORS_QUERY = /* GraphQL */ `
+  query RepoCollaborators($owner: String!, $name: String!) {
+    repository(owner: $owner, name: $name) {
+      collaborators(first: 100) {
+        nodes {
+          login
+          avatarUrl
+        }
+      }
+    }
+  }
+`;
+
+/** 组织成员含角色与 2FA（membersWithRole.edges；替代 2 次 GET /orgs/{org}/members 合并） */
+export const ORG_MEMBERS_WITH_ROLES_QUERY = /* GraphQL */ `
+  query OrgMembersWithRoles($login: String!) {
+    organization(login: $login) {
+      membersWithRole(first: 100) {
+        edges {
+          role
+          hasTwoFactorEnabled
+          node {
+            login
+            avatarUrl
+            url
+          }
+        }
+      }
+    }
+  }
+`;
+
+/** 组织团队列表（Organization.teams；替代 GET /orgs/{org}/teams） */
+export const ORG_TEAMS_QUERY = /* GraphQL */ `
+  query OrgTeams($login: String!) {
+    organization(login: $login) {
+      teams(first: 100) {
+        nodes {
+          id
+          databaseId
+          name
+          slug
+          description
+          privacy
+          members {
+            totalCount
+          }
+        }
+      }
+    }
+  }
+`;
+
+/** 团队成员列表（Organization.teams(query:slug) → members；替代 GET /orgs/{org}/teams/{slug}/members） */
+export const TEAM_MEMBERS_QUERY = /* GraphQL */ `
+  query TeamMembers($login: String!, $slug: String!) {
+    organization(login: $login) {
+      teams(query: $slug, first: 1) {
+        nodes {
+          members(first: 100) {
+            nodes {
+              login
+              avatarUrl
+              url
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** 关闭 issue（mutation；issueId 为 issue node id） */
 export const CLOSE_ISSUE_MUTATION = /* GraphQL */ `
   mutation CloseIssue($issueId: ID!) {

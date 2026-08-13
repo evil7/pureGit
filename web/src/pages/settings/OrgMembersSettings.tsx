@@ -2,7 +2,7 @@
  * 组织设置 —— 成员（People 精简版； 拆分自旧 OrgSettingsPage）
  *
  * 路径：/organizations/:org/settings/people（官方 /orgs/:org/people 精简）
- * - 成员列表（角色 Owner/Member + 2FA 徽章；fetchOrgMembersWithRoles 固定 REST）
+ * - 成员列表（角色 Owner/Member + 2FA 徽章；fetchOrgMembersWithRolesSmart GraphQL 主通道）
  * - 角色切换（PUT /orgs/{org}/memberships/{username}，admin:org；不可改自己）
  * - 邀请（用户名 → GET /users/{login} 查 id → POST invitations）+ 待处理邀请列表/取消
  * - 移除成员（DELETE /orgs/{org}/members/{username}，确认框；不可移除自己）
@@ -37,7 +37,7 @@ import {
 import { PermissionGate } from "@/components/WriteGate";
 import { useI18n } from "@/i18n";
 import {
-  fetchOrgMembersWithRoles,
+  fetchOrgMembersWithRolesSmart,
   setOrgMemberRole,
   removeOrgMember,
   fetchOrgInvitations,
@@ -67,7 +67,7 @@ export default function OrgMembersSettings() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    fetchOrgMembersWithRoles(org, token)
+    fetchOrgMembersWithRolesSmart(org, token)
       .then((m) => !cancelled && setMembers(m))
       .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     fetchOrgInvitations(org, token)

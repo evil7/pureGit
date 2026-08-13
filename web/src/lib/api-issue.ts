@@ -38,6 +38,9 @@ import {
   REPO_LABELS_QUERY,
   REPO_ASSIGNEES_QUERY,
   REPO_MILESTONES_QUERY,
+  PR_COMMITS_QUERY,
+  PR_CHECK_RUNS_QUERY,
+  REPO_COLLABORATORS_QUERY,
   MY_ISSUES_QUERY,
   SEARCH_PULLS_QUERY,
   PR_PROJECTS_QUERY,
@@ -61,6 +64,9 @@ import {
   addPullReviewComment,
   fetchPullReviews,
   fetchPullRequestedReviewers,
+  fetchPullCommits,
+  fetchPullCheckRuns,
+  fetchCollaborators,
   createPullReview,
   mergePullRequest,
   requestReviewers,
@@ -92,6 +98,9 @@ import type {
   PullMergeMethod,
   RepoLabel,
   RepoMilestone,
+  PullCommit,
+  CheckRunsSummary,
+  Collaborator,
 } from "./rest";
 import { searchIssuesSmart, searchIssueId } from "./api-search";
 import { toRelease } from "./api-repo";
@@ -2367,4 +2376,160 @@ function extractLogin(v: unknown): string | null {
   if (!v) return null;
   const x = v as { login?: string };
   return typeof x.login === "string" ? x.login : null;
+}
+
+// ===== PR commits / CI check-runs / 仓库协作者（GraphQL 主通道 + REST 降级） =====
+
+/** 智能获取 PR commit 列表：GraphQL PullRequest.commits 首选，失败降级 REST（GET /pulls/{n}/commits）。 */
+export async function fetchPullCommitsSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<PullCommit[]> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          pullRequest: {
+            commits: {
+              nodes: {
+                commit: {
+                  oid: string;
+                  message: string;
+                  committedDate: string;
+                  author: {
+                    name?: string | null;
+                    email?: string | null;
+                    date?: string | null;
+                    user: { login: string } | null;
+                    avatarUrl: string;
+                  } | null;
+                  committer: { user: { login: string } | null } | null;
+                };
+              }[];
+            };
+          } | null;
+        } | null;
+      }> = await graphqlRequest(PR_COMMITS_QUERY, { owner, name: repo, number }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository?.pullRequest) {
+        return resp.data.repository.pullRequest.commits.nodes.map((n) => ({
+          sha: n.commit.oid,
+          commit: {
+            message: n.commit.message,
+            author: {
+              name: n.commit.author?.name ?? "",
+              email: n.commit.author?.email ?? "",
+              date: n.commit.author?.date ?? "",
+            },
+          },
+          author: n.commit.author?.user
+            ? { login: n.commit.author.user.login, avatar_url: n.commit.author.avatarUrl }
+            : null,
+          committer: n.commit.committer?.user ? { login: n.commit.committer.user.login } : null,
+        }));
+      }
+      return withRestFallback(
+        () => fetchPullCommits(owner, repo, number, token),
+        "fetchPullCommitsSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchPullCommits(owner, repo, number, token),
+        "fetchPullCommitsSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchPullCommits(owner, repo, number, token);
+}
+
+/** 智能获取 PR CI check-runs 汇总：GraphQL Commit.statusCheckRollup 首选，失败降级 REST。 */
+export async function fetchPullCheckRunsSmart(
+  owner: string,
+  repo: string,
+  sha: string,
+  token?: string | null,
+): Promise<CheckRunsSummary | null> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          object: {
+            statusCheckRollup: {
+              contexts: { nodes: { status: string; conclusion: string | null }[] };
+            };
+          } | null;
+        } | null;
+      }> = await graphqlRequest(PR_CHECK_RUNS_QUERY, { owner, name: repo, expression: sha }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository?.object) {
+        const runs = resp.data.repository.object.statusCheckRollup.contexts.nodes;
+        if (runs.length === 0) return null;
+        const summary: CheckRunsSummary = {
+          total: runs.length,
+          success: 0,
+          failure: 0,
+          pending: 0,
+        };
+        for (const r of runs) {
+          if (r.status !== "COMPLETED") summary.pending++;
+          else if (r.conclusion === "SUCCESS") summary.success++;
+          else if (
+            r.conclusion === "FAILURE" ||
+            r.conclusion === "CANCELLED" ||
+            r.conclusion === "TIMED_OUT"
+          )
+            summary.failure++;
+          else summary.pending++; // neutral/skipped/stale/action_required 视为非失败
+        }
+        return summary;
+      }
+      return withRestFallback(
+        () => fetchPullCheckRuns(owner, repo, sha, token),
+        "fetchPullCheckRunsSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchPullCheckRuns(owner, repo, sha, token),
+        "fetchPullCheckRunsSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchPullCheckRuns(owner, repo, sha, token);
+}
+
+/** 智能获取仓库协作者：GraphQL Repository.collaborators 首选，失败降级 REST（reviewer 选人数据源）。 */
+export async function fetchCollaboratorsSmart(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<Collaborator[]> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: { collaborators: { nodes: { login: string; avatarUrl: string }[] } } | null;
+      }> = await graphqlRequest(REPO_COLLABORATORS_QUERY, { owner, name: repo }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        return resp.data.repository.collaborators.nodes.map((c) => ({
+          login: c.login,
+          avatar_url: c.avatarUrl,
+        }));
+      }
+      return withRestFallback(
+        () => fetchCollaborators(owner, repo, token),
+        "fetchCollaboratorsSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchCollaborators(owner, repo, token),
+        "fetchCollaboratorsSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchCollaborators(owner, repo, token);
 }

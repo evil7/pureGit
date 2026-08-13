@@ -14,6 +14,9 @@ import {
   ORG_REPOS_ALL_QUERY,
   UPDATE_ORG_MUTATION,
   ORG_MEMBERS_QUERY,
+  ORG_MEMBERS_WITH_ROLES_QUERY,
+  ORG_TEAMS_QUERY,
+  TEAM_MEMBERS_QUERY,
   STARRED_REPOS_QUERY,
 } from "./graphql";
 import {
@@ -25,9 +28,12 @@ import {
   fetchOrgDetail,
   updateOrganization,
   fetchOrgMembers,
+  fetchOrgMembersWithRoles,
   fetchOrgRepos,
+  fetchOrgTeams,
+  fetchTeamMembers,
 } from "./rest";
-import type { Repository, OrgMember, OrgDetail } from "./rest";
+import type { Repository, OrgMember, OrgMemberWithRole, OrgTeam, OrgDetail } from "./rest";
 import type { PagedRepos } from "./api-user";
 import { toRepository } from "./api-repo";
 import type { GraphQLRepository } from "./api-repo";
@@ -671,12 +677,125 @@ export async function fetchOrgMembersSmart(
 }
 
 // ===== 组织成员角色 / 邀请 / 团队（增补） =====
-// GraphQL 无对应（members 角色、invitations、teams 均无查询/mutation 等价）→ 固定 REST。
-// 页面经此模块统一 import；调用方直接使用 rest 层函数（本文件 re-export 便于页面单点引用）。
+// GraphQL 适配：成员含角色（membersWithRole.edges）、团队列表（teams）、团队成员（teams→members）。
+// 邀请、成员/团队写操作无 GraphQL 等价 → 固定 REST（re-export 便于页面单点引用）。
 
 export { fetchOrgInvitations, createOrgInvitation, cancelOrgInvitation } from "./rest";
 export { setOrgMemberRole, removeOrgMember } from "./rest";
-export { fetchOrgTeams, createOrgTeam, updateOrgTeam, deleteOrgTeam } from "./rest";
-export { fetchTeamMembers, addTeamMember, removeTeamMember } from "./rest";
-/** 成员含角色/2FA（固定 REST，官方 People 页数据源） */
-export { fetchOrgMembersWithRoles } from "./rest";
+export { createOrgTeam, updateOrgTeam, deleteOrgTeam } from "./rest";
+export { addTeamMember, removeTeamMember } from "./rest";
+
+/** 智能获取组织成员含角色与 2FA：GraphQL membersWithRole.edges 首选（单请求），失败降级 REST（2 请求合并）。 */
+export async function fetchOrgMembersWithRolesSmart(
+  org: string,
+  token: string,
+): Promise<OrgMemberWithRole[]> {
+  try {
+    const resp: GraphQLResponse<{
+      organization: {
+        membersWithRole: {
+          edges: {
+            role: string;
+            hasTwoFactorEnabled: boolean;
+            node: { login: string; avatarUrl: string; url: string };
+          }[];
+        };
+      } | null;
+    }> = await graphqlRequest(ORG_MEMBERS_WITH_ROLES_QUERY, { login: org }, token);
+    if (!hasGraphQLErrors(resp) && resp.data?.organization) {
+      return resp.data.organization.membersWithRole.edges.map((e) => ({
+        login: e.node.login,
+        avatar_url: e.node.avatarUrl,
+        html_url: e.node.url,
+        two_factor_authentication: e.hasTwoFactorEnabled,
+        // 归一化为 REST 语义（小写 admin/member），与 REST 降级路径大小写一致
+        role: e.role.toLowerCase() === "admin" ? "admin" : "member",
+      }));
+    }
+    return withRestFallback(
+      () => fetchOrgMembersWithRoles(org, token),
+      "fetchOrgMembersWithRolesSmart",
+      resp,
+    );
+  } catch {
+    return withRestFallback(
+      () => fetchOrgMembersWithRoles(org, token),
+      "fetchOrgMembersWithRolesSmart",
+      undefined,
+    );
+  }
+}
+
+/** 智能获取组织团队列表：GraphQL organization.teams 首选，失败降级 REST。 */
+export async function fetchOrgTeamsSmart(org: string, token: string): Promise<OrgTeam[]> {
+  try {
+    const resp: GraphQLResponse<{
+      organization: {
+        teams: {
+          nodes: {
+            id: string;
+            databaseId: number;
+            name: string;
+            slug: string;
+            description: string | null;
+            privacy: string;
+            members: { totalCount: number };
+          }[];
+        };
+      } | null;
+    }> = await graphqlRequest(ORG_TEAMS_QUERY, { login: org }, token);
+    if (!hasGraphQLErrors(resp) && resp.data?.organization) {
+      return resp.data.organization.teams.nodes.map((t) => ({
+        id: t.databaseId,
+        node_id: t.id,
+        name: t.name,
+        slug: t.slug,
+        description: t.description,
+        // 归一化为 REST 语义（小写 closed/secret）
+        privacy: t.privacy.toLowerCase() === "secret" ? "secret" : "closed",
+        permission: "pull",
+        members_count: t.members.totalCount,
+        html_url: `https://github.com/orgs/${org}/teams/${t.slug}`,
+      }));
+    }
+    return withRestFallback(() => fetchOrgTeams(org, token), "fetchOrgTeamsSmart", resp);
+  } catch {
+    return withRestFallback(() => fetchOrgTeams(org, token), "fetchOrgTeamsSmart", undefined);
+  }
+}
+
+/** 智能获取团队成员列表：GraphQL organization.teams(query:slug).members 首选，失败降级 REST。 */
+export async function fetchTeamMembersSmart(
+  org: string,
+  slug: string,
+  token: string,
+): Promise<OrgMember[]> {
+  try {
+    const resp: GraphQLResponse<{
+      organization: {
+        teams: {
+          nodes: { members: { nodes: { login: string; avatarUrl: string; url: string }[] } }[];
+        };
+      } | null;
+    }> = await graphqlRequest(TEAM_MEMBERS_QUERY, { login: org, slug }, token);
+    const team = resp.data?.organization?.teams.nodes[0];
+    if (!hasGraphQLErrors(resp) && team) {
+      return team.members.nodes.map((m) => ({
+        login: m.login,
+        avatar_url: m.avatarUrl,
+        html_url: m.url,
+      }));
+    }
+    return withRestFallback(
+      () => fetchTeamMembers(org, slug, token),
+      "fetchTeamMembersSmart",
+      resp,
+    );
+  } catch {
+    return withRestFallback(
+      () => fetchTeamMembers(org, slug, token),
+      "fetchTeamMembersSmart",
+      undefined,
+    );
+  }
+}

@@ -45,8 +45,8 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/useAuth";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { UserAvatar } from "@/components/UserAvatar";
-import { apiErrorMessage, type PullReview, type ReviewEvent } from "@/lib/rest";
-import { fetchCollaborators, type Collaborator } from "@/lib/rest-issue-pr";
+import { apiErrorMessage, type PullReview, type ReviewEvent, type Collaborator } from "@/lib/rest";
+import { fetchCollaboratorsSmart } from "@/lib/api";
 import { COPILOT_AVATAR, copilotDisplayName, isCopilotLogin } from "@/lib/copilot";
 import { REVIEW_STATE_BADGE_TINTED, REVIEW_STATE_ICON } from "@/lib/state-colors";
 import { toastSuccess } from "@/lib/toast";
@@ -338,7 +338,7 @@ function RequestAuditorsDialog({
     setSelected(new Set());
     setError(null);
     if (!token) return;
-    void fetchCollaborators(owner, repo, token)
+    void fetchCollaboratorsSmart(owner, repo, token)
       .then((list) => {
         if (!cancelled) {
           // 协作者 + 已请求但不在协作者列表的占位（如 Copilot bot）——不可重复添加可见

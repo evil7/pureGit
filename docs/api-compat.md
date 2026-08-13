@@ -108,6 +108,9 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `searchRepositoriesSmart` / `searchUsersSmart` / `searchIssuesSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchDiscussionsSmart` / `fetchDiscussionDetailSmart` / `createDiscussionSmart` / `addDiscussionCommentSmart` | ✅ | ✗（REST 无端点） | — | — | ✅ |
 | `fetchOrgMembersSmart` | ✅ | ✅ | — | — | ✅ |
+| `fetchOrgMembersWithRolesSmart`（成员含角色/2FA：membersWithRole.edges 单请求替代两请求合并） | ✅ | ✅ 降级 | — | — | ✅ |
+| `fetchOrgTeamsSmart`（团队列表读：Organization.teams；写仍 REST） | ✅ | ✅ 降级 | — | — | ✅ |
+| `fetchTeamMembersSmart`（团队成员读：teams(query:slug).members；写仍 REST） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchIssueCommentsSmart` / `addIssueCommentSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchPullReviewCommentsSmart` / `addPullReviewCommentSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchBranchesSmart` | ✅ | ✅ | — | — | ✅ |
@@ -115,6 +118,9 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchDirContentsSmart` / `fetchReadmeSmart`（目录列举 / README 定位，GraphQL Tree.entries + blob 主通道） | ✅ | ✅ | — | — | ✅ |
 | `fetchRootFilesSmart`（About Resources 根文件探测，GraphQL Tree.entries 单层） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchRepoLabelsSmart` / `fetchRepoAssigneesSmart` | ✅ | ✅ | — | — | ✅ |
+| `fetchCollaboratorsSmart`（仓库协作者：Repository.collaborators，reviewer 选人数据源） | ✅ | ✅ 降级 | — | — | ✅ |
+| `fetchPullCommitsSmart`（PR Commits tab：PullRequest.commits → Commit） | ✅ | ✅ 降级 | — | — | ✅ |
+| `fetchPullCheckRunsSmart`（PR CI 状态：Commit.statusCheckRollup，`... on CheckRun` union 聚合） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchSshKeysSmart` / `addSshKeySmart` / `deleteSshKeySmart` | ✅ | ✅ | — | — | ✅ |
 | `isFollowingSmart` / `setFollowingSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchRepoTopicsSmart` / `replaceRepoTopicsSmart` | ✅ | ✅ | — | — | ✅ |
@@ -163,18 +169,19 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchJobLogs`（Actions 日志） | ✗ | ✅ | — | — | ❌ | 4.5 text/plain 非 JSON；GraphQL 碎片节点缺 jobs/logs |
 | Actions 全家（`fetchWorkflows`/`fetchWorkflowRuns`/`fetchWorkflowRunDetail`/`fetchWorkflowRunJobs`/`fetchRunArtifacts`/`dispatchWorkflow`） | 🧩 碎片 | ✅ | — | — | ❌ | 4.5 碎片节点（Workflow/WorkflowRun），缺 `Repository.workflows` 列表入口 + jobs/logs/artifacts/dispatch |
 | `fetchFileTree`/`fetchLanguages`/`fetchFileContent`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.6 无 GraphQL 等价 / raw Accept；`fetchFileContent` 支持 `branch` 参数（默认 HEAD，非默认分支 404 修复）。**REST contents 上限 1MB→100MB**（1MB~100MB 必须 raw Accept）；smart 层 `fetchFileContentSmart` 分层（登录 GraphQL isTruncated→REST→$raw 保底 / 匿名 REST→raw 直连保底）；目录列举 / README 走 GraphQL 主通道（fetchDirContentsSmart / fetchReadmeSmart，见 §2.1） |
+| `fetchContributors`（Contributors 页列表） | ✗ | ✅ | — | — | ❌ | 4.7 GraphQL 无 contributors 列表等价（`Repository` 仅 `mentionableUsers`，非贡献者按提交聚合） |
 | `fetchContributorsCount` | ✗ | ✅ | — | — | ❌ | 4.7 Link header 分页计数（contributors 无 GraphQL totalCount 等价；releases 计数走 GraphQL，见 §2.1 fetchReleasesCountSmart） |
 | 通知/邀请（`fetchNotifications`/`markNotificationThreadRead`/`fetchRepoInvitations`/`acceptRepoInvitation`/`declineRepoInvitation`） | ✗ | ✅ | — | — | ❌ | 4.8 GraphQL 无对应 |
 | `updateDefaultBranch`（PATCH /user master_branch） | ✗ | ✅ | — | — | ❌ | 4.8 专属字段 |
 | `fetchRateLimit` | ✗ | ✅ | — | — | ❌ | 4.8 专属端点 |
-| `fetchPullFiles`/`fetchPullCommits`/`fetchPullCheckRuns`/`fetchPullReviewComments`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.5/4.6 无 GraphQL 等价 |
+| `fetchPullFiles`/`fetchPullReviewComments`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.5/4.6 无 GraphQL 等价（fetchPullFiles 缺 patch；fetchPullCommits/fetchPullCheckRuns 已迁 smart，见 §2.1） |
 | `transferRepository`/`leaveOrganization` | ✗ | ✅ | — | — | ❌ | 4.9 GraphQL 无 transferRepository/leaveOrganization mutation |
-| **组织管理（全部固定 REST）** | | | | | | |
-| `fetchOrgMembersWithRoles`（成员含角色/2FA，两请求合并） | ⚠️ 可迁 | ✅ | — | — | ❌ 待迁 | 4.17 OrganizationMemberEdge 有 role + hasTwoFactorEnabled（旧判断「无角色/2FA」有误） |
+| **组织管理（读已迁 smart、写维持 REST）** | | | | | | |
+| ~~`fetchOrgMembersWithRoles`~~（读已迁 `fetchOrgMembersWithRolesSmart`，见 §2.1） | ✅ | ✅ 降级 | — | — | ✅ | 4.17 OrganizationMemberEdge 有 role + hasTwoFactorEnabled |
 | `setOrgMemberRole` / `removeOrgMember`（PUT/DELETE memberships） | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL 无 members 写 mutation |
 | `fetchOrgInvitations` / `createOrgInvitation` / `cancelOrgInvitation` | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL 无 invitations 查询/mutation |
-| `fetchOrgTeams`（列表读） / `createOrgTeam` / `updateOrgTeam` / `deleteOrgTeam`（写） | ⚠️ 读可迁 | ✅ | — | — | ❌ 待迁 | 4.17 Organization.teams 可读；写无 createTeam/deleteTeam/updateTeam mutation |
-| `fetchTeamMembers`（读） / `addTeamMember` / `removeTeamMember`（写） | ⚠️ 读可迁 | ✅ | — | — | ❌ 待迁 | 4.17 Team.members 可读；写无 addTeamMember/removeTeamMember mutation |
+| ~~`fetchOrgTeams`（读）~~（已迁 `fetchOrgTeamsSmart`） / `createOrgTeam` / `updateOrgTeam` / `deleteOrgTeam`（写） | 读 ✅ / 写 ✗ | ✅ | — | — | ⚠️ | 4.17 Organization.teams 可读；写无 createTeam/deleteTeam/updateTeam mutation |
+| ~~`fetchTeamMembers`（读）~~（已迁 `fetchTeamMembersSmart`） / `addTeamMember` / `removeTeamMember`（写） | 读 ✅ / 写 ✗ | ✅ | — | — | ⚠️ | 4.17 Team.members 可读；写无 addTeamMember/removeTeamMember mutation |
 | `updateOrganizationSmart` 成员权限字段（`default_repository_permission` / `members_allowed_repository_creation_type`） | ✗（仅 Profile 字段走 GraphQL） | ✅ | — | — | ⚠️ | 4.17 权限字段仅 REST；smart 检测到权限字段时直接走 REST 分支（避免 GraphQL 成功后静默丢失） |
 | `fetchOrgDetailSmart` 权限字段（`default_repository_permission`） | ✗ | ✅ | — | — | ⚠️ | 4.17 GraphQL Organization 无 `defaultRepositoryPermission` 字段（实测 404）；GraphQL 成功后轻量 REST 补丁该字段 |
 | **Wiki** | | | | | | |
@@ -238,13 +245,13 @@ export async function fetchXxxSmart(
 
 | # | API | 理由 |
 |---|---|---|
-| 4.1 | `fetchCompare` | GraphQL `Comparison.files` 只有 path/additions/deletions，**无 patch 内容**；DiffView 渲染需要 patch。 |
+| 4.1 | `fetchCompare` / `fetchPullFiles` | GraphQL `Comparison.files` 与 `PullRequest.files`（`PullRequestChangedFile`）均只有 path/additions/deletions，**无 patch 内容**；DiffView 渲染需要 patch → 维持 REST。 |
 | 4.2 | `updateRepository` | GraphQL 有 `updateRepository` mutation（name/description/homepageUrl/has*Enabled）+ 独立 archiveRepository/unarchiveRepository；但 **private（可见性）与 default_branch 无 GraphQL mutation**——走 hybrid（updateRepositorySmart：可 GraphQL 字段走 mutation，private/default_branch 增补 REST，熔断全 REST）。 |
 | 4.3 | GPG keys | GraphQL **无 gpgKeys 字段 / GpgKey 类型不存在**（`Viewer` / `Repository` 均无，apiidx 实测）；REST 有完整 emails/subkeys/can_* 字段。 |
 | 4.4 | block / unblock | GraphQL **无 block mutation**（仅 unblock）；block 保留 REST。 |
 | 4.5 | Actions / Job 日志 | GraphQL **仅碎片节点**（`Workflow`/`WorkflowRun`/`WorkflowRunFile`，经 `CheckSuite.workflowRun` 到达，`Workflow.runs` 列 runs），但**缺 `Repository.workflows` 列表入口、jobs/logs/artifacts 查询、dispatch mutation** → 无法替代 REST Actions 全家；`fetchJobLogs` 是 text/plain 流，非 JSON。 |
 | 4.6 | 文件内容 / 树 / 语言 | GraphQL 无 raw content 通道；contents API 需 `application/vnd.github.raw` 自定义 Accept。REST contents **上限 100MB**（1MB~100MB 必须 raw Accept）；GraphQL Blob 仍 ~1MB 截断（**`isTruncated` 必须检查**——>1MB 时 text 非 null 但含部分内容）；官方无分段读取参数——>100MB 仅 git clone/archive 可达。**分层通道**：登录 API smart（GraphQL→REST）→ `$raw` 保底（会话 token 透传）；匿名 REST → raw 直连保底。目录列举 / README 走 GraphQL 主通道（Tree.entries + blob 有等价）；文件树 get-tree recursive 保留 REST（`Tree.entries` 无递归参数，全量树需 N+1 逐层下钻，大仓库退化） |
-| 4.7 | 计数（Contributors） | `per_page=1` 读 Link header 末页；releases 计数走 GraphQL totalCount（`fetchReleasesCountSmart`），仅 contributors 保留 Link header。 |
+| 4.7 | Contributors（列表 + 计数） | **列表**（`fetchContributors`）：GraphQL 无 contributors 列表等价（`Repository` 仅 `mentionableUsers`，非按提交聚合的贡献者）；**计数**（`fetchContributorsCount`）：`per_page=1` 读 Link header 末页；releases 计数走 GraphQL totalCount（`fetchReleasesCountSmart`），仅 contributors 保留 Link header。 |
 | 4.8 | 通知 / 邀请 / default branch / rate_limit | GraphQL 无对应端点或专属字段。 |
 | 4.9 | 低频管理写操作（transferRepository / leaveOrganization） | GraphQL **无对应 mutation**（transferRepository/leaveOrganization 均无）。 |
 | 4.10 | Wiki | API 无 wiki 端点（实测 404）；前端直连 raw 被墙 → worker `/$wiki` 代理。 |
@@ -254,7 +261,7 @@ export async function fetchXxxSmart(
 | 4.14 | 安全公告（Security） | `SecurityAdvisory` 类型存在（ghsaId/databaseId/cvss/cwes/description），但 **`Repository.securityAdvisories` 入口不存在**（apiidx 实测）→ 入口不清晰，维持 REST `GET /repos/{o}/{r}/security-advisories`（公开仓库 published 匿名可读）。 |
 | 4.15 | contents `new_branch` | **实测**：PUT contents body 带 `new_branch` 返回 201 但**被静默忽略**——提交仍落在 `branch` 指定的原分支（新分支 404）。官方「新建分支提交」是两段式：先建分支再提交（`createBranch` 封装，FileEditorPage PR 模式使用）。**注**：GraphQL 有 `createRef` mutation（等价 POST git/refs 建分支）与 `createCommitOnBranch`（写文件，需 expectedHeadOid+FileChanges，比 REST contents 复杂）——「建分支/写文件」严格说有 GraphQL 通道，属 §4.18 待评估项而非绝对无适配。 |
 | 4.16 | Dependabot / Code scanning / Secret scanning | 需 `security_events` scope（OAuth 未授）+ 高级安全功能；仅 Security 核心（SECURITY.md + advisories）实现，告警 tab 去杂项。 |
-| 4.17 | 组织管理（成员角色/2FA、邀请、团队） | **读可迁、写维持 REST**（apiidx 实测修正）：① 成员含角色/2FA **可迁**——`Organization.membersWithRole` 的 `OrganizationMemberEdge.role` + `hasTwoFactorEnabled` 字段存在（旧判断「无角色/2FA 字段」有误）；② 团队列表/成员读 **可迁**——`Organization.teams` → `Team.members`/`Team.repositories`；③ **写维持 REST**——createTeam/deleteTeam/updateTeam/addTeamMember/removeTeamMember、members 写、invitations 查询/mutation 均无 GraphQL mutation。仓库创建权限字段 **REST-only**（`Organization` 上四候选名均 undefinedField 实测）；组织重命名无公开 API。 |
+| 4.17 | 组织管理（成员角色/2FA、邀请、团队） | **读已迁、写维持 REST**（apiidx 实测）：① 成员含角色/2FA **已迁** `fetchOrgMembersWithRolesSmart`——`Organization.membersWithRole` 的 `OrganizationMemberEdge.role` + `hasTwoFactorEnabled` 单请求替代两请求合并；② 团队列表/成员读 **已迁** `fetchOrgTeamsSmart`/`fetchTeamMembersSmart`——`Organization.teams` → `Team.members`；③ **写维持 REST**——createTeam/deleteTeam/updateTeam/addTeamMember/removeTeamMember、members 写、invitations 查询/mutation 均无 GraphQL mutation。仓库创建权限字段 **REST-only**（`Organization` 上四候选名均 undefinedField 实测）；组织重命名无公开 API。 |
 | 4.18 | 建分支 / 写文件内容 | GraphQL **有 mutation 但复杂度高**：`createRef`/`updateRef`/`deleteRef`（=建分支，等价 POST git/refs）、`createCommitOnBranch`（=写文件，需 `expectedHeadOid` + `FileChanges`（逐文件 base64 内容）+ `message`，需自行构造 git tree/blob/commit 链，REST `PUT /contents` 封装了全流程）。当前维持 REST（`createBranch`/`updateFileContent`），属「复杂度」待评估项而非「无适配」。 |
 
 ---

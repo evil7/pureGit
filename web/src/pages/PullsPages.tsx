@@ -53,12 +53,12 @@ import {
   fetchRepoLabelsSmart,
   fetchRepoAssigneesSmart,
   fetchRepoMilestonesSmart,
+  fetchPullCheckRunsSmart,
+  fetchPullCommitsSmart,
 } from "@/lib/api";
 import {
   apiErrorMessage,
   fetchContributors,
-  fetchPullCheckRuns,
-  fetchPullCommits,
   fetchPullFiles,
   fetchRepoLabelCount,
   fetchRepoMilestoneCount,
@@ -694,7 +694,7 @@ export function PullRow({
   useEffect(() => {
     if (pr.state !== "open" || !pr.head?.sha) return;
     let cancelled = false;
-    fetchPullCheckRuns(owner, repo, pr.head.sha, token)
+    fetchPullCheckRunsSmart(owner, repo, pr.head.sha, token)
       .then((s) => !cancelled && setChecks(s))
       .catch(() => {});
     return () => {
@@ -886,7 +886,7 @@ export function PullDetailPage() {
   useEffect(() => {
     if (tab !== "commits" || commits !== null) return;
     let cancelled = false;
-    fetchPullCommits(owner!, repo!, Number(number), token)
+    fetchPullCommitsSmart(owner!, repo!, Number(number), token)
       .then((list) => !cancelled && setCommits(list))
       .catch(() => !cancelled && setCommits([]));
     return () => {
@@ -898,7 +898,7 @@ export function PullDetailPage() {
   useEffect(() => {
     if (tab !== "checks" || checks !== undefined || !pr?.head?.sha) return;
     let cancelled = false;
-    fetchPullCheckRuns(owner!, repo!, pr.head.sha, token)
+    fetchPullCheckRunsSmart(owner!, repo!, pr.head.sha, token)
       .then((s) => !cancelled && setChecks(s ?? null))
       .catch(() => !cancelled && setChecks(null));
     return () => {

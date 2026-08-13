@@ -28,11 +28,11 @@ import {
 } from "@/components/ui/alert-dialog";
 import { useI18n } from "@/i18n";
 import {
-  fetchOrgTeams,
+  fetchOrgTeamsSmart,
   createOrgTeam,
   updateOrgTeam,
   deleteOrgTeam,
-  fetchTeamMembers,
+  fetchTeamMembersSmart,
   addTeamMember,
   removeTeamMember,
   apiErrorMessage,
@@ -73,7 +73,7 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
   }, []);
 
   const load = () => {
-    fetchOrgTeams(org, token)
+    fetchOrgTeamsSmart(org, token)
       .then((list) => mountedRef.current && setTeams(list))
       .catch(
         (e: unknown) => mountedRef.current && setError(e instanceof Error ? e.message : String(e)),
@@ -148,7 +148,7 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
     if (!members[slug]) {
       setMemberBusy(true);
       try {
-        const list = await fetchTeamMembers(org, slug, token);
+        const list = await fetchTeamMembersSmart(org, slug, token);
         if (mountedRef.current) {
           setMembers((prev) => ({ ...prev, [slug]: list }));
         }
@@ -169,7 +169,7 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
     try {
       await addTeamMember(org, slug, addUser.trim(), token);
       setAddUser("");
-      const list = await fetchTeamMembers(org, slug, token);
+      const list = await fetchTeamMembersSmart(org, slug, token);
       if (mountedRef.current) {
         setMembers((prev) => ({ ...prev, [slug]: list }));
       }

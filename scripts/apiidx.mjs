@@ -169,51 +169,147 @@ function cmdRestId(args) {
  */
 const GQL_TOPICS = [
   // —— 语义搜索搜不到、有修正价值（gap 非空）——
-  { t: "Actions", kw: ["actions", "workflow", "ci", "github actions"],
+  {
+    t: "Actions",
+    kw: ["actions", "workflow", "ci", "github actions"],
     entry: "Workflow / WorkflowRun / WorkflowRunFile（经 CheckSuite.workflowRun 到达）",
-    gap: "碎片节点：缺 Repository.workflows 列表入口、jobs/logs/artifacts、dispatch mutation → 维持 REST" },
-  { t: "Teams", kw: ["teams", "team", "团队"],
+    gap: "碎片节点：缺 Repository.workflows 列表入口、jobs/logs/artifacts、dispatch mutation → 维持 REST",
+  },
+  {
+    t: "Teams",
+    kw: ["teams", "team", "团队"],
     entry: "Organization.teams → Team.members / Team.repositories / Team.databaseId",
-    gap: "读有写无：列表/成员可迁 GraphQL；createTeam/deleteTeam/updateTeam/addTeamMember/removeTeamMember 无 mutation → 写维持 REST" },
-  { t: "Orgs", kw: ["org member", "member role", "成员", "角色", "2fa"],
+    gap: "读有写无：列表/成员可迁 GraphQL；createTeam/deleteTeam/updateTeam/addTeamMember/removeTeamMember 无 mutation → 写维持 REST",
+  },
+  {
+    t: "Orgs",
+    kw: ["org member", "member role", "成员", "角色", "2fa"],
     entry: "Organization.membersWithRole → OrganizationMemberEdge.role / hasTwoFactorEnabled",
-    gap: "成员含角色/2FA 可迁 GraphQL（旧判断「无角色/2FA 字段」有误）" },
-  { t: "Git", kw: ["git", "branch", "ref", "分支", "写文件", "commit", "创建分支"],
+    gap: "成员含角色/2FA 可迁 GraphQL（旧判断「无角色/2FA 字段」有误）",
+  },
+  {
+    t: "Git",
+    kw: ["git", "branch", "ref", "分支", "写文件", "commit", "创建分支"],
     entry: "createRef / updateRef / deleteRef / updateRefs / createCommitOnBranch",
-    gap: "createRef=建分支；createCommitOnBranch=写文件（需 expectedHeadOid+FileChanges，比 REST contents 复杂）" },
-  { t: "Activity", kw: ["notification", "通知", "feed", "动态"],
-    entry: "—", gap: "Viewer.notifications 不存在 → 无 GraphQL，维持 REST" },
-  { t: "Users", kw: ["gpg", "ssh key", "公钥", "gpg key"],
-    entry: "—", gap: "Viewer 无 gpgKeys / GpgKey 类型不存在 → GPG/SSH 数字 id 无 GraphQL，维持 REST" },
-  { t: "Security Advisories", kw: ["security advisory", "ghsa", "漏洞", "advisory"],
+    gap: "createRef=建分支；createCommitOnBranch=写文件（需 expectedHeadOid+FileChanges，比 REST contents 复杂）",
+  },
+  {
+    t: "Activity",
+    kw: ["notification", "通知", "feed", "动态"],
+    entry: "—",
+    gap: "Viewer.notifications 不存在 → 无 GraphQL，维持 REST",
+  },
+  {
+    t: "Users",
+    kw: ["gpg", "ssh key", "公钥", "gpg key"],
+    entry: "—",
+    gap: "Viewer 无 gpgKeys / GpgKey 类型不存在 → GPG/SSH 数字 id 无 GraphQL，维持 REST",
+  },
+  {
+    t: "Security Advisories",
+    kw: ["security advisory", "ghsa", "漏洞", "advisory"],
     entry: "SecurityAdvisory（ghsaId/databaseId/cvss/cwes/description）",
-    gap: "类型存在但 Repository.securityAdvisories 入口不存在 → 入口不清晰，维持 REST（待查 node 入口）" },
-  { t: "Checks", kw: ["check run", "check suite", "checks", "ci status"],
+    gap: "类型存在但 Repository.securityAdvisories 入口不存在 → 入口不清晰，维持 REST（待查 node 入口）",
+  },
+  {
+    t: "Checks",
+    kw: ["check run", "check suite", "checks", "ci status"],
     entry: "CheckSuite / CheckRun（Commit.statusCheckRollup / CheckSuite.checkRuns）",
-    gap: "" },
+    gap: "",
+  },
   // —— 入口清晰、已按四分类正确处置 ——
-  { t: "Issues", kw: ["issue", "问题"], entry: "Issue / IssueComment（Repository.issues）", gap: "" },
-  { t: "Pulls", kw: ["pull request", "pr"], entry: "PullRequest / PullRequestReview（Repository.pullRequests）", gap: "" },
-  { t: "Discussions", kw: ["discussion"], entry: "Discussion / DiscussionComment（Repository.discussions）", gap: "" },
+  {
+    t: "Issues",
+    kw: ["issue", "问题"],
+    entry: "Issue / IssueComment（Repository.issues）",
+    gap: "",
+  },
+  {
+    t: "Pulls",
+    kw: ["pull request", "pr"],
+    entry: "PullRequest / PullRequestReview（Repository.pullRequests）",
+    gap: "",
+  },
+  {
+    t: "Discussions",
+    kw: ["discussion"],
+    entry: "Discussion / DiscussionComment（Repository.discussions）",
+    gap: "",
+  },
   { t: "Gists", kw: ["gist"], entry: "Gist / GistComment（Viewer.gists）", gap: "" },
   { t: "Releases", kw: ["release", "发布"], entry: "Release（Repository.releases）", gap: "" },
-  { t: "Search", kw: ["search", "搜索"], entry: "search 根字段（type: ISSUE/REPOSITORY/USER/...）", gap: "" },
-  { t: "Repos", kw: ["repository", "仓库"], entry: "Repository（repository/repositoryOwner）", gap: "" },
+  {
+    t: "Search",
+    kw: ["search", "搜索"],
+    entry: "search 根字段（type: ISSUE/REPOSITORY/USER/...）",
+    gap: "",
+  },
+  {
+    t: "Repos",
+    kw: ["repository", "仓库"],
+    entry: "Repository（repository/repositoryOwner）",
+    gap: "",
+  },
   { t: "Users", kw: ["user", "用户"], entry: "User（user(login:) / viewer）", gap: "" },
-  { t: "Projects", kw: ["project", "项目"], entry: "ProjectV2（Repository.projectsV2 / organization.projectsV2）", gap: "" },
-  { t: "Projects Classic", kw: ["project classic"], entry: "Project（已随 legacy Projects REST 下线）", gap: "" },
+  {
+    t: "Projects",
+    kw: ["project", "项目"],
+    entry: "ProjectV2（Repository.projectsV2 / organization.projectsV2）",
+    gap: "",
+  },
+  {
+    t: "Projects Classic",
+    kw: ["project classic"],
+    entry: "Project（已随 legacy Projects REST 下线）",
+    gap: "",
+  },
   { t: "Branches", kw: ["branches"], entry: "Ref（Repository.refs）", gap: "" },
-  { t: "Commits", kw: ["commit", "提交"], entry: "Commit / Commit.history（Repository.object(expression:)）", gap: "" },
-  { t: "Packages", kw: ["package", "包"], entry: "Package / PackageVersion（RegistryPackage*）", gap: "" },
-  { t: "Dependabot", kw: ["dependabot"], entry: "DependabotAlert（Repository.dependabotAlerts）", gap: "" },
+  {
+    t: "Commits",
+    kw: ["commit", "提交"],
+    entry: "Commit / Commit.history（Repository.object(expression:)）",
+    gap: "",
+  },
+  {
+    t: "Packages",
+    kw: ["package", "包"],
+    entry: "Package / PackageVersion（RegistryPackage*）",
+    gap: "",
+  },
+  {
+    t: "Dependabot",
+    kw: ["dependabot"],
+    entry: "DependabotAlert（Repository.dependabotAlerts）",
+    gap: "",
+  },
   { t: "Deploy Keys", kw: ["deploy key"], entry: "DeployKey（Repository.deployKeys）", gap: "" },
-  { t: "Deployments", kw: ["deployment"], entry: "Deployment / DeploymentStatus（Repository.deployments）", gap: "" },
-  { t: "Apps", kw: ["app", "github app"], entry: "App / Installation（Repository.owner → organization）", gap: "" },
+  {
+    t: "Deployments",
+    kw: ["deployment"],
+    entry: "Deployment / DeploymentStatus（Repository.deployments）",
+    gap: "",
+  },
+  {
+    t: "Apps",
+    kw: ["app", "github app"],
+    entry: "App / Installation（Repository.owner → organization）",
+    gap: "",
+  },
   { t: "Reactions", kw: ["reaction", "表情"], entry: "Reaction（Reactable.reactions）", gap: "" },
   { t: "Licenses", kw: ["license", "许可证"], entry: "License（licenses 根字段）", gap: "" },
   { t: "Sponsors", kw: ["sponsor"], entry: "SponsorsListing（User.sponsorsListing）", gap: "" },
-  { t: "Dependency Graph", kw: ["dependency graph"], entry: "DependencyGraphManifest（Repository.dependencyGraphManifests）", gap: "" },
-  { t: "Meta", kw: ["rate limit", "配额", "meta"], entry: "rateLimit（根字段）/ REST /rate_limit（REST core 配额专属）", gap: "" },
+  {
+    t: "Dependency Graph",
+    kw: ["dependency graph"],
+    entry: "DependencyGraphManifest（Repository.dependencyGraphManifests）",
+    gap: "",
+  },
+  {
+    t: "Meta",
+    kw: ["rate limit", "配额", "meta"],
+    entry: "rateLimit（根字段）/ REST /rate_limit（REST core 配额专属）",
+    gap: "",
+  },
   { t: "Migrations", kw: ["migration"], entry: "Migration 相关（企业迁移）", gap: "" },
   { t: "Enterprise Admin", kw: ["enterprise"], entry: "Enterprise 相关（企业管理员）", gap: "" },
   { t: "Other", kw: [], entry: "杂项（未归类的类型）", gap: "" },
@@ -243,7 +339,9 @@ function matchTopics(q) {
 function printTopicHints(q) {
   const hits = matchTopics(q);
   if (!hits.length) return;
-  console.log(`\n[apiidx] 提示：官方 GraphQL 文档按主题组织，入口名常与主题词不对应，用 gql topic 查映射：`);
+  console.log(
+    `\n[apiidx] 提示：官方 GraphQL 文档按主题组织，入口名常与主题词不对应，用 gql topic 查映射：`,
+  );
   for (const t of hits.slice(0, 5)) {
     console.log(`  ${t.t} → ${t.entry}`);
     if (t.gap) console.log(`        ⚠ ${t.gap}`);
