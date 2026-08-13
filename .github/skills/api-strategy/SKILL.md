@@ -2,20 +2,17 @@
 
 > Use when: PureGit 项目中新增/修改任何 API 接入、smart 封装、GraphQL 模板、REST 降级逻辑、熔断日志的讨论与实施。触发词：API 策略、GraphQL、REST、熔断、降级、smart、请求模板、路径参数、api-compat、api-log、api-strategy。
 
-## 核心认知（v0.0.1 方案调整 2026-08-12）
+## 核心认知（v0.0.1 定稿 2026-08-13）
 
-**旧方案（废弃）**：「GraphQL 首选 + REST 降级」双通道并重 + 用户可切主模式（GraphQL 优先 / REST 优先）。
-问题：GraphQL → REST 是**一对多**（一个复合查询聚合的字段对应 2~5 个 REST 端点），在 GraphQL 模板未定型时写 REST 降级 = 拍脑袋多请求拼装，维护成本翻倍且易失真。
+**通道铁律**：**登录态强制 GraphQL 唯一主通道（不评估收益/复杂度）+ 匿名强制 REST + REST 熔断降级**。
 
-**新方案（当前）**：**GraphQL 唯一主通道 + REST 熔断降级（复用现有 REST 层）**，三步走：
-
-1. **GraphQL 唯一主通道**：双端点 API 以 GraphQL 为唯一实现（smart 函数 = GraphQL 请求模板 + 路径参数变量）；熔断机制框架保留（额度跟踪/cooldown/去重）。
-2. **全量迁移至 GraphQL + 立即设计 REST 熔断**：按页面聚合程度调优复合查询（一个路由一次 GraphQL 查询聚合所需字段）；路径参数（`:owner/:repo/:number` 等）映射为**功能通用请求模板 + 变量**（模板集中 `web/src/lib/graphql.ts`）。**GraphQL 通道定型后立即**补 REST 熔断降级——**现有 rest 层代码不废弃**，复用并按聚合边界优化（GraphQL 聚合了哪些 REST 端点 → 降级链按此拆解，多请求并行优于串行）。熔断降级统一经 `withRestFallback`（api-core.ts）包装。
-3. **REST 降级链排序**：GraphQL→REST 一对多映射清晰后，降级按「先核心数据再附属数据、多请求并行」排序实现。
+- **登录态强制 Graph**：凡有 GraphQL 适配的双端点 API，登录时一律走 GraphQL（smart 函数 = GraphQL 请求模板 + 路径参数变量）。**「收益低 / 繁琐 / 复杂度高」不构成例外**——只有 **GraphQL 无适配**（schema 无对应字段/端点/能力，如 Actions 查询、contributors、security-advisories、events、通知/邀请/团队、get-tree 无递归参数、compare 缺 patch、gpgKey 缺字段等）才保留 REST。
+- **匿名强制 REST**：GraphQL 匿名恒 403（实测），匿名时 smart 层短路走 `rest-*.ts`（REST 数据层保留的核心原因）。
+- **GraphQL 失败 → `withRestFallback` 熔断降级 REST**（复用 rest 层，日志 ↪ 标记）。
 
 ## 强制规则
 
-1. **登录态 GraphQL 唯一主通道**：smart 函数第一实现必须 GraphQL；**禁止**新增「REST 优先」模式选项；GraphQL 失败 → 统一 `withRestFallback` 熔断降级 REST（复用 rest 层）。
+1. **登录态强制 GraphQL 唯一主通道（不评估收益/复杂度）**：smart 函数第一实现必须 GraphQL；**唯一例外 = GraphQL 无适配**（schema 无对应字段/端点/能力）→ 保留 REST；**禁止**新增「REST 优先」模式选项；GraphQL 失败 → 统一 `withRestFallback` 熔断降级 REST（复用 rest 层）。
 2. **匿名强制 REST**（硬约束非降级）：GraphQL 匿名恒 403（实测）；匿名时 smart 层短路走 `rest-*.ts`（REST 数据层保留的唯一原因）。
 3. **路径参数 → 请求模板变量**：路由参数不做字符串拼查询；统一映射为 `graphql.ts` 模板的变量对象（如 `PULLS_QUERY` + `{owner, name: repo, states, first, orderField, orderDir}`）。
 4. **REST 熔断降级复用不废弃**：现有 `rest-*.ts` 代码继续使用（匿名直连 + 熔断降级）；降级链经 `withRestFallback(restFn, detail, gqlResp)` 包装。
@@ -105,6 +102,6 @@ export async function fetchXxxSmart(owner: string, repo: string, token?: string 
 
 ## 相关文件与文档
 
-- 权威文档：`docs/architecture.md`「API 模式」章节、`docs/api-compat.md`（§1 分层 / §2 对照表 / §3 smart 模板 / §5 CheckList / §6 审计速查）
+- 权威文档：`docs/architecture.md`「API 模式」章节、`docs/api-compat.md`（**§0 智能熔断接口开发准则** / §1 分层 / §2 对照表 / §3 smart 模板 / §4 不可抗力 / §5 CheckList / §6 审计速查）
 - 代码载体：`web/src/lib/octokit.ts`（SDK 入口/额度/熔断）、`web/src/lib/api-core.ts`（graphqlRequest + withRestFallback）、`web/src/lib/api.ts`（smart barrel）、`web/src/lib/graphql.ts`（请求模板库）、`web/src/lib/api-log.ts`（熔断日志工具）、`web/src/lib/rest.ts` + `rest-*.ts`（REST 数据层：匿名直连 + 降级复用）
 - 日志验收：`web/test/api-log.spec.ts`（简洁格式/`[Fallback#n]` 序号/`↪` 图标/时间戳毫秒/vars 快照质量门）
