@@ -90,7 +90,7 @@ export async function fetchWorkflows(
   return data.workflows ?? [];
 }
 
-/** Workflow runs 列表（可按 workflow/branch/event/status 过滤） */
+/** Workflow runs 列表（可按 workflow/branch/event/status/actor 过滤） */
 export async function fetchWorkflowRuns(
   owner: string,
   repo: string,
@@ -102,6 +102,7 @@ export async function fetchWorkflowRuns(
     branch?: string;
     event?: string;
     status?: string;
+    actor?: string;
   } = {},
 ): Promise<{ total_count: number; runs: WorkflowRun[] }> {
   const data = await typedRequest<{
@@ -117,6 +118,7 @@ export async function fetchWorkflowRuns(
       ...(opts.branch ? { branch: opts.branch } : {}),
       ...(opts.event ? { event: opts.event } : {}),
       ...(opts.status ? { status: opts.status as WorkflowRunStatus } : {}),
+      ...(opts.actor ? { actor: opts.actor } : {}),
     }),
   );
   return { total_count: data.total_count ?? 0, runs: data.workflow_runs ?? [] };

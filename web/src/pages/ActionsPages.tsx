@@ -17,8 +17,11 @@ import {
   Play,
   CheckCircle2,
   XCircle,
+  CircleSlash,
   Clock,
   Loader2,
+  ChevronDown,
+  ChevronRight,
   GitBranch,
   Search,
   FileText,
@@ -66,6 +69,7 @@ import {
 import type { Workflow, WorkflowRun, WorkflowJob, RunArtifact } from "@/lib/rest";
 import { WriteGate } from "@/components/WriteGate";
 import { Pager } from "@/components/Pager";
+import { CodeView } from "@/components/CodeView";
 import PageLayout from "@/components/PageLayout";
 import { cn } from "@/lib/utils";
 
@@ -154,6 +158,35 @@ function runStatusIcon(status: string, conclusion: string | null) {
   }
 }
 
+/**
+ * step 状态图标（官方语义）：success 绿✓ / failure 红✗ / skipped 灰⊘（octicon-skip）/
+ * cancelled 灰✗ / in_progress 黄 spinner / 其余（queued/neutral）灰 clock。
+ * 供 Run 详情 job 卡内 step 列表与 Job 详情 step 列表共用。
+ */
+function stepIcon(status: string, conclusion: string | null, size = "size-4") {
+  if (conclusion === "skipped") {
+    return (
+      <CircleSlash
+        className={`${size} shrink-0 text-muted-foreground`}
+        aria-label="This step was skipped"
+      />
+    );
+  }
+  if (status === "in_progress") {
+    return <Loader2 className={`${size} shrink-0 animate-spin text-yellow-500`} />;
+  }
+  if (conclusion === "success") {
+    return <CheckCircle2 className={`${size} shrink-0 text-green-600`} />;
+  }
+  if (conclusion === "failure") {
+    return <XCircle className={`${size} shrink-0 text-red-600`} />;
+  }
+  if (conclusion === "cancelled") {
+    return <XCircle className={`${size} shrink-0 text-muted-foreground`} />;
+  }
+  return <Clock className={`${size} shrink-0 text-muted-foreground`} />;
+}
+
 /** 时长格式化（ms → "20s" / "1m 30s"；官方 Total duration/step 耗时） */
 function fmtDuration(ms: number): string {
   if (!Number.isFinite(ms) || ms < 0) return "—";
@@ -162,6 +195,21 @@ function fmtDuration(ms: number): string {
   const m = Math.floor(sec / 60);
   const s = sec % 60;
   return s ? `${m}m ${s}s` : `${m}m`;
+}
+
+/**
+ * 从 job 全量日志切出单个 step 的日志段（GitHub 日志以 `##[group]` 标记分组）：
+ * 匹配 `##[group]{stepName}`（action/run 步骤带 `Run ` 前缀）到 `##[endgroup]` 区间；
+ * 匹配不到（内置步骤命名差异）→ 回退全量日志，保证始终有内容可展示。
+ */
+function sliceStepLog(full: string, stepName: string): string {
+  const esc = stepName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  const m = full.match(new RegExp(`##\\[group\\](?:Run )?${esc}`));
+  if (!m || m.index === undefined) return full;
+  const start = m.index;
+  const endIdx = full.indexOf("##[endgroup]", start + m[0].length);
+  const end = endIdx === -1 ? full.length : endIdx;
+  return full.slice(start, end).trim();
 }
 
 export default function ActionsPage() {
@@ -174,11 +222,12 @@ export default function ActionsPage() {
   const [totalCount, setTotalCount] = useState(0);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
-  // 过滤（官方 Workflow/Event/Status/Branch + 搜索）
+  // 过滤（官方 Workflow/Event/Status/Branch/Actor + 搜索）
   const [workflowId, setWorkflowId] = useState<string>("");
   const [event, setEvent] = useState<string>("");
   const [status, setStatus] = useState<string>("");
   const [branch, setBranch] = useState<string>("");
+  const [actor, setActor] = useState<string>("");
   const [query, setQuery] = useState("");
   const [branches, setBranches] = useState<{ name: string }[]>([]);
   // 分页（官方 Previous/Next；per_page=20）
@@ -207,6 +256,7 @@ export default function ActionsPage() {
         event: event || undefined,
         status: status || undefined,
         branch: branch || undefined,
+        actor: actor || undefined,
       }).catch(() => ({ total_count: 0, runs: [] })),
     ]).then(([wfs, runsData]) => {
       if (cancelled) return;
@@ -218,7 +268,7 @@ export default function ActionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [owner, repo, token, workflowId, event, status, branch, page]);
+  }, [owner, repo, token, workflowId, event, status, branch, actor, page]);
 
   // 搜索过滤（前端：query 匹配标题/分支/作者）
   const filteredRuns = useMemo(() => {
@@ -231,6 +281,13 @@ export default function ActionsPage() {
         (r.actor?.login ?? "").toLowerCase().includes(q),
     );
   }, [runs, query]);
+
+  // Actor 过滤候选（从当前 runs 提取触发者去重；官方 Actor 过滤按触发者精确过滤）
+  const actorOptions = useMemo(() => {
+    const set = new Set<string>();
+    for (const r of runs) if (r.actor?.login) set.add(r.actor.login);
+    return Array.from(set);
+  }, [runs]);
 
   if (loading) {
     return (
@@ -445,6 +502,25 @@ export default function ActionsPage() {
                 {branches.map((b) => (
                   <SelectItem key={b.name} value={b.name}>
                     {b.name}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <Select
+              value={actor}
+              onValueChange={(v) => {
+                setActor(v);
+                setPage(1);
+              }}
+            >
+              <SelectTrigger className="w-32">
+                <SelectValue placeholder={t("actions.filterActor")} />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="">{t("actions.allActors")}</SelectItem>
+                {actorOptions.map((a) => (
+                  <SelectItem key={a} value={a}>
+                    {a}
                   </SelectItem>
                 ))}
               </SelectContent>
@@ -919,15 +995,7 @@ export function RunDetailPage() {
                 <ul className="divide-y">
                   {j.steps.map((s) => (
                     <li key={s.number} className="flex items-center gap-2 px-4 py-2 text-sm">
-                      {s.conclusion === "success" ? (
-                        <CheckCircle2 className="size-3.5 shrink-0 text-green-600" />
-                      ) : s.conclusion === "failure" ? (
-                        <XCircle className="size-3.5 shrink-0 text-red-600" />
-                      ) : s.status === "in_progress" ? (
-                        <Loader2 className="size-3.5 shrink-0 animate-spin" />
-                      ) : (
-                        <Clock className="size-3.5 shrink-0 text-muted-foreground" />
-                      )}
+                      {stepIcon(s.status, s.conclusion, "size-3.5")}
                       <span className="truncate">{s.name}</span>
                       <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                         {s.started_at && s.completed_at
@@ -988,7 +1056,7 @@ export function JobDetailPage() {
 
   const job = jobs.find((j) => String(j.id) === jobId);
 
-  // 展开 step → 拉 job 日志并切片（官方点击 step 显示该 step 日志）
+  // 展开 step → 拉 job 日志并按 step 名切片（官方点击 step 显示该 step 日志）
   const toggleStep = async (stepNumber: number) => {
     if (logs[stepNumber] !== undefined) {
       setLogs((prev) => {
@@ -1003,8 +1071,8 @@ export function JobDetailPage() {
     setLogError((prev) => ({ ...prev, [stepNumber]: false }));
     try {
       const full = await fetchJobLogs(owner, repo, Number(jobId), token);
-      // 按 "##[group]step名" 或 step number 前缀切片（简化：切前 200 行）
-      const slice = full?.slice(0, 40_000) ?? null;
+      const stepName = job?.steps.find((x) => x.number === stepNumber)?.name ?? "";
+      const slice = full ? sliceStepLog(full, stepName) : null;
       setLogs((prev) => ({ ...prev, [stepNumber]: slice }));
     } catch {
       setLogError((prev) => ({ ...prev, [stepNumber]: true }));
@@ -1131,56 +1199,72 @@ export function JobDetailPage() {
           />
         </div>
 
-        {/* step 列表（官方：点击展开日志） */}
+        {/* step 列表（官方：点击展开日志；skip 项不可展开） */}
         <ul className="divide-y overflow-hidden rounded-lg border bg-card">
-          {job.steps.map((s) => (
-            <li key={s.number} className="text-sm">
-              <button
-                type="button"
-                onClick={() => void toggleStep(s.number)}
-                className="flex w-full items-center gap-2 px-4 py-2.5 text-left hover:bg-accent/50"
-              >
-                {s.conclusion === "success" ? (
-                  <CheckCircle2 className="size-4 shrink-0 text-green-600" />
-                ) : s.conclusion === "failure" ? (
-                  <XCircle className="size-4 shrink-0 text-red-600" />
-                ) : s.status === "in_progress" ? (
-                  <Loader2 className="size-4 shrink-0 animate-spin" />
-                ) : (
-                  <Clock className="size-4 shrink-0 text-muted-foreground" />
-                )}
-                <span className="truncate">{s.name}</span>
-                <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                  {s.started_at && s.completed_at
-                    ? fmtDuration(
-                        new Date(s.completed_at).getTime() - new Date(s.started_at).getTime(),
-                      )
-                    : (s.conclusion ?? s.status)}
-                </span>
-              </button>
-              {/* 展开的日志区 */}
-              {(logs[s.number] !== undefined || logLoading[s.number] || logError[s.number]) && (
-                <div className="border-t bg-muted/30 px-4 py-3">
-                  {logLoading[s.number] ? (
-                    <p className="flex items-center gap-2 text-xs text-muted-foreground">
-                      <Loader2 className="size-3 animate-spin" />
-                      {t("actions.logLoading")}
-                    </p>
-                  ) : logError[s.number] ? (
-                    <InlineError message={t("actions.logFailed")} size="sm" />
-                  ) : visibleLogs[s.number] ? (
-                    <pre className="max-h-80 overflow-auto whitespace-pre-wrap font-mono text-[11px] leading-relaxed">
-                      {visibleLogs[s.number]}
-                    </pre>
-                  ) : logQuery ? (
-                    <p className="text-xs text-muted-foreground">{t("actions.logNoMatch")}</p>
-                  ) : (
-                    <p className="text-xs text-muted-foreground">{t("actions.logEmpty")}</p>
+          {job.steps.map((s) => {
+            const isSkipped = s.conclusion === "skipped";
+            const isExpanded =
+              logs[s.number] !== undefined || logLoading[s.number] || logError[s.number];
+            return (
+              <li key={s.number} className="text-sm">
+                <button
+                  type="button"
+                  onClick={() => !isSkipped && void toggleStep(s.number)}
+                  className={cn(
+                    "flex w-full items-center gap-2 px-4 py-2.5 text-left",
+                    !isSkipped && "hover:bg-accent/50",
+                    isSkipped && "cursor-default",
                   )}
-                </div>
-              )}
-            </li>
-          ))}
+                >
+                  {/* 展开指示（skip 项无） */}
+                  {!isSkipped && (
+                    <span className="shrink-0 text-muted-foreground">
+                      {isExpanded ? (
+                        <ChevronDown className="size-3.5" />
+                      ) : (
+                        <ChevronRight className="size-3.5" />
+                      )}
+                    </span>
+                  )}
+                  {stepIcon(s.status, s.conclusion)}
+                  <span className="truncate">{s.name}</span>
+                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
+                    {s.started_at && s.completed_at
+                      ? fmtDuration(
+                          new Date(s.completed_at).getTime() - new Date(s.started_at).getTime(),
+                        )
+                      : (s.conclusion ?? s.status)}
+                  </span>
+                </button>
+                {/* 展开的日志区（带行号只读展示，复用 CodeView） */}
+                {(logs[s.number] !== undefined || logLoading[s.number] || logError[s.number]) && (
+                  <div className="border-t bg-muted/30 px-4 py-3">
+                    {logLoading[s.number] ? (
+                      <p className="flex items-center gap-2 text-xs text-muted-foreground">
+                        <Loader2 className="size-3 animate-spin" />
+                        {t("actions.logLoading")}
+                      </p>
+                    ) : logError[s.number] ? (
+                      <InlineError message={t("actions.logFailed")} size="sm" />
+                    ) : visibleLogs[s.number] ? (
+                      <div className="max-h-96 overflow-y-auto rounded-md">
+                        <CodeView
+                          key={`${s.number}-${logQuery}`}
+                          code={visibleLogs[s.number] ?? ""}
+                          path="workflow.log"
+                          minHeight="min-h-32"
+                        />
+                      </div>
+                    ) : logQuery ? (
+                      <p className="text-xs text-muted-foreground">{t("actions.logNoMatch")}</p>
+                    ) : (
+                      <p className="text-xs text-muted-foreground">{t("actions.logEmpty")}</p>
+                    )}
+                  </div>
+                )}
+              </li>
+            );
+          })}
         </ul>
       </div>
     </PageLayout>

@@ -540,6 +540,30 @@ function FeedCard({ ev }: { ev: ReceivedEvent }) {
   const { format, fmt } = useDateFormat();
   const meta = feedMeta(ev);
   const repoName = ev.repo.name;
+  // 评论动态：提取评论内容与所属 issue/PR（无正文时回退仓库体卡片）
+  const isComment =
+    ev.type === "IssueCommentEvent" ||
+    ev.type === "PullRequestReviewEvent" ||
+    ev.type === "PullRequestReviewCommentEvent";
+  const commentBody =
+    ev.type === "PullRequestReviewEvent"
+      ? (ev.payload?.review?.body ?? "")
+      : (ev.payload?.comment?.body ?? "");
+  const commentSubject =
+    ev.type === "IssueCommentEvent" && ev.payload?.issue
+      ? {
+          title: ev.payload.issue.title ?? "",
+          url: ev.payload.issue.html_url ?? "",
+          number: ev.payload.issue.number ?? 0,
+        }
+      : ev.payload?.pull_request
+        ? {
+            title: ev.payload.pull_request.title ?? "",
+            url: ev.payload.pull_request.html_url ?? "",
+            number: ev.payload.pull_request.number ?? 0,
+          }
+        : null;
+  const showCommentCard = isComment && commentBody.trim().length > 0;
   return (
     <div className="rounded-lg border bg-card">
       {/* 标题行：头像 + 事件图标角标 + 动作文案（官方 feed 结构） */}
@@ -588,9 +612,68 @@ function FeedCard({ ev }: { ev: ReceivedEvent }) {
         </div>
       </div>
 
-      {/* 仓库体：仓库头像 + 链接 + 描述 + 语言·stars + Star/Add-to-list（官方 repository body） */}
+      {/* 评论动态：评论内容卡片（预览 + read more）；其余：仓库体卡片 */}
       <div className="px-4 pb-4">
-        <FeedRepoCard fullName={repoName} token={token} />
+        {showCommentCard ? (
+          <CommentCard body={commentBody} subject={commentSubject} />
+        ) : (
+          <FeedRepoCard fullName={repoName} token={token} />
+        )}
+      </div>
+    </div>
+  );
+}
+
+/**
+ * 评论动态卡片（官方 feed）：评论正文预览（超 10 行折叠 + 底部渐变隐去）+
+ * 所属 issue/PR 链接 + 「Read more」展开全文。
+ */
+function CommentCard({
+  body,
+  subject,
+}: {
+  body: string;
+  subject: { title: string; url: string; number: number } | null;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const collapsible = !expanded && body.split("\n").length > 10;
+  return (
+    <div className="overflow-hidden rounded-md border bg-muted/30">
+      <div className="relative p-3">
+        <p
+          className={cn(
+            "whitespace-pre-wrap wrap-break-word text-sm text-muted-foreground",
+            collapsible && "line-clamp-10",
+          )}
+        >
+          {body}
+        </p>
+        {collapsible && (
+          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-linear-to-t from-card to-transparent" />
+        )}
+      </div>
+      <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
+        {subject?.number ? (
+          <a
+            href={subject.url}
+            target="_blank"
+            rel="noreferrer"
+            className="min-w-0 truncate text-xs text-muted-foreground hover:text-primary hover:underline"
+          >
+            in #{subject.number} {subject.title}
+          </a>
+        ) : (
+          <span />
+        )}
+        {collapsible && (
+          <button
+            type="button"
+            onClick={() => setExpanded(true)}
+            className="shrink-0 text-xs font-medium text-primary hover:underline"
+          >
+            Read more
+          </button>
+        )}
       </div>
     </div>
   );

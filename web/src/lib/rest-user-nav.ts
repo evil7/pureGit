@@ -264,6 +264,14 @@ export interface ReceivedEvent {
     pusher_type?: string;
     commits?: { message: string; sha: string; url: string }[];
     size?: number;
+    /** 评论内容（IssueCommentEvent / PullRequestReviewCommentEvent） */
+    comment?: { body?: string; html_url?: string };
+    /** 评审内容（PullRequestReviewEvent） */
+    review?: { body?: string; html_url?: string; state?: string };
+    /** 评论所属 issue（IssueCommentEvent） */
+    issue?: { title?: string; html_url?: string; number?: number };
+    /** 评论所属 PR（PullRequestReviewEvent / PullRequestReviewCommentEvent） */
+    pull_request?: { title?: string; html_url?: string; number?: number };
   };
 }
 
