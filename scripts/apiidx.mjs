@@ -158,6 +158,98 @@ function cmdRestId(args) {
 
 /* ── GraphQL 子命令 ── */
 
+/**
+ * 官方 GraphQL 文档「主题 → 实际入口」映射（语义搜索补全，v0.0.1 工具基建）。
+ *
+ * 官方 docs.graphql 按主题组织（Actions/Teams/Orgs/... 共 33 类，见 docs.github.com/en/graphql/reference），
+ * 但主题的实际 GraphQL 入口名**常与主题词不对应**（如 Actions 的入口是 Workflow/WorkflowRun 而非 "actions"，
+ * Teams 的入口在 Organization.teams 而非根字段），`gql search` 只搜根字段名/描述，语义搜索搜不到这些
+ * 「名字对不上」的入口。本表记录「主题/关键词 → 实际入口类型·字段 → 能力评估」，供 `gql topic` 查询
+ * 与 `gql search` 无命中时的补全提示。gap 为空 = 入口清晰（已按 §0.2 四分类正常迁移/保留）。
+ */
+const GQL_TOPICS = [
+  // —— 语义搜索搜不到、有修正价值（gap 非空）——
+  { t: "Actions", kw: ["actions", "workflow", "ci", "github actions"],
+    entry: "Workflow / WorkflowRun / WorkflowRunFile（经 CheckSuite.workflowRun 到达）",
+    gap: "碎片节点：缺 Repository.workflows 列表入口、jobs/logs/artifacts、dispatch mutation → 维持 REST" },
+  { t: "Teams", kw: ["teams", "team", "团队"],
+    entry: "Organization.teams → Team.members / Team.repositories / Team.databaseId",
+    gap: "读有写无：列表/成员可迁 GraphQL；createTeam/deleteTeam/updateTeam/addTeamMember/removeTeamMember 无 mutation → 写维持 REST" },
+  { t: "Orgs", kw: ["org member", "member role", "成员", "角色", "2fa"],
+    entry: "Organization.membersWithRole → OrganizationMemberEdge.role / hasTwoFactorEnabled",
+    gap: "成员含角色/2FA 可迁 GraphQL（旧判断「无角色/2FA 字段」有误）" },
+  { t: "Git", kw: ["git", "branch", "ref", "分支", "写文件", "commit", "创建分支"],
+    entry: "createRef / updateRef / deleteRef / updateRefs / createCommitOnBranch",
+    gap: "createRef=建分支；createCommitOnBranch=写文件（需 expectedHeadOid+FileChanges，比 REST contents 复杂）" },
+  { t: "Activity", kw: ["notification", "通知", "feed", "动态"],
+    entry: "—", gap: "Viewer.notifications 不存在 → 无 GraphQL，维持 REST" },
+  { t: "Users", kw: ["gpg", "ssh key", "公钥", "gpg key"],
+    entry: "—", gap: "Viewer 无 gpgKeys / GpgKey 类型不存在 → GPG/SSH 数字 id 无 GraphQL，维持 REST" },
+  { t: "Security Advisories", kw: ["security advisory", "ghsa", "漏洞", "advisory"],
+    entry: "SecurityAdvisory（ghsaId/databaseId/cvss/cwes/description）",
+    gap: "类型存在但 Repository.securityAdvisories 入口不存在 → 入口不清晰，维持 REST（待查 node 入口）" },
+  { t: "Checks", kw: ["check run", "check suite", "checks", "ci status"],
+    entry: "CheckSuite / CheckRun（Commit.statusCheckRollup / CheckSuite.checkRuns）",
+    gap: "" },
+  // —— 入口清晰、已按四分类正确处置 ——
+  { t: "Issues", kw: ["issue", "问题"], entry: "Issue / IssueComment（Repository.issues）", gap: "" },
+  { t: "Pulls", kw: ["pull request", "pr"], entry: "PullRequest / PullRequestReview（Repository.pullRequests）", gap: "" },
+  { t: "Discussions", kw: ["discussion"], entry: "Discussion / DiscussionComment（Repository.discussions）", gap: "" },
+  { t: "Gists", kw: ["gist"], entry: "Gist / GistComment（Viewer.gists）", gap: "" },
+  { t: "Releases", kw: ["release", "发布"], entry: "Release（Repository.releases）", gap: "" },
+  { t: "Search", kw: ["search", "搜索"], entry: "search 根字段（type: ISSUE/REPOSITORY/USER/...）", gap: "" },
+  { t: "Repos", kw: ["repository", "仓库"], entry: "Repository（repository/repositoryOwner）", gap: "" },
+  { t: "Users", kw: ["user", "用户"], entry: "User（user(login:) / viewer）", gap: "" },
+  { t: "Projects", kw: ["project", "项目"], entry: "ProjectV2（Repository.projectsV2 / organization.projectsV2）", gap: "" },
+  { t: "Projects Classic", kw: ["project classic"], entry: "Project（已随 legacy Projects REST 下线）", gap: "" },
+  { t: "Branches", kw: ["branches"], entry: "Ref（Repository.refs）", gap: "" },
+  { t: "Commits", kw: ["commit", "提交"], entry: "Commit / Commit.history（Repository.object(expression:)）", gap: "" },
+  { t: "Packages", kw: ["package", "包"], entry: "Package / PackageVersion（RegistryPackage*）", gap: "" },
+  { t: "Dependabot", kw: ["dependabot"], entry: "DependabotAlert（Repository.dependabotAlerts）", gap: "" },
+  { t: "Deploy Keys", kw: ["deploy key"], entry: "DeployKey（Repository.deployKeys）", gap: "" },
+  { t: "Deployments", kw: ["deployment"], entry: "Deployment / DeploymentStatus（Repository.deployments）", gap: "" },
+  { t: "Apps", kw: ["app", "github app"], entry: "App / Installation（Repository.owner → organization）", gap: "" },
+  { t: "Reactions", kw: ["reaction", "表情"], entry: "Reaction（Reactable.reactions）", gap: "" },
+  { t: "Licenses", kw: ["license", "许可证"], entry: "License（licenses 根字段）", gap: "" },
+  { t: "Sponsors", kw: ["sponsor"], entry: "SponsorsListing（User.sponsorsListing）", gap: "" },
+  { t: "Dependency Graph", kw: ["dependency graph"], entry: "DependencyGraphManifest（Repository.dependencyGraphManifests）", gap: "" },
+  { t: "Meta", kw: ["rate limit", "配额", "meta"], entry: "rateLimit（根字段）/ REST /rate_limit（REST core 配额专属）", gap: "" },
+  { t: "Migrations", kw: ["migration"], entry: "Migration 相关（企业迁移）", gap: "" },
+  { t: "Enterprise Admin", kw: ["enterprise"], entry: "Enterprise 相关（企业管理员）", gap: "" },
+  { t: "Other", kw: [], entry: "杂项（未归类的类型）", gap: "" },
+];
+
+/** 按关键词匹配主题映射（英文单词精确匹配防 "git" 误匹配 "github"；中文子串匹配） */
+function matchTopics(q) {
+  if (!q) return [];
+  const tokens = q.toLowerCase().split(/\s+/).filter(Boolean);
+  if (!tokens.length) return [];
+  return GQL_TOPICS.filter((t) =>
+    t.kw.some((k) => {
+      const ktokens = k.split(/\s+/);
+      return tokens.some((tok) => {
+        if (/[\u4e00-\u9fff]/.test(tok)) {
+          // 中文：子串匹配（关键词含 token，或 token 含关键词）
+          return ktokens.some((kt) => kt.includes(tok) || tok.includes(kt));
+        }
+        // 英文：单词相等匹配
+        return ktokens.some((kt) => kt === tok);
+      });
+    }),
+  );
+}
+
+/** 打印主题映射补全提示（search 无命中时引导） */
+function printTopicHints(q) {
+  const hits = matchTopics(q);
+  if (!hits.length) return;
+  console.log(`\n[apiidx] 提示：官方 GraphQL 文档按主题组织，入口名常与主题词不对应，用 gql topic 查映射：`);
+  for (const t of hits.slice(0, 5)) {
+    console.log(`  ${t.t} → ${t.entry}`);
+    if (t.gap) console.log(`        ⚠ ${t.gap}`);
+  }
+}
+
 /** 根字段（query/mutation）分组枚举 */
 async function cmdGql(args) {
   const sub = args[0];
@@ -213,6 +305,7 @@ async function cmdGql(args) {
       .sort((a, b) => b.score - a.score);
     if (!scored.length) {
       console.log(`[apiidx] 未找到匹配「${q}」的 GraphQL 根字段`);
+      printTopicHints(q);
       return;
     }
     console.log(`[apiidx] gql 根字段「${q}」→ ${scored.length} 条`);
@@ -225,6 +318,24 @@ async function cmdGql(args) {
         (f.description || "").split("\n")[0].slice(0, 48),
       ]),
     ]);
+    return;
+  }
+
+  if (sub === "topic") {
+    const q = args.slice(1).join(" ").toLowerCase();
+    const hits = matchTopics(q);
+    if (!hits.length) {
+      console.log(`[apiidx] 未找到匹配「${args.slice(1).join(" ")}」的官方主题（GQL_TOPICS 映射）`);
+      console.log(`  可用主题：${GQL_TOPICS.map((t) => t.t).join(" / ")}`);
+      return;
+    }
+    console.log(`[apiidx] 官方 GraphQL 主题映射「${q}」→ ${hits.length} 条`);
+    for (const t of hits) {
+      console.log(`\n${t.t}`);
+      console.log(`  入口 : ${t.entry}`);
+      if (t.gap) console.log(`  缺口 : ${t.gap}`);
+      if (t.kw.length) console.log(`  关键词 : ${t.kw.join(" / ")}`);
+    }
     return;
   }
 
@@ -244,6 +355,7 @@ async function cmdGql(args) {
         );
       } else {
         console.log(`[apiidx] 未找到 GraphQL 类型: ${name}`);
+        printTopicHints(name);
       }
       return;
     }
@@ -323,7 +435,8 @@ async function cmdGql(args) {
 function gqlUsage() {
   console.log(`用法:
   node scripts/apiidx.mjs gql roots [query|mutation|all]  枚举根字段
-  node scripts/apiidx.mjs gql search <关键词>             搜索根字段
+  node scripts/apiidx.mjs gql search <关键词>             搜索根字段（无命中提示主题映射）
+  node scripts/apiidx.mjs gql topic <关键词>              官方主题 → 实际入口映射（语义搜索补全）
   node scripts/apiidx.mjs gql type <TypeName>             递进：类型字段枚举
   node scripts/apiidx.mjs gql field <Type.field>          递进：字段详情`);
 }
@@ -431,7 +544,8 @@ function cmdUsage() {
   node scripts/apiidx.mjs rest <关键词...>        搜索 REST 端点
   node scripts/apiidx.mjs rest-id <operationId>   REST 端点详情（含参数）
   node scripts/apiidx.mjs gql roots [scope]       枚举 GraphQL 根字段（query|mutation|all）
-  node scripts/apiidx.mjs gql search <关键词>     搜索 GraphQL 根字段
+  node scripts/apiidx.mjs gql search <关键词>     搜索 GraphQL 根字段（无命中提示主题映射）
+  node scripts/apiidx.mjs gql topic <关键词>      官方主题 → 实际入口映射（语义搜索补全）
   node scripts/apiidx.mjs gql type <TypeName>     递进：类型字段枚举
   node scripts/apiidx.mjs gql field <Type.field>  递进：字段详情
   node scripts/apiidx.mjs page <关键词>           搜索页面分类

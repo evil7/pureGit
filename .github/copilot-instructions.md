@@ -11,7 +11,7 @@
 - **数据源**：GitHub GraphQL API（浏览、搜索、issue/PR，含 star/fork/创建 issue/PR 等基础写操作）
 - **CLI 集成**：镜像端点代理 —— 用户通过 `git config --global url.<worker镜像端点>/.insteadOf https://github.com/` 接入
 - **开发阶段**：**v0.0.1 全量复刻**（0.0.x 内部试错阶段仍有效）——可随时开展破坏性、不兼容的重构与尝试，不承诺兼容保留
-- **开发工具基建**：`scripts/rest-index.mjs`（REST 端点索引：octokit 零下载转录 REST 1108）、`scripts/page-index.mjs`（官方页面分类索引）、`scripts/apiidx.mjs`（查询 CLI：REST 搜索 + GraphQL 实时 introspection 递进 + 页面闭环）；数据 `scripts/data/*.json`——**新增 API/页面先查索引再动手**
+- **开发工具基建**：`scripts/rest-index.mjs`（REST 端点索引：octokit 零下载转录 REST 1108）、`scripts/page-index.mjs`（官方页面分类索引）、`scripts/apiidx.mjs`（查询 CLI：REST 搜索 + GraphQL 实时 introspection 递进 + **官方主题 → 入口映射补全** + 页面闭环）；数据 `scripts/data/*.json`——**新增 API/页面先查索引再动手**；判断 GraphQL 有无适配**勿凭语义搜索「搜不到」即判「无适配」**（官方按主题组织，入口名常不对应，如 Actions → Workflow/WorkflowRun），先用 `apiidx gql topic <主题>` 查映射
 
 ## 文档体系与规则来源（顶层框架 · vibe coding 友好）
 
@@ -85,7 +85,7 @@
 - Worker 类型生成：`pnpm --filter worker cf-typegen`（改 bindings 后运行）
 - Worker 测试：`pnpm --filter worker test`（vitest）
 - 根目录全量构建：`pnpm build`（web 构建 + worker 构建）
-- **开发工具（API 对照查询 CLI，v0.0.1 工具基建）**：`node scripts/apiidx.mjs <rest|rest-id|gql|page|pageapi|stats|update>`——**新增 API / 新页面动手前先查索引**（REST 端点搜索 + GraphQL 实时 introspection 递进，双端点对等关系由人主观判断）；生成器 `scripts/rest-index.mjs` / `scripts/page-index.mjs`（`apiidx update` 一键重跑），GraphQL 实时 schema 直连官方 `api.github.com/graphql`（`GITHUB_TOKEN` 鉴权，失败自动降级本地 `@octokit/graphql-schema`）；详见 `docs/index.md` §1.3
+- **开发工具（API 对照查询 CLI，v0.0.1 工具基建）**：`node scripts/apiidx.mjs <rest|rest-id|gql|page|pageapi|stats|update>`——**新增 API / 新页面动手前先查索引**（REST 端点搜索 + GraphQL 实时 introspection 递进，双端点对等关系由人主观判断）；`gql topic <主题>` 查官方主题 → 实际入口映射（`gql search` 无命中时自动提示，解决「入口名与主题词不对应」搜不到的问题）；生成器 `scripts/rest-index.mjs` / `scripts/page-index.mjs`（`apiidx update` 一键重跑），GraphQL 实时 schema 直连官方 `api.github.com/graphql`（`GITHUB_TOKEN` 鉴权，失败自动降级本地 `@octokit/graphql-schema`）；详见 `docs/index.md` §1.3
 
 ## 依赖安全与更新风控（必须遵守）
 

@@ -158,10 +158,10 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 |---|---|---|---|---|---|---|
 | `fetchCompare`（compare 页/新 PR diff） | ⚠️ | ✅ | — | — | ❌ | 4.1 GraphQL Comparison.files 缺 patch；**`compareCommitsWithBasehead` 类型化方法，basehead 整串传参（跨仓库 `owner:repo:branch` 全冒号格式）** |
 | `mergeUpstream`（Sync fork → Update branch） | ✗ | ✅ | — | — | ❌ | GraphQL 无 merge-upstream；**`repos.mergeUpstream` 类型化方法** |
-| `fetchGpgKeys`/`addGpgKey`/`deleteGpgKey` | ⚠️ | ✅ | — | — | ❌ | 4.3 GraphQL gpgKey 仅 5 字段，REST 需 emails/subkeys/can_* |
+| `fetchGpgKeys`/`addGpgKey`/`deleteGpgKey` | ✗ | ✅ | — | — | ❌ | 4.3 GraphQL 无 gpgKeys 字段 / GpgKey 类型不存在 |
 | `blockUser`/`unblockUser` | ⚠️ | ✅ | — | — | ❌ | 4.4 GraphQL 无 block mutation |
-| `fetchJobLogs`（Actions 日志） | ✗ | ✅ | — | — | ❌ | 4.5 text/plain 非 JSON；GraphQL 无 actions 通道 |
-| Actions 全家（`fetchWorkflows`/`fetchWorkflowRuns`/`fetchWorkflowRunDetail`/`fetchWorkflowRunJobs`/`fetchRunArtifacts`/`dispatchWorkflow`） | ✗ | ✅ | — | — | ❌ | 4.5 GraphQL 无 actions 查询 |
+| `fetchJobLogs`（Actions 日志） | ✗ | ✅ | — | — | ❌ | 4.5 text/plain 非 JSON；GraphQL 碎片节点缺 jobs/logs |
+| Actions 全家（`fetchWorkflows`/`fetchWorkflowRuns`/`fetchWorkflowRunDetail`/`fetchWorkflowRunJobs`/`fetchRunArtifacts`/`dispatchWorkflow`） | 🧩 碎片 | ✅ | — | — | ❌ | 4.5 碎片节点（Workflow/WorkflowRun），缺 `Repository.workflows` 列表入口 + jobs/logs/artifacts/dispatch |
 | `fetchFileTree`/`fetchLanguages`/`fetchFileContent`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.6 无 GraphQL 等价 / raw Accept；`fetchFileContent` 支持 `branch` 参数（默认 HEAD，非默认分支 404 修复）。**REST contents 上限 1MB→100MB**（1MB~100MB 必须 raw Accept）；smart 层 `fetchFileContentSmart` 分层（登录 GraphQL isTruncated→REST→$raw 保底 / 匿名 REST→raw 直连保底）；目录列举 / README 走 GraphQL 主通道（fetchDirContentsSmart / fetchReadmeSmart，见 §2.1） |
 | `fetchContributorsCount` | ✗ | ✅ | — | — | ❌ | 4.7 Link header 分页计数（contributors 无 GraphQL totalCount 等价；releases 计数走 GraphQL，见 §2.1 fetchReleasesCountSmart） |
 | 通知/邀请（`fetchNotifications`/`markNotificationThreadRead`/`fetchRepoInvitations`/`acceptRepoInvitation`/`declineRepoInvitation`） | ✗ | ✅ | — | — | ❌ | 4.8 GraphQL 无对应 |
@@ -170,11 +170,11 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchPullFiles`/`fetchPullCommits`/`fetchPullCheckRuns`/`fetchPullReviewComments`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.5/4.6 无 GraphQL 等价 |
 | `transferRepository`/`leaveOrganization` | ✗ | ✅ | — | — | ❌ | 4.9 GraphQL 无 transferRepository/leaveOrganization mutation |
 | **组织管理（全部固定 REST）** | | | | | | |
-| `fetchOrgMembersWithRoles`（成员含角色/2FA，两请求合并） | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL membersWithRole 无角色/2FA 字段；角色=admin 子集合并 |
+| `fetchOrgMembersWithRoles`（成员含角色/2FA，两请求合并） | ⚠️ 可迁 | ✅ | — | — | ❌ 待迁 | 4.17 OrganizationMemberEdge 有 role + hasTwoFactorEnabled（旧判断「无角色/2FA」有误） |
 | `setOrgMemberRole` / `removeOrgMember`（PUT/DELETE memberships） | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL 无 members 写 mutation |
 | `fetchOrgInvitations` / `createOrgInvitation` / `cancelOrgInvitation` | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL 无 invitations 查询/mutation |
-| `fetchOrgTeams` / `createOrgTeam` / `updateOrgTeam` / `deleteOrgTeam` | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL 无团队 CRUD 等价 |
-| `fetchTeamMembers` / `addTeamMember` / `removeTeamMember` | ✗ | ✅ | — | — | ❌ | 4.17 GraphQL 无团队成员管理等价 |
+| `fetchOrgTeams`（列表读） / `createOrgTeam` / `updateOrgTeam` / `deleteOrgTeam`（写） | ⚠️ 读可迁 | ✅ | — | — | ❌ 待迁 | 4.17 Organization.teams 可读；写无 createTeam/deleteTeam/updateTeam mutation |
+| `fetchTeamMembers`（读） / `addTeamMember` / `removeTeamMember`（写） | ⚠️ 读可迁 | ✅ | — | — | ❌ 待迁 | 4.17 Team.members 可读；写无 addTeamMember/removeTeamMember mutation |
 | `updateOrganizationSmart` 成员权限字段（`default_repository_permission` / `members_allowed_repository_creation_type`） | ✗（仅 Profile 字段走 GraphQL） | ✅ | — | — | ⚠️ | 4.17 权限字段仅 REST；smart 检测到权限字段时直接走 REST 分支（避免 GraphQL 成功后静默丢失） |
 | `fetchOrgDetailSmart` 权限字段（`default_repository_permission`） | ✗ | ✅ | — | — | ⚠️ | 4.17 GraphQL Organization 无 `defaultRepositoryPermission` 字段（实测 404）；GraphQL 成功后轻量 REST 补丁该字段 |
 | **Wiki** | | | | | | |
@@ -240,9 +240,9 @@ export async function fetchXxxSmart(
 |---|---|---|
 | 4.1 | `fetchCompare` | GraphQL `Comparison.files` 只有 path/additions/deletions，**无 patch 内容**；DiffView 渲染需要 patch。 |
 | 4.2 | `updateRepository` | GraphQL 有 `updateRepository` mutation（name/description/homepageUrl/has*Enabled）+ 独立 archiveRepository/unarchiveRepository；但 **private（可见性）与 default_branch 无 GraphQL mutation**——走 hybrid（updateRepositorySmart：可 GraphQL 字段走 mutation，private/default_branch 增补 REST，熔断全 REST）。 |
-| 4.3 | GPG keys | GraphQL `gpgKey` 仅 id/publicKey/email/createdAt/verified；页面需 key_id/emails/can_sign（REST 有）。 |
+| 4.3 | GPG keys | GraphQL **无 gpgKeys 字段 / GpgKey 类型不存在**（`Viewer` / `Repository` 均无，apiidx 实测）；REST 有完整 emails/subkeys/can_* 字段。 |
 | 4.4 | block / unblock | GraphQL **无 block mutation**（仅 unblock）；block 保留 REST。 |
-| 4.5 | Actions / Job 日志 | GraphQL **无 actions 查询通道**；`fetchJobLogs` 是 text/plain 流，非 JSON。 |
+| 4.5 | Actions / Job 日志 | GraphQL **仅碎片节点**（`Workflow`/`WorkflowRun`/`WorkflowRunFile`，经 `CheckSuite.workflowRun` 到达，`Workflow.runs` 列 runs），但**缺 `Repository.workflows` 列表入口、jobs/logs/artifacts 查询、dispatch mutation** → 无法替代 REST Actions 全家；`fetchJobLogs` 是 text/plain 流，非 JSON。 |
 | 4.6 | 文件内容 / 树 / 语言 | GraphQL 无 raw content 通道；contents API 需 `application/vnd.github.raw` 自定义 Accept。REST contents **上限 100MB**（1MB~100MB 必须 raw Accept）；GraphQL Blob 仍 ~1MB 截断（**`isTruncated` 必须检查**——>1MB 时 text 非 null 但含部分内容）；官方无分段读取参数——>100MB 仅 git clone/archive 可达。**分层通道**：登录 API smart（GraphQL→REST）→ `$raw` 保底（会话 token 透传）；匿名 REST → raw 直连保底。目录列举 / README 走 GraphQL 主通道（Tree.entries + blob 有等价）；文件树 get-tree recursive 保留 REST（`Tree.entries` 无递归参数，全量树需 N+1 逐层下钻，大仓库退化） |
 | 4.7 | 计数（Contributors） | `per_page=1` 读 Link header 末页；releases 计数走 GraphQL totalCount（`fetchReleasesCountSmart`），仅 contributors 保留 Link header。 |
 | 4.8 | 通知 / 邀请 / default branch / rate_limit | GraphQL 无对应端点或专属字段。 |
@@ -251,16 +251,36 @@ export async function fetchXxxSmart(
 | 4.11 | `deleteSshKey` | GraphQL 需 node id，REST 数字 id 无法可靠映射到 GraphQL id → smart 函数内部直连 REST（入口统一，避免页面误用）。 |
 | 4.12 | 修改用户名（Change username） | `PATCH /user` body **无 login 字段**（仅 name/email/blog/company/location/hireable/bio/twitter/pronouns）；改名走网页内部端点 + 密码验证，API 不可达（C9 调研确认）。 |
 | 4.13 | 设置主邮箱（Set as primary） | Emails API 仅 GET/POST/DELETE `/user/emails` + `PATCH /user/email/visibility`（主邮箱**可见性**）；「Make primary」为网页内部端点，API 无公开通道（C9 调研确认）。 |
-| 4.14 | 安全公告（Security） | GraphQL **无 security advisory 查询通道**（Repository 对象无相关字段）；REST `GET /repos/{o}/{r}/security-advisories` 公开仓库 published 匿名可读（smart 入口统一）。 |
-| 4.15 | contents `new_branch` | **实测**：PUT contents body 带 `new_branch` 返回 201 但**被静默忽略**——提交仍落在 `branch` 指定的原分支（新分支 404）。官方「新建分支提交」是两段式：先 `POST /repos/{o}/{r}/git/refs`（body `{ref: refs/heads/{newBranch}, sha: baseBranch head}`）建分支，再 PUT contents 到新分支（`createBranch` 封装，FileEditorPage PR 模式使用）。 |
+| 4.14 | 安全公告（Security） | `SecurityAdvisory` 类型存在（ghsaId/databaseId/cvss/cwes/description），但 **`Repository.securityAdvisories` 入口不存在**（apiidx 实测）→ 入口不清晰，维持 REST `GET /repos/{o}/{r}/security-advisories`（公开仓库 published 匿名可读）。 |
+| 4.15 | contents `new_branch` | **实测**：PUT contents body 带 `new_branch` 返回 201 但**被静默忽略**——提交仍落在 `branch` 指定的原分支（新分支 404）。官方「新建分支提交」是两段式：先建分支再提交（`createBranch` 封装，FileEditorPage PR 模式使用）。**注**：GraphQL 有 `createRef` mutation（等价 POST git/refs 建分支）与 `createCommitOnBranch`（写文件，需 expectedHeadOid+FileChanges，比 REST contents 复杂）——「建分支/写文件」严格说有 GraphQL 通道，属 §4.18 待评估项而非绝对无适配。 |
 | 4.16 | Dependabot / Code scanning / Secret scanning | 需 `security_events` scope（OAuth 未授）+ 高级安全功能；仅 Security 核心（SECURITY.md + advisories）实现，告警 tab 去杂项。 |
-| 4.17 | 组织管理（成员角色/2FA、邀请、团队） | GraphQL 无等价（membersWithRole 无角色/2FA；无 members 写 mutation；无 invitations/teams 查询）；仓库创建权限字段 **REST-only**（`Organization` 上 `defaultRepositoryPermission`/`membersAllowedRepositoryCreationType`/`membersCanCreatePublicRepositories`/`membersCanCreatePrivateRepositories` 四候选名均 undefinedField 实测）；REST 实际值含 `"public"`（文档过时仅列 all/private/none）；组织重命名无公开 API（官方 UI 内部端点）。 |
+| 4.17 | 组织管理（成员角色/2FA、邀请、团队） | **读可迁、写维持 REST**（apiidx 实测修正）：① 成员含角色/2FA **可迁**——`Organization.membersWithRole` 的 `OrganizationMemberEdge.role` + `hasTwoFactorEnabled` 字段存在（旧判断「无角色/2FA 字段」有误）；② 团队列表/成员读 **可迁**——`Organization.teams` → `Team.members`/`Team.repositories`；③ **写维持 REST**——createTeam/deleteTeam/updateTeam/addTeamMember/removeTeamMember、members 写、invitations 查询/mutation 均无 GraphQL mutation。仓库创建权限字段 **REST-only**（`Organization` 上四候选名均 undefinedField 实测）；组织重命名无公开 API。 |
+| 4.18 | 建分支 / 写文件内容 | GraphQL **有 mutation 但复杂度高**：`createRef`/`updateRef`/`deleteRef`（=建分支，等价 POST git/refs）、`createCommitOnBranch`（=写文件，需 `expectedHeadOid` + `FileChanges`（逐文件 base64 内容）+ `message`，需自行构造 git tree/blob/commit 链，REST `PUT /contents` 封装了全流程）。当前维持 REST（`createBranch`/`updateFileContent`），属「复杂度」待评估项而非「无适配」。 |
+
+---
+
+## 4.5 官方 GraphQL 主题 → 入口映射（语义搜索补全）
+
+> **背景**：官方 GraphQL 文档按主题组织（`docs.github.com/en/graphql/reference` 共 33 类：Actions/Teams/Orgs/Git/...），但主题的**实际 GraphQL 入口名常与主题词不对应**（如 Actions 的入口是 `Workflow`/`WorkflowRun` 而非 `"actions"`，Teams 的入口在 `Organization.teams` 而非根字段）。`apiidx gql search` 只搜根字段名/描述，语义搜索搜不到这些「名字对不上」的入口。
+> **工具补全**：`apiidx.mjs` 内置 `GQL_TOPICS` 映射表 + `gql topic <关键词>` 子命令；`gql search` 无命中时自动提示主题映射。**判断 GraphQL 有无适配前，先用 `gql topic` 查主题入口，勿凭语义搜索「搜不到」即判「无适配」。**
+
+| 主题 | 关键词 | 实际入口（类型/字段） | 能力评估 |
+|---|---|---|---|
+| Actions | actions / workflow / ci | `Workflow` / `WorkflowRun` / `WorkflowRunFile`（经 `CheckSuite.workflowRun` 到达） | 🧩 碎片：缺 `Repository.workflows` 列表入口、jobs/logs/artifacts、dispatch → 维持 REST |
+| Teams | teams / team / 团队 | `Organization.teams` → `Team.members` / `Team.repositories` | 🧩 读可迁、写无 mutation → 写维持 REST |
+| Orgs | org member / member role / 成员 / 角色 / 2fa | `Organization.membersWithRole` → `OrganizationMemberEdge.role` / `hasTwoFactorEnabled` | ✅ 成员含角色/2FA 可迁 |
+| Git | git / branch / ref / 分支 / 写文件 / commit | `createRef` / `updateRef` / `deleteRef` / `createCommitOnBranch` | ⚠️ 建分支/写文件有 mutation 但复杂（需 FileChanges 树） |
+| Activity | notification / 通知 / feed / 动态 | — | ✗ `Viewer.notifications` 不存在 → 维持 REST |
+| Users | gpg / ssh key / 公钥 | — | ✗ 无 `gpgKeys` 字段 / `GpgKey` 类型 → 维持 REST |
+| Security Advisories | security advisory / ghsa / 漏洞 | `SecurityAdvisory`（ghsaId/databaseId/cvss/cwes） | ⚠️ 类型存在但 `Repository.securityAdvisories` 入口不存在 → 维持 REST |
+| Checks | check run / check suite / ci status | `CheckSuite` / `CheckRun`（`Commit.statusCheckRollup`） | ✅ 有入口（项目当前走 REST check-runs） |
+| Issues / Pulls / Discussions / Gists / Releases / Search / Repos / Users / Projects / Branches / Commits / Packages / Dependabot / Deploy Keys / Deployments / Apps / Reactions / Licenses / Sponsors / Dependency Graph / Meta / Migrations / Enterprise Admin | — | 见 `gql topic <主题>`（入口清晰，已按 §0.2 四分类正常处置） | ✅ 入口清晰 |
 
 ---
 
 ## 5. 新增 API / 新页面接入 CheckList
 
-1. **先读 §0 准则**：判断目标 API 属「有 GraphQL 适配」（smart 化：登录 GraphQL 主通道 + 匿名 REST + withRestFallback 降级）还是「无 GraphQL 适配」（§4 不可抗力）还是「GraphQL-only」。用 `apiidx rest` + `gql type/field` 递进确认。
+1. **先读 §0 准则**：判断目标 API 属「有 GraphQL 适配」（smart 化：登录 GraphQL 主通道 + 匿名 REST + withRestFallback 降级）还是「无 GraphQL 适配」（§4 不可抗力）还是「GraphQL-only」。用 `apiidx gql topic <主题>` 查主题入口映射（§4.5）+ `rest` + `gql type/field` 递进确认——**勿凭语义搜索「搜不到」即判「无适配」**。
 2. **双端点** → 走 §3 模板：**graphql.ts 请求模板（路径参数 → 变量）+ api.ts smart（GraphQL 唯一实现 + withRestFallback 降级）** + 页面 `@/lib/api` import。**禁止**页面直接 `@/lib/rest`。
 3. **匿名/单端点/不可抗力** → `@/lib/rest`：**固定端点一律 `typedRequest` + `octokit.rest.*` 类型化方法**（URL 模板/参数编码 SDK 保证，禁止手拼 URL 的 `githubFetch`/`fetchWithTimeout`）；仅特殊语义端点（raw Accept / base64 解码 / Link 头分页 / Octokit 无类型化方法）可保留底层通道并注释理由。**类型化方法名查证**：`node_modules/.pnpm/@octokit+plugin-rest-endpoi_*/node_modules/@octokit/plugin-rest-endpoint-methods/dist-src/generated/endpoints.js`（或类型定义 method-types.d.ts）grep 端点路径 → 方法名。
 4. **204 空响应体**：`typedRequest`/`githubFetch` 已自动处理（空 body 返回 undefined），**无需**再手写 fetchWithTimeout 判定。

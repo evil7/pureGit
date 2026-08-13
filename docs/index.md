@@ -40,7 +40,7 @@
 |------|---------|---------|
 | `scripts/rest-index.mjs` | **REST 端点索引生成器**：octokit 零下载转录 REST 1108 操作（`id/method/path/tags/summary/parameters`），**不再聚拢 GraphQL** | `node scripts/rest-index.mjs`（SDK 升级后重跑刷新） |
 | `scripts/page-index.mjs` | **官方页面分类索引生成器**：解析 `web/src/App.tsx` 路由树 + 人工校正表 `scripts/data/page-curations.json`（keywords/module/framework/apiIds/status），交叉校验 apiIds | `node scripts/page-index.mjs`（路由或校正表变更后重跑） |
-| `scripts/apiidx.mjs` | **查询 CLI**：rest（REST 端点搜索）/ rest-id（端点详情含参数）/ gql（roots 枚举根字段 / search 搜索根字段 / type 类型字段递进 / field 字段详情）/ page / pageapi（页面→API 闭环）/ stats / update | `node scripts/apiidx.mjs <子命令> <参数>` |
+| `scripts/apiidx.mjs` | **查询 CLI**：rest（REST 端点搜索）/ rest-id（端点详情含参数）/ gql（roots 枚举根字段 / search 搜索根字段·无命中提示主题映射 / topic 官方主题→入口映射 / type 类型字段递进 / field 字段详情）/ page / pageapi（页面→API 闭环）/ stats / update | `node scripts/apiidx.mjs <子命令> <参数>` |
 | `scripts/gql-schema.mjs` | **GraphQL schema 加载器**：实时直连官方 `api.github.com/graphql`（`GITHUB_TOKEN` 鉴权，introspection）+ 10min 缓存 + 失败降级本地 `@octokit/graphql-schema` | 由 `apiidx gql` 子命令自动调用 |
 | `scripts/data/rest-index.json` | REST 端点索引产物（生成） | 由 rest-index.mjs 生成，git 跟踪 |
 | `scripts/data/pages-index.json` | 页面分类索引产物（生成） | 由 page-index.mjs 生成，git 跟踪 |
