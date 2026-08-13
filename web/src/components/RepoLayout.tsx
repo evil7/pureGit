@@ -18,12 +18,7 @@ import {
   normalizeApiError,
   type ApiError,
 } from "@/lib/rest";
-import {
-  fetchRepositorySmart,
-  fetchLatestReleaseSmart,
-  fetchRootFiles,
-  type Repository,
-} from "@/lib/api";
+import { fetchRepoHomeSmart, fetchRootFiles, type Repository } from "@/lib/api";
 import type { Release } from "@/lib/rest";
 import { RepoDataContext } from "@/lib/repo-context";
 import { PAGE_SHELL } from "@/lib/layout";
@@ -117,18 +112,10 @@ export default function RepoLayout() {
   const [error, setError] = useState<ApiError | null>(null);
 
   useEffect(() => {
-    // About 侧栏元数据（登录时 GraphQL 优先，匿名 REST 60/h；失败/限流静默保持默认值）。
+    // About 侧栏 Contributors 计数（REST per_page=1 读 Link header；失败/限流静默保持 0）。
     // 侧栏隐藏页（blob/设置/issues/pulls/未登录登录墙）→ 跳过，避免白发请求
     if (hideAbout) return;
     let cancelled = false;
-    // 最新 release + 总数（GraphQL totalCount+nodes(first:1) 一次查询 / REST per_page=1 一次请求）
-    fetchLatestReleaseSmart(owner!, repo!, token)
-      .then(({ count, latest }) => {
-        if (cancelled) return;
-        setReleasesCount(count);
-        setLatestRelease(latest);
-      })
-      .catch(() => {});
     fetchContributorsCount(owner!, repo!, token)
       .then((c) => !cancelled && setContributorsCount(c))
       .catch(() => {});
@@ -166,12 +153,14 @@ export default function RepoLayout() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    // 经 smart 层 fetchRepositorySmart——主模式 GraphQL 优先，REST 兜底（登录时传 token 启用 GraphQL，匿名自动 REST）
-    fetchRepositorySmart(owner!, repo!, token)
-      .then(({ data: repoData, langs }) => {
+    // 仓库主页复合查询：GraphQL 一次取仓库元数据 + languages + tab 计数 + releases 总数/最新（匿名 REST 分步）
+    fetchRepoHomeSmart(owner!, repo!, token)
+      .then(({ data: repoData, langs, releasesCount: rc, latestRelease: lr }) => {
         if (cancelled) return;
         setData(repoData);
         setLanguages(langs);
+        setReleasesCount(rc);
+        setLatestRelease(lr);
       })
       .catch((e: unknown) => {
         // 整页级致命错误（404/限流/5xx）保存原始错误，render 中 throw → 路由 errorElement

@@ -88,7 +88,8 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchIssueDetailWithCommentsSmart`（Issue 详情+评论单请求） | ✅ | ✅ 分步降级 | — | — | ✅ |
 | `fetchPullDetailWithCommentsSmart`（PR 详情+评论单请求） | ✅ | ✅ 分步降级 | — | — | ✅ |
 | `fetchReleasesCountSmart`（GraphQL totalCount 替代 Link header） | ✅ | ✅ | — | — | ✅ |
-| `fetchLatestReleaseSmart`（About 侧栏 Releases 入口：GraphQL totalCount+nodes(first:1) 一次查询 / REST per_page=1 一次请求） | ✅ | ✅ | — | — | ✅ |
+| `fetchLatestReleaseSmart`（About 侧栏 Releases 入口：GraphQL totalCount+nodes(first:1) 一次查询 / REST per_page=1 一次请求） | ✅ | ✅ | — | — | ✅（已被 fetchRepoHomeSmart 合并替代，保留独立入口） |
+| `fetchRepoHomeSmart`（仓库主页复合查询：REPO_WITH_RELEASES_QUERY 一次取仓库元数据 + languages + tab 计数 + releases 总数/最新，替代 Repository + LatestRelease 两次请求） | ✅ | ✅ 分步降级 | — | — | ✅ |
 | **B1 评审工作流（2026-08-12 新增）** | | | | | |
 | `fetchPullReviewSummarySmart`（reviewDecision+reviews+reviewRequests+mergeable，PR 详情 Reviewers 栏/合并判定） | ✅ | ✅ 降级（reviewDecision 由 reviews 推断） | — | — | ✅ |
 | `submitPullReviewSmart`（三态：COMMENT/APPROVE/REQUEST_CHANGES） | ✅ | ✅ 降级 | — | — | ✅ |

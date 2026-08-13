@@ -8,6 +8,7 @@ import type { GraphQLResponse } from "./api-core";
 import { logWarn } from "./api-log";
 import {
   REPOSITORY_QUERY,
+  REPO_WITH_RELEASES_QUERY,
   CREATE_REPOSITORY_MUTATION,
   REPOSITORY_ID_QUERY,
   CREATE_ISSUE_MUTATION,
@@ -31,6 +32,7 @@ import {
   checkStarred,
   setStarred,
   fetchReleasesCount,
+  fetchLatestRelease,
   fetchLanguages,
   fetchOpenPullsCount,
   replaceRepoTopics,
@@ -46,7 +48,7 @@ import {
 } from "./rest";
 import { FILE_RAW_QUERY, FILE_EDIT_QUERY } from "./repo-raw";
 import { fetchRawContentSmart } from "./raw-proxy";
-import type { Repository, RepoSubscription, SecurityAdvisory, ReadmeInfo } from "./rest";
+import type { Repository, RepoSubscription, SecurityAdvisory, ReadmeInfo, Release } from "./rest";
 
 // ===== 仓库创建/管理 + 文件写操作 =====
 
@@ -309,6 +311,112 @@ export async function fetchRepositorySmart(
     data: pullsCount != null ? { ...data, open_pulls_count: pullsCount } : data,
     langs,
   };
+}
+
+/** GraphQL release 节点（列表/详情/最新共用；供 api-repo 复合查询与 api-issue releases 板块共享） */
+export interface GraphQLReleaseNode {
+  databaseId: number | null;
+  name: string | null;
+  tagName: string;
+  description: string | null;
+  url: string;
+  publishedAt: string;
+  isDraft: boolean;
+  isPrerelease: boolean;
+  author: { login: string } | null;
+  releaseAssets: {
+    nodes: { name: string; size: number; downloadUrl: string }[];
+  } | null;
+}
+
+/** GraphQL release 节点 → REST Release（⚠️ id 用 databaseId，占位 -1 会导致列表 key 重复 + activeId 全命中） */
+export function toRelease(g: GraphQLReleaseNode): Release {
+  return {
+    id: g.databaseId ?? -1,
+    tag_name: g.tagName,
+    name: g.name,
+    body: g.description,
+    html_url: g.url,
+    published_at: g.publishedAt,
+    draft: g.isDraft,
+    prerelease: g.isPrerelease,
+    author: { login: g.author?.login ?? "ghost" },
+    assets:
+      g.releaseAssets?.nodes.map((a) => ({
+        name: a.name,
+        size: a.size,
+        browser_download_url: a.downloadUrl,
+      })) ?? [],
+  };
+}
+
+/**
+ * 仓库主页复合查询（Repository + 最新 release 一次 GraphQL 请求）。
+ * 替代 RepoLayout 原先 fetchRepositorySmart + fetchLatestReleaseSmart 两次请求——省一次网络往返 + 配额。
+ * 返回仓库元数据 + 语言映射 + releases 总数/最新节点；失败降级 REST 分步（复用 rest 层，日志 ↪ 标记）。
+ */
+export async function fetchRepoHomeSmart(
+  owner: string,
+  name: string,
+  token?: string | null,
+): Promise<{
+  data: Repository;
+  langs: Record<string, number>;
+  releasesCount: number;
+  latestRelease: Release | null;
+}> {
+  // REST 降级分步（fetchLatestRelease 内部 catch 不抛错，返回 { count: 0, latest: null }）
+  const fromRest = async (): Promise<{
+    data: Repository;
+    langs: Record<string, number>;
+    releasesCount: number;
+    latestRelease: Release | null;
+  }> => {
+    const [repoData, langs, pullsCount, release] = await Promise.all([
+      fetchRepository(owner, name, token),
+      fetchLanguages(owner, name, token).catch(() => ({})),
+      fetchOpenPullsCount(owner, name, token),
+      fetchLatestRelease(owner, name, token),
+    ]);
+    return {
+      data: pullsCount != null ? { ...repoData, open_pulls_count: pullsCount } : repoData,
+      langs,
+      releasesCount: release.count,
+      latestRelease: release.latest,
+    };
+  };
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository:
+          | (GraphQLRepository & {
+              releases: { totalCount: number; nodes: GraphQLReleaseNode[] } | null;
+            })
+          | null;
+      }> = await graphqlRequest(REPO_WITH_RELEASES_QUERY, { owner, name }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        const g = resp.data.repository;
+        const langs: Record<string, number> = {};
+        for (const edge of g.languages?.edges ?? []) {
+          langs[edge.node.name] = edge.size;
+        }
+        const rel = g.releases;
+        return {
+          data: toRepository(g, owner),
+          langs,
+          releasesCount: rel?.totalCount ?? 0,
+          latestRelease: rel?.nodes?.[0] ? toRelease(rel.nodes[0]) : null,
+        };
+      }
+      // GraphQL 失败 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchRepoHomeSmart", resp);
+    } catch {
+      // 网络层错误 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchRepoHomeSmart", undefined);
+    }
+  }
+  // 匿名强制 REST 分步
+  return fromRest();
 }
 
 // ===== M3 写操作：GraphQL 首选 + REST 降级 =====

@@ -131,6 +131,97 @@ export const REPOSITORY_QUERY = /* GraphQL */ `
   }
 `;
 
+/**
+ * 仓库主页复合查询（Repository + 最新 release 合并）：
+ * 一次 GraphQL 请求同时取仓库元数据（REPOSITORY_QUERY 全部字段）与最新 release 总数/节点，
+ * 替代 RepoLayout 原先 fetchRepositorySmart + fetchLatestReleaseSmart 两次请求——省一次网络往返 + 配额。
+ */
+export const REPO_WITH_RELEASES_QUERY = /* GraphQL */ `
+  query RepoWithReleases($owner: String!, $name: String!) {
+    repository(owner: $owner, name: $name) {
+      databaseId
+      name
+      nameWithOwner
+      description
+      homepageUrl
+      url
+      owner {
+        login
+        avatarUrl
+      }
+      stargazerCount
+      forkCount
+      watchers {
+        totalCount
+      }
+      viewerSubscription
+      viewerHasStarred
+      primaryLanguage {
+        name
+      }
+      languages(first: 10, orderBy: { field: SIZE, direction: DESC }) {
+        edges {
+          size
+          node {
+            name
+          }
+        }
+      }
+      repositoryTopics(first: 20) {
+        nodes {
+          topic {
+            name
+          }
+        }
+      }
+      licenseInfo {
+        spdxId
+      }
+      updatedAt
+      defaultBranchRef {
+        name
+      }
+      isPrivate
+      isArchived
+      archivedAt
+      isFork
+      parent {
+        nameWithOwner
+        defaultBranchRef {
+          name
+        }
+      }
+      hasIssuesEnabled
+      hasDiscussionsEnabled
+      hasWikiEnabled
+      hasProjectsEnabled
+      openIssues: issues(states: [OPEN]) {
+        totalCount
+      }
+      openPullRequests: pullRequests(states: [OPEN]) {
+        totalCount
+      }
+      # 最新 release + 总数（About 侧栏 Releases 入口；与 Repository 合并省一次往返）
+      releases(first: 1, orderBy: { field: CREATED_AT, direction: DESC }) {
+        totalCount
+        nodes {
+          databaseId
+          name
+          tagName
+          description
+          url
+          publishedAt
+          isDraft
+          isPrerelease
+          author {
+            login
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** 仓库 Projects v2 列表（legacy REST 已下线，仅 GraphQL 可用；repo scope 已涵盖） */
 export const REPO_PROJECTS_V2_QUERY = /* GraphQL */ `
   query RepoProjectsV2($owner: String!, $name: String!, $first: Int!) {

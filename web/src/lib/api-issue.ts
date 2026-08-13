@@ -80,6 +80,8 @@ import type {
   RepoLabel,
 } from "./rest";
 import { searchIssuesSmart } from "./api-search";
+import { toRelease } from "./api-repo";
+import type { GraphQLReleaseNode } from "./api-repo";
 
 // ===== issue / PR / release / 搜索：GraphQL 首选 + REST 降级 =====
 
@@ -197,43 +199,6 @@ function toPull(g: GraphQLPullNode): PullRequest {
     labels: g.labels?.nodes ?? [],
     assignees: g.assignees?.nodes.map((a) => ({ login: a.login, avatar_url: a.avatarUrl })) ?? [],
     milestone: g.milestone ?? null,
-  };
-}
-
-/** GraphQL release 节点（列表与详情共用） */
-interface GraphQLReleaseNode {
-  databaseId: number | null;
-  name: string | null;
-  tagName: string;
-  description: string | null;
-  url: string;
-  publishedAt: string;
-  isDraft: boolean;
-  isPrerelease: boolean;
-  author: { login: string } | null;
-  releaseAssets: {
-    nodes: { name: string; size: number; downloadUrl: string }[];
-  } | null;
-}
-
-/** GraphQL release 节点 → REST Release（⚠️ id 用 databaseId，占位 -1 会导致列表 key 重复 + activeId 全命中） */
-function toRelease(g: GraphQLReleaseNode): Release {
-  return {
-    id: g.databaseId ?? -1,
-    tag_name: g.tagName,
-    name: g.name,
-    body: g.description,
-    html_url: g.url,
-    published_at: g.publishedAt,
-    draft: g.isDraft,
-    prerelease: g.isPrerelease,
-    author: { login: g.author?.login ?? "ghost" },
-    assets:
-      g.releaseAssets?.nodes.map((a) => ({
-        name: a.name,
-        size: a.size,
-        browser_download_url: a.downloadUrl,
-      })) ?? [],
   };
 }
 

@@ -36,6 +36,7 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     fetchRepository: vi.fn(),
     fetchLanguages: vi.fn(),
     fetchOpenPullsCount: vi.fn(),
+    fetchLatestRelease: vi.fn(),
     createRepository: vi.fn(),
     createIssue: vi.fn(),
   };
@@ -45,12 +46,18 @@ vi.mock("@/lib/raw-proxy", () => ({
   fetchRawContentSmart: vi.fn(),
 }));
 
-import { fetchRepositorySmart, createRepositorySmart, createIssueSmart } from "@/lib/api-repo";
+import {
+  fetchRepositorySmart,
+  fetchRepoHomeSmart,
+  createRepositorySmart,
+  createIssueSmart,
+} from "@/lib/api-repo";
 import { graphqlRequest } from "@/lib/api-core";
 import {
   fetchRepository,
   fetchLanguages,
   fetchOpenPullsCount,
+  fetchLatestRelease,
   createRepository,
   createIssue,
   type Repository,
@@ -60,6 +67,7 @@ const mockGraphql = vi.mocked(graphqlRequest);
 const mockFetchRepository = vi.mocked(fetchRepository);
 const mockFetchLanguages = vi.mocked(fetchLanguages);
 const mockFetchOpenPullsCount = vi.mocked(fetchOpenPullsCount);
+const mockFetchLatestRelease = vi.mocked(fetchLatestRelease);
 const mockCreateRepository = vi.mocked(createRepository);
 const mockCreateIssue = vi.mocked(createIssue);
 
@@ -129,6 +137,7 @@ beforeEach(() => {
   mockFetchOpenPullsCount.mockResolvedValue(null);
   mockCreateRepository.mockResolvedValue(createdRepo);
   mockCreateIssue.mockResolvedValue({ number: 101 } as never);
+  mockFetchLatestRelease.mockResolvedValue({ count: 0, latest: null });
 });
 
 describe("fetchRepositorySmart（仓库信息 GraphQL 首选 + REST 降级）", () => {
@@ -273,5 +282,71 @@ describe("createIssueSmart（带标签直 REST / 无标签 GraphQL 首选降级�
     const number = await createIssueSmart("gho_x", "evil7", "puregit", { title: "Bug" });
     expect(mockCreateIssue).toHaveBeenCalled();
     expect(number).toBe(101);
+  });
+});
+
+describe("fetchRepoHomeSmart（仓库主页复合查询：Repository + 最新 release 一次 GraphQL）", () => {
+  it("token 空 → 直 REST 分步（GraphQL 不调用，含 releases 计数/最新）", async () => {
+    mockFetchLatestRelease.mockResolvedValue({ count: 3, latest: null });
+    const r = await fetchRepoHomeSmart("evil7", "puregit", undefined);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchRepository).toHaveBeenCalledWith("evil7", "puregit", undefined);
+    expect(mockFetchLatestRelease).toHaveBeenCalledWith("evil7", "puregit", undefined);
+    expect(r.data).toBe(restRepo);
+    expect(r.releasesCount).toBe(3);
+    expect(r.latestRelease).toBeNull();
+  });
+
+  it("GraphQL 成功 → 一次查询返回仓库 + releases（REST 不调用）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          ...gqlOk.data.repository,
+          openIssues: { totalCount: 5 },
+          openPullRequests: { totalCount: 3 },
+          releases: {
+            totalCount: 12,
+            nodes: [
+              {
+                databaseId: 9001,
+                name: "v1.0.0",
+                tagName: "v1.0.0",
+                description: "first",
+                url: "https://github.com/evil7/puregit/releases/tag/v1.0.0",
+                publishedAt: "2026-08-01T00:00:00Z",
+                isDraft: false,
+                isPrerelease: false,
+                author: { login: "evil7" },
+              },
+            ],
+          },
+        },
+      },
+    } as never);
+    const r = await fetchRepoHomeSmart("evil7", "puregit", "gho_x");
+    expect(mockFetchRepository).not.toHaveBeenCalled();
+    expect(mockFetchLatestRelease).not.toHaveBeenCalled();
+    expect(r.data.id).toBe(123);
+    expect(r.langs).toEqual({ TypeScript: 900 });
+    expect(r.releasesCount).toBe(12);
+    expect(r.latestRelease?.tag_name).toBe("v1.0.0");
+  });
+
+  it("GraphQL errors → 降级 REST 分步（含 releases）", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "boom" }] } as never);
+    mockFetchLatestRelease.mockResolvedValue({ count: 1, latest: null });
+    const r = await fetchRepoHomeSmart("evil7", "puregit", "gho_x");
+    expect(mockFetchRepository).toHaveBeenCalled();
+    expect(mockFetchLatestRelease).toHaveBeenCalled();
+    expect(r.data).toBe(restRepo);
+    expect(r.releasesCount).toBe(1);
+  });
+
+  it("GraphQL 抛异常 → 降级 REST 分步", async () => {
+    mockGraphql.mockRejectedValue(new TypeError("fetch failed"));
+    const r = await fetchRepoHomeSmart("evil7", "puregit", "gho_x");
+    expect(mockFetchRepository).toHaveBeenCalled();
+    expect(mockFetchLatestRelease).toHaveBeenCalled();
+    expect(r.data).toBe(restRepo);
   });
 });
