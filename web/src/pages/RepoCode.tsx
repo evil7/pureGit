@@ -64,8 +64,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   fetchFileTree,
-  fetchReadme,
-  fetchDirContents,
   fetchLatestCommit,
   fetchFileCommit,
   fetchFileMeta,
@@ -75,7 +73,12 @@ import {
   type DirEntry,
   type ReadmeInfo,
 } from "@/lib/rest";
-import { fetchFileContentSmart, fetchBranchesSmart } from "@/lib/api";
+import {
+  fetchFileContentSmart,
+  fetchBranchesSmart,
+  fetchReadmeSmart,
+  fetchDirContentsSmart,
+} from "@/lib/api";
 import { parseTreePath } from "@/lib/repo-path";
 import { WORKER_BASE } from "@/lib/worker-base";
 import { useAuth } from "@/hooks/useAuth";
@@ -643,8 +646,8 @@ export function CodeIndex() {
   useEffect(() => {
     let cancelled = false;
     Promise.all([
-      fetchReadme(owner, repo, token).catch(() => null),
-      fetchDirContents(owner, repo, "", branch, token).catch(() => []),
+      fetchReadmeSmart(owner, repo, token).catch(() => null),
+      fetchDirContentsSmart(owner, repo, "", branch, token).catch(() => []),
     ]).then(([r, es]) => {
       if (cancelled) return;
       setReadme(r);
@@ -707,7 +710,7 @@ export function TreePage() {
     let cancelled = false;
     setEntries(null);
     setLoadError(null);
-    fetchDirContents(owner, repo, path, b, token)
+    fetchDirContentsSmart(owner, repo, path, b, token)
       .then((items) => !cancelled && setEntries(items))
       .catch((e) => {
         if (cancelled) return;
@@ -732,7 +735,7 @@ export function TreePage() {
   useEffect(() => {
     let cancelled = false;
     setReadme(null);
-    fetchReadme(owner, repo, token, path)
+    fetchReadmeSmart(owner, repo, token, path)
       .then((r) => !cancelled && setReadme(r))
       .catch(() => !cancelled && setReadme(null));
     return () => {

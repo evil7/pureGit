@@ -39,6 +39,8 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     fetchLatestRelease: vi.fn(),
     createRepository: vi.fn(),
     createIssue: vi.fn(),
+    fetchDirContents: vi.fn(),
+    fetchReadme: vi.fn(),
   };
 });
 
@@ -51,6 +53,8 @@ import {
   fetchRepoHomeSmart,
   createRepositorySmart,
   createIssueSmart,
+  fetchDirContentsSmart,
+  fetchReadmeSmart,
 } from "@/lib/api-repo";
 import { graphqlRequest } from "@/lib/api-core";
 import {
@@ -60,6 +64,8 @@ import {
   fetchLatestRelease,
   createRepository,
   createIssue,
+  fetchDirContents,
+  fetchReadme,
   type Repository,
 } from "@/lib/rest";
 
@@ -70,6 +76,8 @@ const mockFetchOpenPullsCount = vi.mocked(fetchOpenPullsCount);
 const mockFetchLatestRelease = vi.mocked(fetchLatestRelease);
 const mockCreateRepository = vi.mocked(createRepository);
 const mockCreateIssue = vi.mocked(createIssue);
+const mockFetchDirContents = vi.mocked(fetchDirContents);
+const mockFetchReadme = vi.mocked(fetchReadme);
 
 /** 最小 REST Repository 夹具（REST 降级路径返回值） */
 const restRepo: Repository = {
@@ -132,6 +140,8 @@ beforeEach(() => {
   vi.clearAllMocks();
   mockGraphql.mockResolvedValue({ data: {} } as never);
   mockFetchRepository.mockResolvedValue(restRepo);
+  mockFetchDirContents.mockResolvedValue([]);
+  mockFetchReadme.mockResolvedValue(null);
   mockFetchLanguages.mockResolvedValue({});
   // 默认 null（REST 降级时 data 保持 restRepo 原样，`toBe(restRepo)` 断言不受影响）
   mockFetchOpenPullsCount.mockResolvedValue(null);
@@ -348,5 +358,104 @@ describe("fetchRepoHomeSmart（仓库主页复合查询：Repository + 最新 re
     expect(mockFetchRepository).toHaveBeenCalled();
     expect(mockFetchLatestRelease).toHaveBeenCalled();
     expect(r.data).toBe(restRepo);
+  });
+});
+
+describe("fetchDirContentsSmart（目录列举 GraphQL Tree.entries 主通道 + REST 熔断）", () => {
+  it("token 空 → 直 REST（GraphQL 不调用）", async () => {
+    const entries = [{ name: "src", path: "src", type: "dir" as const, size: 0 }];
+    mockFetchDirContents.mockResolvedValue(entries);
+    const r = await fetchDirContentsSmart("evil7", "puregit", "", "HEAD", undefined);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchDirContents).toHaveBeenCalledWith("evil7", "puregit", "", "HEAD", undefined);
+    expect(r).toEqual(entries);
+  });
+
+  it("GraphQL 成功 → Tree.entries 转 DirEntry（REST 不调用），type tree→dir", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          object: {
+            entries: [
+              { name: "src", path: "src", type: "tree", size: null },
+              { name: "index.ts", path: "index.ts", type: "blob", size: 42 },
+            ],
+          },
+        },
+      },
+    } as never);
+    const r = await fetchDirContentsSmart("evil7", "puregit", "", "HEAD", "gho_x");
+    expect(mockFetchDirContents).not.toHaveBeenCalled();
+    expect(r).toEqual([
+      { name: "src", path: "src", type: "dir", size: 0 },
+      { name: "index.ts", path: "index.ts", type: "file", size: 42 },
+    ]);
+  });
+
+  it("GraphQL errors → 熔断降级 REST", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "boom" }] } as never);
+    mockFetchDirContents.mockResolvedValue([{ name: "a", path: "a", type: "file", size: 1 }]);
+    const r = await fetchDirContentsSmart("evil7", "puregit", "", "HEAD", "gho_x");
+    expect(mockFetchDirContents).toHaveBeenCalled();
+    expect(r).toEqual([{ name: "a", path: "a", type: "file", size: 1 }]);
+  });
+
+  it("GraphQL 抛异常 → 熔断降级 REST", async () => {
+    mockGraphql.mockRejectedValue(new TypeError("fetch failed"));
+    await fetchDirContentsSmart("evil7", "puregit", "", "HEAD", "gho_x");
+    expect(mockFetchDirContents).toHaveBeenCalled();
+  });
+});
+
+describe("fetchReadmeSmart（README 定位 + 内容 GraphQL 主通道 + REST 熔断）", () => {
+  it("token 空 → 直 REST（GraphQL 不调用）", async () => {
+    await fetchReadmeSmart("evil7", "puregit", undefined);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchReadme).toHaveBeenCalledWith("evil7", "puregit", undefined, "");
+  });
+
+  it("GraphQL 成功 + 无 README 条目 → 返回 null（REST 不调用）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          object: { entries: [{ name: "index.ts", path: "index.ts", type: "blob" }] },
+        },
+      },
+    } as never);
+    const r = await fetchReadmeSmart("evil7", "puregit", "gho_x");
+    expect(mockFetchReadme).not.toHaveBeenCalled();
+    expect(r).toBeNull();
+  });
+
+  it("GraphQL 成功 + 有 README → 定位并取内容（REST 不调用）", async () => {
+    // 第 1 次 graphqlRequest：TREE_ENTRIES_QUERY 定位 README；第 2 次（fetchFileContentSmart）：FILE_RAW_QUERY 拿 blob
+    mockGraphql
+      .mockResolvedValueOnce({
+        data: {
+          repository: {
+            object: { entries: [{ name: "README.md", path: "README.md", type: "blob" }] },
+          },
+        },
+      } as never)
+      .mockResolvedValueOnce({
+        data: { repository: { object: { text: "hello readme", isTruncated: false } } },
+      } as never);
+    const r = await fetchReadmeSmart("evil7", "puregit", "gho_x");
+    expect(mockFetchReadme).not.toHaveBeenCalled();
+    expect(r?.path).toBe("README.md");
+    expect(r?.content).toBe("hello readme");
+    expect(r?.rawBase).toBe("https://raw.githubusercontent.com/evil7/puregit/HEAD");
+  });
+
+  it("GraphQL errors → 熔断降级 REST（自动定位）", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "boom" }] } as never);
+    mockFetchReadme.mockResolvedValue({
+      content: "rest readme",
+      path: "README.md",
+      rawBase: "https://raw.githubusercontent.com/evil7/puregit/HEAD",
+    });
+    const r = await fetchReadmeSmart("evil7", "puregit", "gho_x");
+    expect(mockFetchReadme).toHaveBeenCalled();
+    expect(r?.content).toBe("rest readme");
   });
 });

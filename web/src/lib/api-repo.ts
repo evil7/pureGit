@@ -45,10 +45,19 @@ import {
   fetchSecurityMd,
   fetchFileContent,
   fetchFileMeta,
+  fetchDirContents,
+  fetchReadme,
 } from "./rest";
-import { FILE_RAW_QUERY, FILE_EDIT_QUERY } from "./repo-raw";
+import { FILE_RAW_QUERY, FILE_EDIT_QUERY, TREE_ENTRIES_QUERY, repoRawBase } from "./repo-raw";
 import { fetchRawContentSmart } from "./raw-proxy";
-import type { Repository, RepoSubscription, SecurityAdvisory, ReadmeInfo, Release } from "./rest";
+import type {
+  Repository,
+  RepoSubscription,
+  SecurityAdvisory,
+  ReadmeInfo,
+  Release,
+  DirEntry,
+} from "./rest";
 
 // ===== 仓库创建/管理 + 文件写操作 =====
 
@@ -982,6 +991,116 @@ export async function fetchFileContentSmart(
   }
   // ③ 保底通道（登录 $raw 代理 / 匿名 raw 直连）
   return fallback();
+}
+
+// ===== 目录列举 / README（登录 GraphQL 主通道 + REST 熔断）=====
+
+/** GraphQL TreeEntry 结构子集（Tree.entries 查询返回节点） */
+interface TreeEntryNode {
+  name: string;
+  path: string | null;
+  type: string;
+  size: number | null;
+}
+
+/** GraphQL Tree.entries 节点 → DirEntry（type "tree"→dir，其余 blob/commit→file） */
+function toDirEntry(e: TreeEntryNode): DirEntry {
+  return {
+    name: e.name,
+    path: e.path ?? e.name,
+    type: e.type === "tree" ? "dir" : "file",
+    size: e.size ?? 0,
+  };
+}
+
+/**
+ * 智能获取目录条目列表（TreePage / CodeIndex 目录列表主通道）。
+ * 登录：GraphQL repository.object(expression:"HEAD:path") → Tree.entries 首选（v0.0.1 登录强制 Graph 主通道）；
+ * 匿名 / GraphQL 失败 → 熔断降级 REST fetchDirContents（匿名强制 REST）。
+ */
+export async function fetchDirContentsSmart(
+  owner: string,
+  repo: string,
+  path = "",
+  branch = "HEAD",
+  token?: string | null,
+): Promise<DirEntry[]> {
+  if (token) {
+    try {
+      const expr = path ? `${branch}:${path}` : `${branch}:`;
+      const resp: GraphQLResponse<{
+        repository: { object: { entries: TreeEntryNode[] | null } | null } | null;
+      }> = await graphqlRequest(TREE_ENTRIES_QUERY, { owner, name: repo, expr }, token);
+      const entries = resp.data?.repository?.object?.entries;
+      if (!hasGraphQLErrors(resp) && entries) {
+        return entries.map(toDirEntry);
+      }
+      // GraphQL 失败（如 path 是文件而非目录）→ 熔断降级 REST
+      return withRestFallback(
+        () => fetchDirContents(owner, repo, path, branch, token),
+        "fetchDirContentsSmart",
+        resp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchDirContents(owner, repo, path, branch, token),
+        "fetchDirContentsSmart",
+        undefined,
+      );
+    }
+  }
+  // 匿名强制 REST
+  return fetchDirContents(owner, repo, path, branch, token);
+}
+
+/**
+ * 智能获取 README（CodeIndex / TreePage 子目录 README 主通道）。
+ * 登录：GraphQL 两步——① Tree.entries 定位 README 文件（REST /readme 自动定位 → GraphQL 需手动枚举，
+ *   按 name 前缀 readme 匹配 blob）② fetchFileContentSmart 拿内容（GraphQL blob + REST/$raw 保底）。
+ * 匿名 / GraphQL 失败 → 熔断降级 REST fetchReadme（自动定位，无需手动枚举）。
+ */
+export async function fetchReadmeSmart(
+  owner: string,
+  repo: string,
+  token?: string | null,
+  dir = "",
+): Promise<ReadmeInfo | null> {
+  if (token) {
+    try {
+      const expr = dir ? `HEAD:${dir}` : "HEAD:";
+      const resp: GraphQLResponse<{
+        repository: { object: { entries: TreeEntryNode[] | null } | null } | null;
+      }> = await graphqlRequest(TREE_ENTRIES_QUERY, { owner, name: repo, expr }, token);
+      const entries = resp.data?.repository?.object?.entries;
+      if (!hasGraphQLErrors(resp) && entries) {
+        // README 定位：blob 且 name 以 readme 开头（大小写不敏感，REST /readme 同规则的前缀匹配）
+        const readme = entries.find((e) => e.type === "blob" && /^readme\./i.test(e.name));
+        if (readme) {
+          const readmePath = readme.path ?? (dir ? `${dir}/${readme.name}` : readme.name);
+          const content = await fetchFileContentSmart(owner, repo, readmePath, token);
+          return {
+            content,
+            path: readmePath,
+            rawBase: repoRawBase(owner, repo, "HEAD") + (dir ? `/${dir}` : ""),
+          };
+        }
+        // 目录存在但无 README → null（与 REST /readme 404 语义一致）
+        return null;
+      }
+      // GraphQL 失败 → 熔断降级 REST（自动定位 README）
+      return withRestFallback(() => fetchReadme(owner, repo, token, dir), "fetchReadmeSmart", resp);
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchReadme(owner, repo, token, dir),
+        "fetchReadmeSmart",
+        undefined,
+      );
+    }
+  }
+  // 匿名强制 REST
+  return fetchReadme(owner, repo, token, dir);
 }
 
 // ===== 编辑页数据一次查（blob 内容 + metadata）=====

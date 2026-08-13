@@ -78,6 +78,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchIssueCommentsSmart` / `addIssueCommentSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchPullReviewCommentsSmart` / `addPullReviewCommentSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchBranchesSmart` | ✅ | ✅ | — | — | ✅ |
+| `fetchDirContentsSmart` / `fetchReadmeSmart`（目录列举 / README 定位，GraphQL Tree.entries + blob 主通道） | ✅ | ✅ | — | — | ✅ |
 | `fetchRepoLabelsSmart` / `fetchRepoAssigneesSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchSshKeysSmart` / `addSshKeySmart` / `deleteSshKeySmart` | ✅ | ✅ | — | — | ✅ |
 | `isFollowingSmart` / `setFollowingSmart` | ✅ | ✅ | — | — | ✅ |
@@ -117,7 +118,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `blockUser`/`unblockUser` | ⚠️ | ✅ | — | — | ❌ | 4.4 GraphQL 无 block mutation |
 | `fetchJobLogs`（Actions 日志） | ✗ | ✅ | — | — | ❌ | 4.5 text/plain 非 JSON；GraphQL 无 actions 通道 |
 | Actions 全家（`fetchWorkflows`/`fetchWorkflowRuns`/`fetchWorkflowRunDetail`/`fetchWorkflowRunJobs`/`fetchRunArtifacts`/`dispatchWorkflow`） | ✗ | ✅ | — | — | ❌ | 4.5 GraphQL 无 actions 查询 |
-| `fetchFileContent`/`fetchReadme`/`fetchFileTree`/`fetchDirContents`/`fetchLanguages` | ✗ | ✅ | — | — | ❌ | 4.6 raw Accept / 无 GraphQL 等价；`fetchFileContent` 支持 `branch` 参数（默认 HEAD，非默认分支 404 修复）。**REST contents 上限 1MB→100MB**（1MB~100MB 必须 raw Accept，已满足）；smart 层 `fetchFileContentSmart` 分层（登录 GraphQL isTruncated→REST→$raw 保底 / 匿名 REST→raw 直连保底） |
+| `fetchFileTree`/`fetchLanguages`/`fetchFileContent`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.6 无 GraphQL 等价 / raw Accept；`fetchFileContent` 支持 `branch` 参数（默认 HEAD，非默认分支 404 修复）。**REST contents 上限 1MB→100MB**（1MB~100MB 必须 raw Accept）；smart 层 `fetchFileContentSmart` 分层（登录 GraphQL isTruncated→REST→$raw 保底 / 匿名 REST→raw 直连保底）；**目录列举 / README 已迁 GraphQL 主通道**（fetchDirContentsSmart / fetchReadmeSmart，见 §2.1） |
 | `fetchRootFiles`（About Resources 根文件探测，git trees 顶层；GraphQL 有 object(expression) tree 等价但 REST 简单） | ⚠️ | ✅ | — | — | ❌ | 4.6 trees 顶层列表，REST 足够 |
 | `fetchReleasesCount`/`fetchContributorsCount` | ⚠️ | ✅ | — | — | ❌ | 4.7 Link header 分页计数（releases 可改 GraphQL totalCount，低优先） |
 | 通知/邀请（`fetchNotifications`/`markNotificationThreadRead`/`fetchRepoInvitations`/`acceptRepoInvitation`/`declineRepoInvitation`） | ✗ | ✅ | — | — | ❌ | 4.8 GraphQL 无对应 |
@@ -199,7 +200,7 @@ export async function fetchXxxSmart(
 | 4.3 | GPG keys | GraphQL `gpgKey` 仅 id/publicKey/email/createdAt/verified；页面需 key_id/emails/can_sign（REST 有）。 |
 | 4.4 | block | GraphQL **无 block mutation**（只有 unblock）；unblock 需前置 userId 查询，收益低，一并保持 REST。 |
 | 4.5 | Actions / Job 日志 | GraphQL **无 actions 查询通道**；`fetchJobLogs` 是 text/plain 流，非 JSON。 |
-| 4.6 | 文件内容 / readme / 树 / 语言 | GraphQL 无 raw content 通道；contents API 需 `application/vnd.github.raw` 自定义 Accept。**修订**：REST contents **上限 100MB**（官方 2022-05 起，1MB~100MB 必须 raw Accept）；GraphQL Blob 仍 ~1MB 截断（**`isTruncated` 必须检查**——>1MB 时 text 非 null 但含部分内容）；官方无分段读取参数——>100MB 仅 git clone/archive 可达。**分层通道**：登录 API smart（GraphQL→REST）→ `$raw` 保底（会话 token 透传）；匿名 REST → raw 直连保底 |
+| 4.6 | 文件内容 / 树 / 语言 | GraphQL 无 raw content 通道；contents API 需 `application/vnd.github.raw` 自定义 Accept。**修订**：REST contents **上限 100MB**（官方 2022-05 起，1MB~100MB 必须 raw Accept）；GraphQL Blob 仍 ~1MB 截断（**`isTruncated` 必须检查**——>1MB 时 text 非 null 但含部分内容）；官方无分段读取参数——>100MB 仅 git clone/archive 可达。**分层通道**：登录 API smart（GraphQL→REST）→ `$raw` 保底（会话 token 透传）；匿名 REST → raw 直连保底。**目录列举 / README 已迁 GraphQL**（Tree.entries + blob 有等价）；**文件树 get-tree recursive 保留 REST**（`Tree.entries` 无递归参数，全量树 GraphQL 需 N+1 逐层下钻，大仓库退化） |
 | 4.7 | 计数（Releases/Contributors） | `per_page=1` 读 Link header 末页；releases 计数可改 GraphQL totalCount（低优先 TODO）。 |
 | 4.8 | 通知 / 邀请 / default branch / rate_limit | GraphQL 无对应端点或专属字段。（Saved replies 已从本项移除：端点被 GitHub 整体下线，见 §3 已下线表） |
 | 4.9 | 低频管理写操作 | mutation 需 node id 前置查询（2 次请求），低频页面收益低，保留 REST 直连。 |
@@ -210,7 +211,7 @@ export async function fetchXxxSmart(
 | 4.14 | 安全公告（Security） | GraphQL **无 security advisory 查询通道**（Repository 对象无相关字段）；REST `GET /repos/{o}/{r}/security-advisories` 公开仓库 published 匿名可读（smart 入口统一）。 |
 | 4.15 | contents `new_branch` | **实测**：PUT contents body 带 `new_branch` 返回 201 但**被静默忽略**——提交仍落在 `branch` 指定的原分支（新分支 404）。官方「新建分支提交」是两段式：先 `POST /repos/{o}/{r}/git/refs`（body `{ref: refs/heads/{newBranch}, sha: baseBranch head}`）建分支，再 PUT contents 到新分支（`createBranch` 封装，FileEditorPage PR 模式使用）。 |
 | 4.15 | Dependabot / Code scanning / Secret scanning | 需 `security_events` scope（OAuth 未授）+ 高级安全功能；仅 Security 核心（SECURITY.md + advisories）实现，告警 tab 去杂项。 |
-| 4.16 | Top committers 聚合 | GraphQL **无「按作者聚合提交数」端点**；`fetchTopCommittersSmart` REST `GET /commits` 分页 2 页抽样聚合（官方 Highcharts 全量统计，简版抽样 top 10 够用，阶段 I1）。 |
+| 4.16 | Top committers 聚合 | `fetchTopCommittersSmart` **GraphQL Commit.history 主通道**（history first:100 since 单次抽样）+ REST 熔断降级（匿名强制 REST 分页 2 页）；「按作者聚合」仍由前端计数（GraphQL 无直接聚合端点，需拉 commits 后前端 count，官方 Highcharts 全量统计，简版抽样 top 10 够用）。 |
 | 4.17 | 组织管理（成员角色/2FA、邀请、团队） | GraphQL 无等价（membersWithRole 无角色/2FA；无 members 写 mutation；无 invitations/teams 查询）；仓库创建权限字段 **REST-only**（`Organization` 上 `defaultRepositoryPermission`/`membersAllowedRepositoryCreationType`/`membersCanCreatePublicRepositories`/`membersCanCreatePrivateRepositories` 四候选名均 undefinedField 实测）；REST 实际值含 `"public"`（文档过时仅列 all/private/none）；组织重命名无公开 API（官方 UI 内部端点）。 |
 | 4.17 | Pulse 统计卡（GraphQL 可行） | `fetchPulseStatsSmart` **GraphQL 主通道**（`PULSE_STATS_QUERY` 一次请求 6 个 search.issueCount）；REST `/search/issues` 并行降级（withRestFallback）——双端点存在，按新方案走 GraphQL 主通道 + REST 熔断降级。 |
 
