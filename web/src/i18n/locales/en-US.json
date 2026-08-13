@@ -250,6 +250,7 @@
   "forkInfo.contributeLabel": "Contribute to upstream",
   "forkInfo.createIssue": "Create issue",
   "forkInfo.forkedFrom": "Forked from {name}",
+  "forkInfo.forkedFromLabel": "forked from",
 
   "forkInfo.openPull": "Open pull request",
   "forkInfo.synced": "Synced ✓",
@@ -619,9 +620,6 @@
   "pulls.empty.desc3": "or try an",
   "pulls.empty.desc4": "advanced search",
   "pulls.empty.desc5": ".",
-  "pulls.protip.text": "Adding",
-  "pulls.protip.link": "no:label",
-  "pulls.protip.trail": "will show everything without a label.",
   "pulls.owner": "Owner",
   "pulls.merged": "merged",
   "pulls.closed": "closed",

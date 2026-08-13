@@ -84,6 +84,7 @@ export async function fetchDiscussionsSmart(
   states?: string[] | null,
   orderBy?: { field: string; direction: "ASC" | "DESC" } | null,
   rawQuery?: string | null,
+  cursor?: string | null,
 ): Promise<DiscussionsData> {
   // 搜索模式：GraphQL search 端点（type: DISCUSSION）
   if (rawQuery) {
@@ -106,12 +107,19 @@ export async function fetchDiscussionsSmart(
       discussions: nodes
         .filter((n): n is GraphQLDiscussionNode => "number" in n)
         .map(toDiscussionSummary),
+      // 搜索模式不做游标续接（保持现状）
+      endCursor: null,
+      hasNextPage: false,
     };
   }
 
   const resp: GraphQLResponse<{
     repository: {
-      discussions: { totalCount: number; nodes: GraphQLDiscussionNode[] };
+      discussions: {
+        totalCount: number;
+        pageInfo: { endCursor: string | null; hasNextPage: boolean };
+        nodes: GraphQLDiscussionNode[];
+      };
       discussionCategories: {
         nodes: { id: string; name: string; emoji: string; description?: string | null }[];
       };
@@ -124,6 +132,7 @@ export async function fetchDiscussionsSmart(
       owner,
       name: repo,
       first: 20,
+      after: cursor ?? null,
       categoryId: categoryId ?? null,
       states: states ?? null,
       orderBy: orderBy ?? { field: "UPDATED_AT", direction: "DESC" },
@@ -162,6 +171,8 @@ export async function fetchDiscussionsSmart(
     pinned: repoData.pinnedDiscussions.nodes.map((p) => toDiscussionSummary(p.discussion)),
     mostHelpful,
     codeOfConduct: repoData.codeOfConduct,
+    endCursor: repoData.discussions.pageInfo?.endCursor ?? null,
+    hasNextPage: repoData.discussions.pageInfo?.hasNextPage ?? false,
   };
 }
 

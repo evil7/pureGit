@@ -8,7 +8,7 @@
  * 详情：主帖 + 评论列表（isAnswer 徽标）+ MarkdownEditor 评论表单。
  * 新建：整页两段式（/discussions/new/choose 选分类 → /discussions/new 填写）。
  */
-import { useEffect, useState, type FormEvent } from "react";
+import { useEffect, useMemo, useState, type FormEvent } from "react";
 import { Link, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import { MessageSquare, ArrowUp, Plus, CheckCircle2, Pin, Heart, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -95,6 +95,11 @@ export default function DiscussionsPage() {
   const [data, setData] = useState<DiscussionsData | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
+  // 游标分页：追加的讨论 + 续接游标 + 是否有下一页（搜索模式恒 false 不触发）
+  const [extraDiscussions, setExtraDiscussions] = useState<DiscussionSummary[]>([]);
+  const [endCursor, setEndCursor] = useState<string | null>(null);
+  const [hasNextPage, setHasNextPage] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
   const searchInput = q;
 
   const updateParams = (patch: Record<string, string | null>) => {
@@ -110,6 +115,12 @@ export default function DiscussionsPage() {
   const categoryId =
     data?.categories.find((c) => categorySlug(c.name) === categorySlugUrl)?.id ?? null;
   const order = SORT_OPTIONS.find((s) => s.value === sort)?.order;
+  // 搜索语法解析 → states（is:answered/unanswered 等；effect 与 loadMore 共用）
+  const states = useMemo(() => {
+    const parsed = parseSearchSyntax(q);
+    const stateIs = parsed.is.find((v) => ["open", "closed", "answered", "unanswered"].includes(v));
+    return stateIs ? [stateIs.toUpperCase()] : null;
+  }, [q]);
 
   useEffect(() => {
     if (!token) {
@@ -119,13 +130,13 @@ export default function DiscussionsPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    // 搜索语法解析 → states（is:answered/unanswered 等）
-    const parsed = parseSearchSyntax(q);
-    const stateIs = parsed.is.find((v) => ["open", "closed", "answered", "unanswered"].includes(v));
-    const states = stateIs ? [stateIs.toUpperCase()] : null;
     fetchDiscussionsSmart(owner!, repo!, token, categoryId, states, order ?? null, q || null)
       .then((d) => {
-        if (!cancelled) setData(d);
+        if (cancelled) return;
+        setData(d);
+        setExtraDiscussions([]);
+        setEndCursor(d.endCursor);
+        setHasNextPage(d.hasNextPage);
       })
       .catch((e: unknown) => {
         if (!cancelled) setError(normalizeApiError(e));
@@ -136,7 +147,30 @@ export default function DiscussionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [owner, repo, token, categoryId, state, sort, order, q]);
+  }, [owner, repo, token, categoryId, state, sort, order, q, states]);
+
+  /** 加载更多：游标续接追加讨论（仅列表模式；搜索模式 hasNextPage=false 不触发） */
+  const loadMore = async () => {
+    if (loadingMore || !endCursor) return;
+    setLoadingMore(true);
+    try {
+      const next = await fetchDiscussionsSmart(
+        owner!,
+        repo!,
+        token,
+        categoryId,
+        states,
+        order ?? null,
+        q || null,
+        endCursor,
+      );
+      setExtraDiscussions((prev) => [...prev, ...next.discussions]);
+      setEndCursor(next.endCursor);
+      setHasNextPage(next.hasNextPage);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   if (!token) {
     return <LoginPrompt title={t("discussions.loginRequired")} />;
@@ -393,11 +427,28 @@ export default function DiscussionsPage() {
               </p>
             </div>
           ) : (
-            <ul className="divide-y overflow-hidden rounded-lg border bg-card">
-              {data.discussions.map((d) => (
-                <DiscussionRow key={d.number} d={d} owner={owner!} repo={repo!} fmt={fmt} />
-              ))}
-            </ul>
+            <>
+              <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+                {data.discussions.map((d) => (
+                  <DiscussionRow key={d.number} d={d} owner={owner!} repo={repo!} fmt={fmt} />
+                ))}
+                {extraDiscussions.map((d) => (
+                  <DiscussionRow key={d.number} d={d} owner={owner!} repo={repo!} fmt={fmt} />
+                ))}
+              </ul>
+              {hasNextPage && (
+                <div className="text-center">
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => void loadMore()}
+                    disabled={loadingMore}
+                  >
+                    {loadingMore ? t("common.loading") : t("home.showMore")}
+                  </Button>
+                </div>
+              )}
+            </>
           )}
         </div>
       </PageLayout>

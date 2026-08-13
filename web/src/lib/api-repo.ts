@@ -1065,8 +1065,9 @@ export async function fetchSecurityAdvisoriesSmart(
   repo: string,
   token?: string | null,
   perPage = 30,
+  page = 1,
 ): Promise<SecurityAdvisory[]> {
-  return fetchSecurityAdvisories(owner, repo, token, perPage);
+  return fetchSecurityAdvisories(owner, repo, token, perPage, page);
 }
 
 /** 智能获取安全公告详情（REST only，同列表）。 */

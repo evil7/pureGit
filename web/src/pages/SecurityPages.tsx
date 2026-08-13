@@ -59,17 +59,26 @@ export default function SecurityPage() {
   const [secMd, setSecMd] = useState<ReadmeInfo | null | undefined>(undefined);
   const [advisories, setAdvisories] = useState<SecurityAdvisory[] | null>(null);
   const [error, setError] = useState<string | null>(null);
+  // 公告分页：page 追加（REST 无总数，按「批次是否拉满」判断 hasMore）
+  const [page, setPage] = useState(1);
+  const [hasMore, setHasMore] = useState(false);
+  const [loadingMore, setLoadingMore] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
     setError(null);
+    setPage(1);
     // SECURITY.md：不存在 → null（不报错）
     fetchSecurityMdSmart(owner!, repo!, token)
       .then((md) => !cancelled && setSecMd(md))
       .catch(() => !cancelled && setSecMd(null));
     // 公告列表（published）
-    fetchSecurityAdvisoriesSmart(owner!, repo!, token)
-      .then((list) => !cancelled && setAdvisories(list))
+    fetchSecurityAdvisoriesSmart(owner!, repo!, token, 30, 1)
+      .then((list) => {
+        if (cancelled) return;
+        setAdvisories(list);
+        setHasMore(list.length >= 30);
+      })
       .catch((e: unknown) => {
         if (!cancelled) setError(apiErrorMessage(e, t("security.loadFailed")));
       });
@@ -78,6 +87,21 @@ export default function SecurityPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner, repo, token]);
+
+  /** 加载更多：page 追加公告 */
+  const loadMore = async () => {
+    if (loadingMore) return;
+    setLoadingMore(true);
+    try {
+      const nextPage = page + 1;
+      const next = await fetchSecurityAdvisoriesSmart(owner!, repo!, token, 30, nextPage);
+      setAdvisories((prev) => [...(prev ?? []), ...next]);
+      setHasMore(next.length >= 30);
+      setPage(nextPage);
+    } finally {
+      setLoadingMore(false);
+    }
+  };
 
   return (
     <div className="flex flex-col gap-6">
@@ -144,35 +168,49 @@ export default function SecurityPage() {
             {t("security.noAdvisories")}
           </p>
         ) : (
-          <div className="flex flex-col divide-y rounded-lg border">
-            {advisories.map((a) => (
-              <Link
-                key={a.ghsa_id}
-                to={`/${owner}/${repo}/security/advisories/${a.ghsa_id}`}
-                className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
-              >
-                <Megaphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
-                <div className="min-w-0 flex-1">
-                  <p className="truncate text-sm font-medium">{a.summary}</p>
-                  <p className="mt-0.5 truncate text-xs text-muted-foreground">
-                    {a.ghsa_id}
-                    {a.published_at && (
-                      <>
-                        {" · "}
-                        {t("security.published").replace("{time}", fmt(a.published_at))}
-                        {a.publisher?.login ? ` by ${a.publisher.login}` : ""}
-                      </>
-                    )}
-                  </p>
-                </div>
-                {a.severity && (
-                  <Badge className={cn("shrink-0 text-xs", severityBadgeClass(a.severity))}>
-                    {t(`security.severity.${a.severity}` as I18nKey)}
-                  </Badge>
-                )}
-              </Link>
-            ))}
-          </div>
+          <>
+            <div className="flex flex-col divide-y rounded-lg border">
+              {advisories.map((a) => (
+                <Link
+                  key={a.ghsa_id}
+                  to={`/${owner}/${repo}/security/advisories/${a.ghsa_id}`}
+                  className="flex items-start gap-3 px-4 py-3 transition-colors hover:bg-muted/50"
+                >
+                  <Megaphone className="mt-0.5 size-4 shrink-0 text-muted-foreground" />
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate text-sm font-medium">{a.summary}</p>
+                    <p className="mt-0.5 truncate text-xs text-muted-foreground">
+                      {a.ghsa_id}
+                      {a.published_at && (
+                        <>
+                          {" · "}
+                          {t("security.published").replace("{time}", fmt(a.published_at))}
+                          {a.publisher?.login ? ` by ${a.publisher.login}` : ""}
+                        </>
+                      )}
+                    </p>
+                  </div>
+                  {a.severity && (
+                    <Badge className={cn("shrink-0 text-xs", severityBadgeClass(a.severity))}>
+                      {t(`security.severity.${a.severity}` as I18nKey)}
+                    </Badge>
+                  )}
+                </Link>
+              ))}
+            </div>
+            {hasMore && (
+              <div className="text-center">
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => void loadMore()}
+                  disabled={loadingMore}
+                >
+                  {loadingMore ? t("common.loading") : t("home.showMore")}
+                </Button>
+              </div>
+            )}
+          </>
         )}
       </section>
     </div>

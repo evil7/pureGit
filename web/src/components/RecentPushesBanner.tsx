@@ -22,6 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { useDateFormat } from "@/hooks/useDateFormat";
+import { useRepoData } from "@/lib/repo-context";
 import { fetchRecentBranchesSmart, type RecentBranch } from "@/lib/api";
 
 /** 时间窗口：14 天内（官方分支页 recent 语义） */
@@ -29,7 +30,8 @@ const WINDOW_MS = 14 * 24 * 60 * 60 * 1000;
 
 export function RecentPushesBanner() {
   const { owner = "", repo = "" } = useParams();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
+  const repoData = useRepoData();
   const { t } = useI18n();
   const { fmt } = useDateFormat();
   const [branch, setBranch] = useState<RecentBranch | null>(null);
@@ -49,6 +51,8 @@ export function RecentPushesBanner() {
   }, [owner, repo, token]);
 
   if (!token || !branch) return null;
+  // 仅本人管理的仓库显示快捷操作横幅（非本人仓库不应出现「Compare & pull request」快捷入口）
+  if (!repoData || !user || repoData.owner.login !== user.login) return null;
 
   // fmt 的 absolute 格式（`2026年8月9日 22:53`）去掉 ` HH:mm` 时间尾 → 仅日期（对齐 ArchivedBanner）
   const fmtDate = (iso: string): string => fmt(iso).replace(/\s\d{2}:\d{2}$/, "");

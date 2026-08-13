@@ -1158,13 +1158,24 @@ export const DISCUSSIONS_QUERY = /* GraphQL */ `
     $owner: String!
     $name: String!
     $first: Int!
+    $after: String
     $categoryId: ID
     $states: [DiscussionState!]
     $orderBy: DiscussionOrder!
   ) {
     repository(owner: $owner, name: $name) {
-      discussions(first: $first, orderBy: $orderBy, categoryId: $categoryId, states: $states) {
+      discussions(
+        first: $first
+        after: $after
+        orderBy: $orderBy
+        categoryId: $categoryId
+        states: $states
+      ) {
         totalCount
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
         nodes {
           number
           title

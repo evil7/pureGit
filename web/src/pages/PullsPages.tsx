@@ -15,7 +15,6 @@ import {
   GitPullRequest,
   GitPullRequestClosed,
   GitPullRequestDraft,
-  Lightbulb,
   MessageSquare,
   Milestone,
   Minus,
@@ -407,20 +406,6 @@ export default function PullsPage() {
 
       {/* 页码分页（每页 30；仅 >1 页时渲染） */}
       {totalPages > 1 && <Pager page={page} totalPages={totalPages} onChange={goPage} />}
-
-      {/* ③ ProTip 提示条（官方底部 tips 区） */}
-      <div className="flex flex-wrap items-center justify-center gap-1.5 text-center text-sm text-muted-foreground">
-        <Lightbulb className="size-4 shrink-0" />
-        <strong className="font-medium text-foreground">ProTip!</strong>
-        <span>{t("pulls.protip.text")}</span>
-        <Link
-          to={`/${owner}/${repo}/pulls?q=is%3Apr%20no%3Alabel`}
-          className="text-primary hover:underline"
-        >
-          {t("pulls.protip.link")}
-        </Link>
-        <span>{t("pulls.protip.trail")}</span>
-      </div>
     </div>
   );
 }

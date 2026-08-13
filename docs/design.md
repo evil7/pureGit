@@ -285,7 +285,7 @@
 
 ### 4.6 仓库 Pulls 列表页（复刻官方结构 定稿）
 
-> **官方结构**（devtools 实测 `github.com/{o}/{r}/pulls`）：`container-xl` 内 ① 搜索工具条（Filters 下拉 + 搜索框 + Labels/Milestones 链接 + New pull request 右）→ ② 统一 Box（`Box-header` 状态链接 Open/Closed + 过滤按钮组 Author/Label/Milestones/Assignee/Sort + `Box-row` 行列表）→ ③ 空态 blankslate → ④ ProTip 提示条。**无页内 sticky**（整页滚动）。
+> **官方结构**（devtools 实测 `github.com/{o}/{r}/pulls`）：`container-xl` 内 ① 搜索工具条（Filters 下拉 + 搜索框 + Labels/Milestones 链接 + New pull request 右）→ ② 统一 Box（`Box-header` 状态链接 Open/Closed + 过滤按钮组 Author/Label/Milestones/Assignee/Sort + `Box-row` 行列表）→ ③ 空态 blankslate。**无页内 sticky**（整页滚动）。
 
 | 模块 | 规范 |
 |------|------|
@@ -293,7 +293,6 @@
 | **② 统一 Box** | `overflow-hidden rounded-lg border bg-card`；`Box-header`（`flex flex-wrap items-center justify-between gap-2 border-b px-4 py-1.5`）：状态链接 btn-link 风格（icon + 文字 + 计数，selected `aria-current` + `font-medium text-foreground`，**无下划线**）+ 过滤按钮组（`FilterDropdown`：shadcn Popover+Command，标题 + CommandInput 过滤 + 选项 + 已选显示值 + 清除项） |
 | **③ 行列表** | `divide-y` 统一容器（非独立卡片）；行 `group flex items-center gap-3 px-4 py-2.5 hover:bg-accent/50`：状态 icon（open 绿 PR / merged 紫 merge / closed 红 PR / draft 灰）+ 标题列（`font-medium text-foreground hover:underline` + meta 行 `#n by 作者 [Owner 标] 打开于/关闭于/合并于 时间` + Draft 标 + labels）+ 右列（assignee 头像栈 + 评论数） |
 | **④ 空态** | `flex flex-col items-center gap-2 px-4 py-12 text-center`：圆底大图标 + `h3` 标题（`没有{{state}}的拉取请求。`）+ 描述（「你可以搜索 GitHub 全部仓库 或尝试 高级搜索。」） |
-| **⑤ ProTip** | `flex flex-wrap items-center justify-center gap-1.5 text-center text-sm`：灯泡 icon + `ProTip!` + no:label 链接 |
 
 **数据流**：URL query 驱动（`state/author/labels/milestone/assignee/q/sort/page`）；`fetchPullsSmart` 扩展——无过滤 GraphQL `PULLS_QUERY`（orderBy 变量化）→ REST `pulls.list`（sort/direction 透传）；有过滤（author/labels/milestone/assignee/q）→ search API（`searchIssues` 提取 q 内 `sort:` qualifier 映射 REST sort 参数）；过滤下拉数据源（contributors/labels/milestones/assignees）进入页面并行预取一次。
 

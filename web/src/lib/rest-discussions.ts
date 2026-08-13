@@ -62,4 +62,7 @@ export interface DiscussionsData {
   /** Most helpful：最近讨论的评论作者聚合 top 5 */
   mostHelpful: { login: string; avatarUrl: string; count: number }[];
   codeOfConduct: { name: string; url: string } | null;
+  /** 游标分页：续接游标 + 是否有下一页（列表模式；搜索模式恒 null/false） */
+  endCursor: string | null;
+  hasNextPage: boolean;
 }

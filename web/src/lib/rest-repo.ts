@@ -996,6 +996,7 @@ export async function fetchSecurityAdvisories(
   repo: string,
   token?: string | null,
   perPage = 30,
+  page = 1,
 ): Promise<SecurityAdvisory[]> {
   return typedRequest<SecurityAdvisory[]>(token, (octokit) =>
     octokit.rest.securityAdvisories.listRepositoryAdvisories({
@@ -1003,6 +1004,7 @@ export async function fetchSecurityAdvisories(
       repo,
       state: "published",
       per_page: perPage,
+      page,
       sort: "published",
       direction: "desc",
     }),

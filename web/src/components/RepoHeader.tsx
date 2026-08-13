@@ -98,50 +98,61 @@ export default function RepoHeader({
   return (
     <div className="border-b">
       <div className="mx-auto max-w-7xl px-4">
-        {/* 仓库名行（官方：头像 + 名称 + 可见性 + Star/Fork 最右侧） */}
-        <div className="flex min-w-0 items-center gap-2 py-3">
-          {data && (
-            <Avatar className="size-5 shrink-0 rounded-full">
-              <AvatarImage src={data.owner.avatar_url} alt={data.owner.login} />
-              <AvatarFallback>{data.owner.login.slice(0, 1).toUpperCase()}</AvatarFallback>
-            </Avatar>
-          )}
-          {/* 仓库名行（官方：头像 + 名称 + 可见性 + Star/Fork 最右侧）。
+        {/* 仓库名行（官方：头像 + 名称 + 可见性 + Star/Fork 最右侧）+ fork 来源行 */}
+        <div className="py-3">
+          <div className="flex min-w-0 items-center gap-2">
+            {data && (
+              <Avatar className="size-5 shrink-0 rounded-full">
+                <AvatarImage src={data.owner.avatar_url} alt={data.owner.login} />
+                <AvatarFallback>{data.owner.login.slice(0, 1).toUpperCase()}</AvatarFallback>
+              </Avatar>
+            )}
+            {/* 仓库名行（官方：头像 + 名称 + 可见性 + Star/Fork 最右侧）。
               用户名 / 项目名分开可点击（对齐 GitHub）：点用户名 → 用户主页，点项目名 → 项目主页 */}
-          <span className="flex min-w-0 items-center gap-0.5">
-            <Link
-              to={`/${owner}`}
-              className="truncate font-semibold text-muted-foreground hover:text-foreground hover:underline"
-            >
-              {owner}
-            </Link>
-            <span className="shrink-0 text-muted-foreground">/</span>
-            <Link to={basePath} className="truncate font-semibold hover:underline">
-              <span className="text-foreground">{repo}</span>
-            </Link>
-          </span>
-          {data && (
-            <Badge variant="secondary" className="text-xs">
-              {data.private ? t("common.repoPrivate") : t("common.repoPublic")}
-            </Badge>
-          )}
-          {/* 归档徽章（归档仓库详情头标识，对齐官方黄色横幅语义的轻量版） */}
-          {data?.archived && (
-            <Badge variant="outline" className="text-xs">
-              {t("common.repoArchived")}
-            </Badge>
-          )}
-          {data && (
-            <div className="ml-auto flex shrink-0 items-center gap-2 pl-4">
-              {/* Star/Fork 属写操作：仅限访问模式下置灰 */}
-              <WriteGate>
-                <StarForkButtons
-                  stars={data.stargazers_count}
-                  forks={data.forks_count}
-                  subscribers={data.subscribers_count ?? 0}
-                  onUpdated={onRepoUpdated}
-                />
-              </WriteGate>
+            <span className="flex min-w-0 items-center gap-0.5">
+              <Link
+                to={`/${owner}`}
+                className="truncate font-semibold text-muted-foreground hover:text-foreground hover:underline"
+              >
+                {owner}
+              </Link>
+              <span className="shrink-0 text-muted-foreground">/</span>
+              <Link to={basePath} className="truncate font-semibold hover:underline">
+                <span className="text-foreground">{repo}</span>
+              </Link>
+            </span>
+            {data && (
+              <Badge variant="secondary" className="text-xs">
+                {data.private ? t("common.repoPrivate") : t("common.repoPublic")}
+              </Badge>
+            )}
+            {/* 归档徽章（归档仓库详情头标识，对齐官方黄色横幅语义的轻量版） */}
+            {data?.archived && (
+              <Badge variant="outline" className="text-xs">
+                {t("common.repoArchived")}
+              </Badge>
+            )}
+            {data && (
+              <div className="ml-auto flex shrink-0 items-center gap-2 pl-4">
+                {/* Star/Fork 属写操作：仅限访问模式下置灰 */}
+                <WriteGate>
+                  <StarForkButtons
+                    stars={data.stargazers_count}
+                    forks={data.forks_count}
+                    subscribers={data.subscribers_count ?? 0}
+                    onUpdated={onRepoUpdated}
+                  />
+                </WriteGate>
+              </div>
+            )}
+          </div>
+          {/* fork 来源（官方 fork-parent：标题下方小字 "forked from owner/repo"，仅 fork 仓库） */}
+          {data?.fork && data.parent?.full_name && (
+            <div className="mt-1 text-xs text-muted-foreground">
+              <span>{t("forkInfo.forkedFromLabel")}</span>{" "}
+              <Link to={`/${data.parent.full_name}`} className="hover:underline">
+                {data.parent.full_name}
+              </Link>
             </div>
           )}
         </div>
