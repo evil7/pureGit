@@ -17,7 +17,14 @@
  */
 
 import { shouldUseGraphQL, triggerGqlCooldown } from "./octokit";
-import { beginFallback, logFallback, logGraphqlMain, logMainRequest } from "./api-log";
+import {
+  beginFallback,
+  logError,
+  logFallback,
+  logGraphqlMain,
+  logMainRequest,
+  logWarn,
+} from "./api-log";
 import {
   graphqlRequest as rawGraphqlRequest,
   hasGraphQLErrors,
@@ -77,6 +84,10 @@ export async function withRestFallback<T>(
     // 降级触发日志（[Fallback#n] + error 详情）——GraphQL 失败原因，便于调试
     logFallback(detail, gqlResp?.errors?.[0]?.message ?? null, fb.id);
     return await restFn();
+  } catch (e) {
+    // fallback REST 也失败 → [Error]（保留 throw，不吞错误，调用方仍能收到）
+    logError(detail, e);
+    throw e;
   } finally {
     fb.end();
   }
@@ -123,6 +134,12 @@ export async function graphqlRequest<T>(
       triggerGqlCooldown();
     }
     logGraphqlMain(name, variables, degraded ? "network-error" : "error", ms);
+    // 补充错误详情：网络错误 → [Warn]（可预期降级信号，触发熔断）；HTTP 4xx/5xx → [Error]（真实错误）
+    if (degraded) {
+      logWarn(name, `network error → cooldown: ${String(e)}`);
+    } else {
+      logError(name, e);
+    }
     return { errors: [{ message: String(e) }] };
   }
 }

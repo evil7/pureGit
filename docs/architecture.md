@@ -161,7 +161,15 @@ YYYY-MM-DD 12:23:34:125 [Fallback#3] fetchXxxSmart | error: Resource not found  
 YYYY-MM-DD 12:23:34:126 ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms                   ← fallback（每请求一行）
 ```
 
-实现：`web/src/lib/api-log.ts`（`logMainRequest`/`logGraphqlMain`/`logFallback`/`beginFallback`/`inFallback`）；`withRestFallback`（api-core.ts）内部调 `beginFallback` 取得降级会话序号并打 `[Fallback#n]`，降级链 REST 日志自动带 `↪` 图标；序号为值传递（同步递增），并发场景下仍能正确关联「哪次降级触发了哪些 REST」；日志仅 DEV 输出（测试 `setApiLogDev(true)` 开启）。
+通用级别日志（补 catch 块中被静默吞掉的错误/信号）：
+
+```
+YYYY-MM-DD 12:23:34:130 [Error] fetchXxxSmart | error: REST also failed   ← fallback 也失败 / HTTP 4xx/5xx / 非预期异常
+YYYY-MM-DD 12:23:34:130 [Warn]  fetchXxxSmart | network error → cooldown   ← 可预期信号（熔断 / 静默降级返回空 / 补丁回退默认）
+YYYY-MM-DD 12:23:34:130 [Info]  graphqlRequest | anonymous → REST          ← 一般信息（匿名短路降级 / 状态提示）
+```
+
+实现：`web/src/lib/api-log.ts`（`logMainRequest`/`logGraphqlMain`/`logFallback`/`logError`/`logWarn`/`logInfo`/`beginFallback`/`inFallback`）；`withRestFallback`（api-core.ts）内部调 `beginFallback` 取得降级会话序号并打 `[Fallback#n]`，降级链 REST 日志自动带 `↪` 图标，`restFn` 失败 → `logError` 后 rethrow（不吞错误）；序号为值传递（同步递增），并发场景下仍能正确关联「哪次降级触发了哪些 REST」；静默 catch（返回空/默认值/null）必补 `logWarn`；日志仅 DEV 输出（测试 `setApiLogDev(true)` 开启）。
 
 ### 覆盖范围
 

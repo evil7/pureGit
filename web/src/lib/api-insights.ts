@@ -7,6 +7,7 @@
  */
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
+import { logWarn } from "./api-log";
 import { PULSE_STATS_QUERY } from "./graphql";
 import { searchIssues, fetchCommits } from "./rest";
 import type { RepoCommit } from "./rest";
@@ -118,8 +119,14 @@ export async function fetchTopCommittersSmart(
 ): Promise<CommitterStat[]> {
   try {
     const pages = await Promise.all([
-      fetchCommits(owner, repo, since, 100, 1, token).catch(() => [] as RepoCommit[]),
-      fetchCommits(owner, repo, since, 100, 2, token).catch(() => [] as RepoCommit[]),
+      fetchCommits(owner, repo, since, 100, 1, token).catch((e) => {
+        logWarn("fetchTopCommittersSmart", `page1 commits 失败（静默空）: ${String(e)}`);
+        return [] as RepoCommit[];
+      }),
+      fetchCommits(owner, repo, since, 100, 2, token).catch((e) => {
+        logWarn("fetchTopCommittersSmart", `page2 commits 失败（静默空）: ${String(e)}`);
+        return [] as RepoCommit[];
+      }),
     ]);
     const map = new Map<string, CommitterStat>();
     for (const c of pages.flat()) {
@@ -132,7 +139,9 @@ export async function fetchTopCommittersSmart(
       else map.set(login, { login, count: 1, avatarUrl: c.author?.avatar_url });
     }
     return [...map.values()].sort((a, b) => b.count - a.count).slice(0, 10);
-  } catch {
+  } catch (e) {
+    // REST-only 聚合失败 → 静默空，补 [Warn] 保留诊断
+    logWarn("fetchTopCommittersSmart", `Top committers 聚合失败（静默空）: ${String(e)}`);
     return [];
   }
 }

@@ -27,9 +27,18 @@ vi.mock("@/lib/graphql", () => ({
   hasGraphQLErrors: vi.fn(() => false),
 }));
 
-import { graphqlRequest } from "@/lib/api-core";
+vi.mock("@/lib/api-log", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-log")>();
+  return {
+    ...actual,
+    logError: vi.fn(),
+  };
+});
+
+import { graphqlRequest, withRestFallback } from "@/lib/api-core";
 import { shouldUseGraphQL, triggerGqlCooldown } from "@/lib/octokit";
 import { graphqlRequest as rawGraphqlRequest } from "@/lib/graphql";
+import { logError } from "@/lib/api-log";
 
 const mockShouldGraphQL = vi.mocked(shouldUseGraphQL);
 const mockTriggerCooldown = vi.mocked(triggerGqlCooldown);
@@ -114,5 +123,23 @@ describe("正常路径", () => {
     const r = await graphqlRequest(QUERY, VARS, "gho_x");
     expect(r).toEqual(errResp);
     expect(mockTriggerCooldown).not.toHaveBeenCalled();
+  });
+});
+
+describe("withRestFallback 熔断降级链（fallback 失败触发 [Error]）", () => {
+  it("restFn 成功 → 返回结果，不触发 [Error]", async () => {
+    const r = await withRestFallback(async () => "ok", "fetchXxxSmart");
+    expect(r).toBe("ok");
+    expect(logError).not.toHaveBeenCalled();
+  });
+
+  it("restFn 失败 → 触发 [Error] 并 rethrow（不吞错误）", async () => {
+    const boom = new Error("REST also failed");
+    await expect(
+      withRestFallback(async () => {
+        throw boom;
+      }, "fetchXxxSmart"),
+    ).rejects.toThrow("REST also failed");
+    expect(logError).toHaveBeenCalledWith("fetchXxxSmart", boom);
   });
 });

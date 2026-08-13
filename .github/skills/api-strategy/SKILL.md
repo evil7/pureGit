@@ -36,6 +36,18 @@ YYYY-MM-DD 12:23:34:126 ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms         
 - **fallback 图标**：降级后的 REST 请求前缀 `↪`（左右空格为图标间隔），无复杂缩进
 - **fallback 序号**：`beginFallback()` 同步递增返回 `{ id, end }`——`#n` 为**值传递**，并发场景下仍能正确关联「哪次降级触发了哪些 REST」（不依赖全局可变状态判断）
 - **GraphQL 主请求**：含 `vars: {...}`（变量快照）；有 errors 时状态打 `error(n)`（HTTP 200 但业务错误），错误详情由降级时的 `[Fallback]` 行承担
+
+**通用级别日志（补 catch 块中被静默吞掉的错误/信号，避免丢失调试信息）**：
+
+```
+YYYY-MM-DD 12:23:34:130 [Error] fetchXxxSmart | error: REST also failed   ← fallback 也失败 / HTTP 4xx/5xx / 非预期异常
+YYYY-MM-DD 12:23:34:130 [Warn]  fetchXxxSmart | network error → cooldown   ← 可预期信号（熔断 / 静默降级返回空 / 补丁回退默认）
+YYYY-MM-DD 12:23:34:130 [Info]  graphqlRequest | anonymous → REST          ← 一般信息（匿名短路降级 / 状态提示）
+```
+
+- **级别语义**：`[Error]` 真实错误（fallback REST 也失败、HTTP 4xx/5xx、非预期异常）；`[Warn]` 可预期/可恢复信号（网络错误触发熔断、静默降级返回空、补丁失败回退默认值）；`[Info]` 一般信息
+- **fallback 失败必打 `[Error]`**：`withRestFallback` 内 `restFn` 抛错 → `logError(detail, e)` 后 rethrow（不吞错误）
+- **静默 catch 必补 `[Warn]`**：`catch` 后返回空/默认值/null 的降级路径必须打 `logWarn`（如 fetchRecentBranchesSmart / fetchPullProjectsSmart / fetchTopCommittersSmart），不丢失诊断信息
 - 日志仅 DEV 输出（`isDev()`，测试可用 `setApiLogDev(true)` 开启）
 
 ## 实施路径

@@ -5,6 +5,7 @@
 
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
+import { logWarn } from "./api-log";
 import {
   REPOSITORY_QUERY,
   CREATE_REPOSITORY_MUTATION,
@@ -327,8 +328,9 @@ export async function fetchRepositoryIdSmart(
     if (!hasGraphQLErrors(resp) && resp.data?.repository) {
       return resp.data.repository.id;
     }
-  } catch {
+  } catch (e) {
     // 降级 REST（返回 null，由调用方走 REST）
+    logWarn("fetchRepositoryIdSmart", `GraphQL node id 查询失败（降级 REST）: ${String(e)}`);
   }
   return null;
 }
@@ -689,7 +691,9 @@ export async function fetchRecentBranchesSmart(
       .filter((n) => n.name !== def && n.target?.committedDate)
       .map((n) => ({ name: n.name, committedDate: n.target!.committedDate }))
       .sort((a, b) => (a.committedDate < b.committedDate ? 1 : -1));
-  } catch {
+  } catch (e) {
+    // 提示条非核心 → 静默返回空，但补 [Warn] 避免丢失诊断信息
+    logWarn("fetchRecentBranchesSmart", `最近分支查询失败（静默空）: ${String(e)}`);
     return [];
   }
 }

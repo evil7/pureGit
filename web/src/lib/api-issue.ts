@@ -10,6 +10,7 @@
 
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
+import { logWarn } from "./api-log";
 import {
   ISSUES_QUERY,
   ISSUE_DETAIL_QUERY,
@@ -1561,8 +1562,9 @@ export async function setReviewThreadResolvedSmart(
       token,
     );
     if (!hasGraphQLErrors(resp)) return;
-  } catch {
-    // GraphQL 失败静默（REST 无等价端点可降级——仅记录）
+  } catch (e) {
+    // GraphQL 失败（REST 无等价端点可降级）→ 记录后抛错
+    logWarn("setReviewThreadResolvedSmart", `评审线程解决失败: ${String(e)}`);
   }
   throw new Error("线程解决失败（GraphQL 不可用）");
 }
@@ -1651,7 +1653,9 @@ export async function fetchPullProjectsSmart(
           ? (n.fieldValueByName.name ?? null)
           : null,
     }));
-  } catch {
+  } catch (e) {
+    // 侧栏非核心 → 静默空，补 [Warn] 保留诊断
+    logWarn("fetchPullProjectsSmart", `PR Projects 查询失败（静默空）: ${String(e)}`);
     return [];
   }
 }
@@ -1694,7 +1698,9 @@ export async function fetchPullDevelopmentSmart(
         .map((n) => n.ref?.name)
         .filter((b): b is string => Boolean(b)),
     };
-  } catch {
+  } catch (e) {
+    // 侧栏非核心 → 静默空，补 [Warn] 保留诊断
+    logWarn("fetchPullDevelopmentSmart", `PR Development 查询失败（静默空）: ${String(e)}`);
     return { issues: [], branches: [] };
   }
 }
@@ -2048,7 +2054,9 @@ export async function fetchPullTimelineSmart(
       }
     }
     return events;
-  } catch {
+  } catch (e) {
+    // 时间线 GraphQL-only，失败降级 null → 页面回退评论拼接；补 [Warn] 保留诊断
+    logWarn("fetchPullTimelineSmart", `PR 时间线查询失败（降级 null）: ${String(e)}`);
     return null;
   }
 }

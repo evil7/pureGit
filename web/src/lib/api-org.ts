@@ -5,6 +5,7 @@
 
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
+import { logWarn } from "./api-log";
 import {
   USER_PROFILE_QUERY,
   ORG_PROFILE_QUERY,
@@ -405,8 +406,9 @@ export async function fetchOrgDetailSmart(org: string, token: string): Promise<O
           default_repository_permission: rest.default_repository_permission,
           members_allowed_repository_creation_type: rest.members_allowed_repository_creation_type,
         };
-      } catch {
-        // 补丁失败静默（权限下拉回退默认值）
+      } catch (e) {
+        // 补丁失败回退默认（权限下拉回退默认值），补 [Warn] 保留诊断
+        logWarn("fetchOrgDetailSmart", `权限字段补丁失败（回退默认）: ${String(e)}`);
       }
       return {
         login: o.login,

@@ -122,3 +122,29 @@ export function logFallback(name: string, err: unknown, id: number): void {
   const errStr = err != null ? ` | error: ${errDetail(err)}` : "";
   console.log(`${ts()} [Fallback#${id}] ${name}${errStr}`);
 }
+
+/**
+ * 通用级别日志（[Error]/[Warn]/[Info]）——补充 catch 块中被静默吞掉的错误/信号，避免丢失调试信息。
+ * 级别语义：
+ * - [Error]：真实错误（fallback REST 也失败、HTTP 4xx/5xx、非预期异常）
+ * - [Warn]：可预期/可恢复信号（网络错误触发熔断、静默降级返回空、补丁失败回退默认值）
+ * - [Info]：一般信息（匿名短路降级、状态提示）
+ */
+
+/** 错误日志——真实错误（fallback 也失败、HTTP 4xx/5xx、非预期异常） */
+export function logError(name: string, err: unknown): void {
+  if (!isDev()) return;
+  console.log(`${ts()} [Error] ${name} | error: ${errDetail(err)}`);
+}
+
+/** 警告日志——可预期/可恢复信号（熔断、静默降级、补丁回退默认） */
+export function logWarn(name: string, msg: string): void {
+  if (!isDev()) return;
+  console.log(`${ts()} [Warn] ${name} | ${msg}`);
+}
+
+/** 信息日志——一般信息（匿名短路降级、状态提示） */
+export function logInfo(name: string, msg: string): void {
+  if (!isDev()) return;
+  console.log(`${ts()} [Info] ${name} | ${msg}`);
+}

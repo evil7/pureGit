@@ -12,9 +12,12 @@
 import { describe, it, expect, beforeEach, afterEach } from "vitest";
 import {
   beginFallback,
+  logError,
   logFallback,
   logGraphqlMain,
+  logInfo,
   logMainRequest,
+  logWarn,
   setApiLogDev,
 } from "@/lib/api-log";
 
@@ -136,5 +139,26 @@ describe("api-log 熔断日志（简洁格式 + fallback 序号关联）", () =>
       ),
     );
     expect(lines[0]).not.toContain("error:");
+  });
+
+  it("logError 输出 [Error] 格式（含 error 详情）", () => {
+    const lines = capture(() => logError("fetchPullsSmart", new Error("boom")));
+    expect(lines[0]).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}:\d{3} \[Error\] fetchPullsSmart \| error: boom$/,
+    );
+  });
+
+  it("logWarn 输出 [Warn] 格式", () => {
+    const lines = capture(() => logWarn("fetchRecentBranchesSmart", "network error → cooldown"));
+    expect(lines[0]).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}:\d{3} \[Warn\] fetchRecentBranchesSmart \| network error → cooldown$/,
+    );
+  });
+
+  it("logInfo 输出 [Info] 格式", () => {
+    const lines = capture(() => logInfo("graphqlRequest", "anonymous → REST"));
+    expect(lines[0]).toMatch(
+      /^\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}:\d{3} \[Info\] graphqlRequest \| anonymous → REST$/,
+    );
   });
 });
