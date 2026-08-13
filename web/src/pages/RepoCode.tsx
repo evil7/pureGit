@@ -66,7 +66,6 @@ import {
   fetchFileTree,
   fetchReadme,
   fetchDirContents,
-  fetchBranches,
   fetchLatestCommit,
   fetchFileCommit,
   fetchFileMeta,
@@ -76,7 +75,7 @@ import {
   type DirEntry,
   type ReadmeInfo,
 } from "@/lib/rest";
-import { fetchFileContentSmart } from "@/lib/api";
+import { fetchFileContentSmart, fetchBranchesSmart } from "@/lib/api";
 import { parseTreePath } from "@/lib/repo-path";
 import { WORKER_BASE } from "@/lib/worker-base";
 import { useAuth } from "@/hooks/useAuth";
@@ -124,7 +123,7 @@ function BranchPicker({
     if (!active || loadedRef.current) return;
     let cancelled = false;
     loadedRef.current = true;
-    fetchBranches(owner, repo, 30, token)
+    fetchBranchesSmart(owner, repo, token)
       .then((bs) => !cancelled && setBranches(bs.map((b) => b.name)))
       .catch(() => {
         loadedRef.current = false; // 失败允许下次重试
@@ -202,7 +201,7 @@ function RepoActionBar({ branch }: { branch: string }) {
 
   useEffect(() => {
     let cancelled = false;
-    fetchBranches(owner, repo, 30, token)
+    fetchBranchesSmart(owner, repo, token)
       .then((bs) => !cancelled && setBranches(bs.map((b) => b.name)))
       .catch(() => undefined);
     return () => {

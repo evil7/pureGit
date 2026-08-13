@@ -59,7 +59,7 @@ import {
   fetchWorkflowRunJobs,
   fetchRunArtifacts,
   fetchJobLogs,
-  fetchBranches,
+  fetchBranchesSmart,
   dispatchWorkflow,
   apiErrorMessage,
   normalizeApiError,
@@ -169,7 +169,7 @@ export default function ActionsPage() {
   // 分支下拉数据（一次加载）
   useEffect(() => {
     if (!token) return;
-    fetchBranches(owner, repo, 50, token)
+    fetchBranchesSmart(owner, repo, token)
       .then((bs) => setBranches(bs))
       .catch(() => undefined);
   }, [owner, repo, token]);
