@@ -17,7 +17,7 @@
  */
 
 import { shouldUseGraphQL, triggerGqlCooldown } from "./octokit";
-import { beginFallback, logGraphqlError, logGraphqlMain, logMainRequest } from "./api-log";
+import { beginFallback, logFallback, logGraphqlMain, logMainRequest } from "./api-log";
 import {
   graphqlRequest as rawGraphqlRequest,
   hasGraphQLErrors,
@@ -63,23 +63,22 @@ function isNetworkError(e: unknown): boolean {
  * if (!hasGraphQLErrors(resp) && resp.data?.repository) return toXxx(resp.data.repository);
  * return withRestFallback(() => fetchXxx(owner, repo, token), "fetchXxx", resp);
  * ```
- * - beginFallback() 使降级链中的 REST 日志自动打 `↪` 前缀（api-log 层级标记）
- * - 支持嵌套降级链（fallback 内再 fallback → 深度递增）
+ * - beginFallback() 进入降级链：返回降级会话序号 id（[Fallback#n] 关联），
+ *   使降级链中的 REST 日志自动加 `↪` 图标（api-log 管理）
+ * - 支持嵌套降级链（fallback 内再 fallback → 栈式保存/还原）
  */
 export async function withRestFallback<T>(
   restFn: () => Promise<T>,
   detail: string,
   gqlResp?: GraphQLResponse<unknown>,
 ): Promise<T> {
-  // GraphQL 失败原因 → 日志（若调用方未打 error 详情，这里兜底打一行）
-  if (gqlResp?.errors?.length) {
-    logGraphqlError(detail, gqlResp.errors[0].message ?? "unknown", "rest-fallback");
-  }
-  const end = beginFallback();
+  const fb = beginFallback();
   try {
+    // 降级触发日志（[Fallback#n] + error 详情）——GraphQL 失败原因，便于调试
+    logFallback(detail, gqlResp?.errors?.[0]?.message ?? null, fb.id);
     return await restFn();
   } finally {
-    end();
+    fb.end();
   }
 }
 
@@ -88,7 +87,7 @@ export async function withRestFallback<T>(
  * - 匿名（无 token）→ 短路返回 errors（smart 函数走匿名 REST 数据层，硬约束非降级）
  * - GraphQL 耗尽/熔断 → 返回 errors（smart 层经 withRestFallback 降级 REST，不静默切 REST）
  * - 网络层失败 → 触发 cooldown，返回 errors
- * 日志：主请求走 logGraphqlMain（含 vars）；失败/网络错误追加 logGraphqlError 详情行。
+ * 日志：主请求走 logGraphqlMain（含 vars）；错误详情由降级时的 [Fallback#n] 行承担（withRestFallback）。
  */
 export async function graphqlRequest<T>(
   query: string,
@@ -113,12 +112,8 @@ export async function graphqlRequest<T>(
     const ms = Math.round(performance.now() - started);
     const size = JSON.stringify(resp).length;
     const errCount = resp.errors?.length ?? 0;
-    if (errCount) {
-      logGraphqlMain(name, variables, `error(${errCount})`, ms, size);
-      logGraphqlError(name, resp.errors?.[0]?.message ?? "unknown", "graphql-errors");
-    } else {
-      logGraphqlMain(name, variables, 200, ms, size);
-    }
+    // 主请求日志：有 errors 时状态打 error(n)（HTTP 200 但业务错误）；错误详情由降级时的 [Fallback] 行承担
+    logGraphqlMain(name, variables, errCount ? `error(${errCount})` : 200, ms, size);
     return resp;
   } catch (e) {
     const ms = Math.round(performance.now() - started);
@@ -127,8 +122,7 @@ export async function graphqlRequest<T>(
     if (degraded) {
       triggerGqlCooldown();
     }
-    logGraphqlMain(name, variables, degraded ? "network-error→TODO" : "error", ms);
-    logGraphqlError(name, e, degraded ? "network-error" : "http-error");
+    logGraphqlMain(name, variables, degraded ? "network-error" : "error", ms);
     return { errors: [{ message: String(e) }] };
   }
 }

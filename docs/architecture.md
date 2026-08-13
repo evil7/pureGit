@@ -153,15 +153,15 @@ flowchart TD
 
 ### 熔断日志（api-log.ts 统一工具）
 
-主请求与熔断降级链日志**视觉层级区分**（时间戳含毫秒 / 协议自动标注 / fallback `↪` 前空 2 格 / GraphQL vars + error 详情行）：
+主请求与熔断降级链日志**简洁无复杂缩进**（时间戳含毫秒 / 协议自动标注 / `[Fallback#n]` 降级触发 / `↪` 图标标记降级 REST）：
 
 ```
-YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | vars: {"aa":"bb","cc":11}  500  123KB  32ms   ← 主请求异常
-YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | error: {....}                             ← 报错详情（单独行）
-YYYY-MM-DD 12:23:34:123   ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms              ← fallback（每请求一行）
+YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | vars: {"aa":"bb","cc":11} error(1) 45B 32ms   ← 主请求（异常时状态打 error(n)/network-error）
+YYYY-MM-DD 12:23:34:125 [Fallback#3] fetchXxxSmart | error: Resource not found          ← 降级触发（#n = fallback 会话序号）
+YYYY-MM-DD 12:23:34:126 ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms                   ← fallback（每请求一行）
 ```
 
-实现：`web/src/lib/api-log.ts`（`logMainRequest`/`logGraphqlMain`/`logGraphqlError`/`beginFallback`/`inFallback`）；`withRestFallback`（api-core.ts）内部调 `beginFallback` 使降级链日志自动带 `↪`；日志仅 DEV 输出（测试 `setApiLogDev(true)` 开启）。
+实现：`web/src/lib/api-log.ts`（`logMainRequest`/`logGraphqlMain`/`logFallback`/`beginFallback`/`inFallback`）；`withRestFallback`（api-core.ts）内部调 `beginFallback` 取得降级会话序号并打 `[Fallback#n]`，降级链 REST 日志自动带 `↪` 图标；序号为值传递（同步递增），并发场景下仍能正确关联「哪次降级触发了哪些 REST」；日志仅 DEV 输出（测试 `setApiLogDev(true)` 开启）。
 
 ### 覆盖范围
 
@@ -199,7 +199,7 @@ YYYY-MM-DD 12:23:34:123   ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms       
 
 - `web/src/lib/octokit.ts`：**Octokit SDK 统一入口**——`@octokit/graphql`（`createGraphqlClient`）+ `@octokit/rest`（`createRestClient`，匿名直连与降级用）；**统一 limit 缓存**（响应头 `x-ratelimit-*` 写入全局 usage）+ 熔断（cooldown）+ 去重 + 响应缓存；`shouldUseGraphQL` 决策；**订阅机制**（`subscribeUsageChange`/`getApiUsage`/`hasApiUsageData`/`setApiUsage`）——footer 与偏好页实时刷新
 - `web/src/lib/api-core.ts`：**graphqlRequest（GraphQL 唯一主通道包装）+ withRestFallback（熔断降级链）**——GraphQL 失败日志（vars/error 行）+ 降级链 `↪` 标记
-- `web/src/lib/api-log.ts`：**熔断日志工具**——`logMainRequest`/`logGraphqlMain`/`logGraphqlError`/`beginFallback`/`inFallback`（层级缩进/fallback 标记/毫秒时间戳；DEV 输出，测试 `setApiLogDev`）
+- `web/src/lib/api-log.ts`：**熔断日志工具**——`logMainRequest`/`logGraphqlMain`/`logFallback`/`beginFallback`/`inFallback`（简洁格式/`[Fallback#n]` 序号/`↪` 图标/毫秒时间戳；DEV 输出，测试 `setApiLogDev`）
 - `web/src/lib/api.ts`：smart 封装层 barrel——**GraphQL 唯一主通道**；匿名短路 REST 数据层；GraphQL 失败 → `withRestFallback` 降级
 - `web/src/lib/graphql.ts`：**GraphQL 请求模板库（集中管理）**——查询/变更模板常量 + 路径参数变量组装；页面/组件只 import 模板名，不手拼查询
 - `web/src/lib/rest.ts`：REST 数据层（桶 + `rest-*.ts` 板块）——**匿名直连** + **熔断降级复用** + **保留 REST 路由**（fork/趋势/文件树/语言）；固定端点全部 `typedRequest` + `octokit.rest.*` 类型化方法

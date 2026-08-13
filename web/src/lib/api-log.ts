@@ -1,37 +1,40 @@
 /**
- * API 请求日志工具（熔断友好 · 层级缩进 + fallback 标记）
+ * API 请求日志工具（熔断友好 · 简洁格式 + fallback 序号关联）
  *
- * 设计目标：熔断切换时日志可一眼区分「主请求 / 熔断后请求」，视觉层级清晰。
+ * 设计目标：熔断切换时日志可一眼区分「主请求 / 降级触发 / 降级后的 REST 请求」。
+ * - 简洁无复杂缩进：主请求无图标、降级触发打 `[Fallback#n]`、降级 REST 前缀 `↪`
+ * - fallback 序号（#n）为**值传递**（进入降级链时同步递增），并发场景下仍能正确关联
+ *   「哪次 GraphQL 降级触发了哪些 REST 请求」——不依赖全局可变状态判断，天然并发安全
  *
  * 日志格式：
- *   YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | vars: {"aa":"bb"}  500  123KB  32ms
- *   YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | error: {...}
- *   YYYY-MM-DD 12:23:34:123   ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms
- *   YYYY-MM-DD 12:23:34:123   ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms
+ *   YYYY-MM-DD 12:23:34:123 [Graph] PullRequest | vars: {"aa":"bb"} error(1) 45B 32ms
+ *   YYYY-MM-DD 12:23:34:125 [Fallback#3] fetchPullsSmart | error: Resource not found
+ *   YYYY-MM-DD 12:23:34:126 ↪ [Rest] GET /repos/a/b/pulls 200 123KB 32ms
  *
  * 规则：
- * - 主请求（GraphQL 主通道 / 匿名 REST 直连）无缩进
- * - 熔断 fallback 请求（GraphQL 失败 → REST 降级链）前缀 `↪` 且前空 2 格
- * - 协议自动标注 [Graph] / [Rest]
- * - 时间戳含毫秒（性能对比）
- * - GraphQL 主请求错误时单独打 error 详情行（完整 error 对象）
+ * - 主请求（GraphQL 主通道 / 匿名 REST 直连）无图标
+ * - 降级触发打 `[Fallback#n]` 行（含 error 详情；n 为 fallback 会话序号，递增）
+ * - 降级后的 REST 请求前缀 `↪`（左右空格为图标间隔）
+ * - 协议自动标注 [Graph] / [Rest]；时间戳含毫秒（性能对比）
  */
 import type { ApiMode } from "./octokit";
 
-/** 熔断层级深度（主请求=0；每层 fallback 请求 +1）——支持嵌套降级链（GraphQL→REST→RAW 等） */
-let fallbackDepth = 0;
+/** fallback 会话序号（递增；值传递，并发安全） */
+let fallbackSeq = 0;
 
-/** 标记进入熔断降级链（GraphQL 失败即将走 REST 时调用，返回还原函数） */
-export function beginFallback(): () => void {
-  fallbackDepth++;
-  return () => {
-    if (fallbackDepth > 0) fallbackDepth--;
-  };
+/** 当前活动的 fallback 栈（压入/弹出保存旧值，正确处理嵌套降级链 GraphQL→REST→$raw） */
+const fallbackStack: number[] = [];
+
+/** 进入熔断降级链，返回 { id, end }——id 供 [Fallback#n] 关联，end 还原到进入前状态 */
+export function beginFallback(): { id: number; end: () => void } {
+  const id = ++fallbackSeq;
+  fallbackStack.push(id);
+  return { id, end: () => fallbackStack.pop() };
 }
 
-/** 当前是否处于熔断降级链中（true → 日志加 ↪ 前缀） */
+/** 当前是否处于熔断降级链中（true → REST 日志加 ↪ 图标） */
 export function inFallback(): boolean {
-  return fallbackDepth > 0;
+  return fallbackStack.length > 0;
 }
 
 /** 毫秒时间戳 → YYYY-MM-DD HH:mm:ss:SSS（当前时刻，含毫秒） */
@@ -44,12 +47,22 @@ function ts(): string {
   );
 }
 
+/** 字节 → 可读大小（<1KB 显示 B；≥1KB 显示 1 位小数 KB，strip 尾随 .0） */
 function fmtSize(bytes: number): string {
-  return bytes >= 1024 ? `${(bytes / 1024).toFixed(1)}KB` : `${bytes}B`;
+  if (bytes < 1024) return `${bytes}B`;
+  const kb = (bytes / 1024).toFixed(1);
+  return `${kb.endsWith(".0") ? kb.slice(0, -2) : kb}KB`;
 }
 
 /** 协议标签（GraphQL → [Graph] / REST → [Rest]） */
 const MODE_LABEL: Record<ApiMode, string> = { graphql: "Graph", rest: "Rest" };
+
+/** error 对象 → 可读详情（string / Error.message / JSON 兜底） */
+function errDetail(err: unknown): string {
+  if (typeof err === "string") return err;
+  if (err instanceof Error) return err.message;
+  return JSON.stringify(err) ?? String(err);
+}
 
 /** DEV 开关（默认取构建环境；测试可覆盖） */
 let devEnabled = import.meta.env.DEV;
@@ -64,7 +77,7 @@ function isDev(): boolean {
 }
 
 /**
- * 打印主请求日志（GraphQL 主通道 / 匿名 REST 直连）
+ * 主请求日志（GraphQL 主通道 / 匿名 REST 直连）；处于降级链中时自动加 ↪ 图标。
  */
 export function logMainRequest(
   mode: ApiMode,
@@ -74,14 +87,13 @@ export function logMainRequest(
   size?: number,
 ): void {
   if (!isDev()) return;
-  const indent = "  ".repeat(fallbackDepth);
   const sizeStr = size != null ? ` ${fmtSize(size)}` : "";
-  const prefix = inFallback() ? `${indent}↪ ` : "";
-  console.log(`${ts()} ${prefix}[${MODE_LABEL[mode]}] ${detail} ${status}${sizeStr} ${ms}ms`);
+  const icon = inFallback() ? "↪ " : "";
+  console.log(`${ts()} ${icon}[${MODE_LABEL[mode]}] ${detail}${sizeStr} ${status} ${ms}ms`);
 }
 
 /**
- * 打印 GraphQL 主请求日志（含 vars + 错误详情）
+ * GraphQL 主请求日志（含 vars 快照；status 为 HTTP 状态码或 error(n)/network-error 标记）。
  */
 export function logGraphqlMain(
   name: string,
@@ -91,8 +103,6 @@ export function logGraphqlMain(
   size?: number,
 ): void {
   if (!isDev()) return;
-  const indent = "  ".repeat(fallbackDepth);
-  const prefix = inFallback() ? `${indent}↪ ` : "";
   let vars = "";
   try {
     vars = ` | vars: ${JSON.stringify(variables)}`;
@@ -100,25 +110,15 @@ export function logGraphqlMain(
     /* ignore */
   }
   const sizeStr = size != null ? ` ${fmtSize(size)}` : "";
-  console.log(`${ts()} ${prefix}[Graph] ${name}${vars}${sizeStr} ${status} ${ms}ms`);
+  console.log(`${ts()} [Graph] ${name}${vars}${sizeStr} ${status} ${ms}ms`);
 }
 
 /**
- * 打印 GraphQL 错误详情行（单独一行，便于看完整 error 对象）
+ * 降级触发日志（[Fallback#n] + error 详情）——GraphQL 失败即将走 REST 时打；
+ * err 为空（如无具体错误）时省略 `| error:` 段。
  */
-export function logGraphqlError(
-  name: string,
-  err: unknown,
-  status: number | string = "error",
-): void {
+export function logFallback(name: string, err: unknown, id: number): void {
   if (!isDev()) return;
-  const indent = "  ".repeat(fallbackDepth);
-  const prefix = inFallback() ? `${indent}↪ ` : "";
-  const detail =
-    typeof err === "string"
-      ? err
-      : err instanceof Error
-        ? err.message
-        : (JSON.stringify(err) ?? String(err));
-  console.log(`${ts()} ${prefix}[Graph] ${name} | error: ${detail} (${status})`);
+  const errStr = err != null ? ` | error: ${errDetail(err)}` : "";
+  console.log(`${ts()} [Fallback#${id}] ${name}${errStr}`);
 }

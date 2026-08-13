@@ -23,20 +23,19 @@
 
 ## 熔断日志规范（api-log.ts 统一工具）
 
-**格式（视觉层级区分主请求 / 熔断降级链）**：
+**格式（简洁无复杂缩进；`↪` 左右空格为图标间隔）**：
 
 ```
-YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | vars: {"aa":"bb","cc":11}  500  123KB  32ms   ← 主请求异常
-YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | error: {....}                             ← 报错详情（单独行）
-YYYY-MM-DD 12:23:34:123   ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms              ← fallback 正常
-YYYY-MM-DD 12:23:34:123   ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms              ← fallback 正常（每请求一行）
+YYYY-MM-DD 12:23:34:123 [Graph] xxxQuery | vars: {"aa":"bb","cc":11} error(1) 45B 32ms   ← 主请求（异常时状态打 error(n)/network-error）
+YYYY-MM-DD 12:23:34:125 [Fallback#3] fetchXxxSmart | error: Resource not found          ← 降级触发（#n = fallback 会话序号）
+YYYY-MM-DD 12:23:34:126 ↪ [Rest] GET /repos/xxx/xxx  200  123KB  32ms                   ← fallback（每请求一行）
 ```
 
 - **时间戳**：`YYYY-MM-DD HH:mm:ss:SSS`（含毫秒，性能对比）
-- **协议标注**：`[Graph]` / `[Rest]` 自动判断（ApiMode）
-- **缩进层级**：主请求无缩进；fallback 请求 `↪` 前缀且前空 2 格（嵌套降级链深度递增）
-- **GraphQL 主请求**：含 `vars: {...}`（变量快照）；失败/网络错误追加 `error: {...}` 详情行
-- **熔断降级**：GraphQL 失败 → `beginFallback()` 使降级链 REST 日志自动带 `↪`（`withRestFallback` 内部处理）
+- **协议标注**：`[Graph]` / `[Rest]` 自动判断（ApiMode）；降级触发打 `[Fallback#n]`（error 详情）
+- **fallback 图标**：降级后的 REST 请求前缀 `↪`（左右空格为图标间隔），无复杂缩进
+- **fallback 序号**：`beginFallback()` 同步递增返回 `{ id, end }`——`#n` 为**值传递**，并发场景下仍能正确关联「哪次降级触发了哪些 REST」（不依赖全局可变状态判断）
+- **GraphQL 主请求**：含 `vars: {...}`（变量快照）；有 errors 时状态打 `error(n)`（HTTP 200 但业务错误），错误详情由降级时的 `[Fallback]` 行承担
 - 日志仅 DEV 输出（`isDev()`，测试可用 `setApiLogDev(true)` 开启）
 
 ## 实施路径
@@ -83,4 +82,4 @@ export async function fetchXxxSmart(owner: string, repo: string, token?: string 
 
 - 权威文档：`docs/architecture.md`「API 模式」章节、`docs/api-compat.md`（§1 分层 / §2 对照表 / §3 smart 模板 / §5 CheckList / §6 审计速查）
 - 代码载体：`web/src/lib/octokit.ts`（SDK 入口/额度/熔断）、`web/src/lib/api-core.ts`（graphqlRequest + withRestFallback）、`web/src/lib/api.ts`（smart barrel）、`web/src/lib/graphql.ts`（请求模板库）、`web/src/lib/api-log.ts`（熔断日志工具）、`web/src/lib/rest.ts` + `rest-*.ts`（REST 数据层：匿名直连 + 降级复用）
-- 日志验收：`web/test/api-log.spec.ts`（层级缩进/fallback 标记/时间戳毫秒/vars/error 行质量门）
+- 日志验收：`web/test/api-log.spec.ts`（简洁格式/`[Fallback#n]` 序号/`↪` 图标/时间戳毫秒/vars 快照质量门）
