@@ -57,9 +57,9 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import { useI18n, tStatic } from "@/i18n";
 import {
-  fetchMyIssues,
-  fetchMyPulls,
-  fetchMyGists,
+  fetchMyIssuesSmart,
+  fetchMyPullsSmart,
+  fetchMyGistsSmart,
   fetchNotifications,
   markAllNotificationsRead,
   markNotificationThreadRead,
@@ -164,8 +164,8 @@ export function UserIssuesPage() {
   const [error, setError] = useState<ApiError | null>(null);
   // 搜索（官方 token 化搜索框；简化：前端过滤已加载列表，支持 title/body/state/repo 关键词）
   const [q, setQ] = useState("");
-  // 加载更多：page 追加（REST 无总数，按「批次是否拉满」判断 hasMore）
-  const [page, setPage] = useState(1);
+  // 加载更多：游标续接（GraphQL pageInfo；REST 降级无游标按「批次是否拉满」判断）
+  const [endCursor, setEndCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
@@ -175,13 +175,14 @@ export function UserIssuesPage() {
     setItems(null);
     setError(null);
     setQ("");
-    setPage(1);
+    setEndCursor(null);
     setHasMore(true);
-    fetchMyIssues(token, current.filter, 50)
-      .then((list) => {
+    fetchMyIssuesSmart(token, current.filter)
+      .then((r) => {
         if (!cancelled) {
-          setItems(list);
-          setHasMore(list.length >= 50);
+          setItems(r.items);
+          setEndCursor(r.endCursor);
+          setHasMore(r.hasNextPage);
         }
       })
       .catch((e: unknown) => !cancelled && setError(normalizeApiError(e)));
@@ -195,13 +196,13 @@ export function UserIssuesPage() {
     if (!token || loadingMore) return;
     setLoadingMore(true);
     try {
-      const next = await fetchMyIssues(token, current.filter, 50, page + 1);
+      const next = await fetchMyIssuesSmart(token, current.filter, endCursor);
       setItems((prev) => {
         const seen = new Set((prev ?? []).map((i) => i.id));
-        return [...(prev ?? []), ...next.filter((i) => !seen.has(i.id))];
+        return [...(prev ?? []), ...next.items.filter((i) => !seen.has(i.id))];
       });
-      setPage((p) => p + 1);
-      setHasMore(next.length >= 50);
+      setEndCursor(next.endCursor);
+      setHasMore(next.hasNextPage);
     } catch {
       /* 失败保持原列表 */
     } finally {
@@ -353,7 +354,7 @@ export function UserPullsPage() {
   const current = PULL_NAV.find((x) => x.key === tab) ?? PULL_NAV[1];
   const [items, setItems] = useState<Issue[] | null>(null);
   const [error, setError] = useState<ApiError | null>(null);
-  // 加载更多：page 追加（REST 无总数，按「批次是否拉满」判断 hasMore）
+  // 加载更多：page 追加（GraphQL search 分页需游标 → page>1 走 REST；按「批次是否拉满」判断 hasMore）
   const [page, setPage] = useState(1);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
@@ -365,7 +366,7 @@ export function UserPullsPage() {
     setError(null);
     setPage(1);
     setHasMore(true);
-    fetchMyPulls(token, current.filter, 50)
+    fetchMyPullsSmart(token, current.filter)
       .then((list) => {
         if (!cancelled) {
           setItems(list);
@@ -383,7 +384,7 @@ export function UserPullsPage() {
     if (!token || loadingMore) return;
     setLoadingMore(true);
     try {
-      const next = await fetchMyPulls(token, current.filter, 50, page + 1);
+      const next = await fetchMyPullsSmart(token, current.filter, page + 1);
       setItems((prev) => {
         const seen = new Set((prev ?? []).map((i) => i.id));
         return [...(prev ?? []), ...next.filter((i) => !seen.has(i.id))];
@@ -703,8 +704,8 @@ export function GistsPage() {
   const [error, setError] = useState<ApiError | null>(null);
   // C7：Type 过滤（官方 All/Public/Secret）
   const [type, setType] = useState<"all" | "public" | "secret">("all");
-  // 加载更多：page 追加（REST 无总数，按「批次是否拉满」判断 hasMore）
-  const [page, setPage] = useState(1);
+  // 加载更多：游标续接（GraphQL pageInfo；REST 降级无游标按「批次是否拉满」判断）
+  const [endCursor, setEndCursor] = useState<string | null>(null);
   const [loadingMore, setLoadingMore] = useState(false);
   const [hasMore, setHasMore] = useState(true);
 
@@ -713,13 +714,14 @@ export function GistsPage() {
     let cancelled = false;
     setGists(null);
     setError(null);
-    setPage(1);
+    setEndCursor(null);
     setHasMore(true);
-    fetchMyGists(token, 50)
-      .then((list) => {
+    fetchMyGistsSmart(token)
+      .then((r) => {
         if (!cancelled) {
-          setGists(list);
-          setHasMore(list.length >= 50);
+          setGists(r.gists);
+          setEndCursor(r.endCursor);
+          setHasMore(r.hasNextPage);
         }
       })
       .catch((e: unknown) => !cancelled && setError(normalizeApiError(e)));
@@ -733,13 +735,13 @@ export function GistsPage() {
     if (!token || loadingMore) return;
     setLoadingMore(true);
     try {
-      const next = await fetchMyGists(token, 50, page + 1);
+      const next = await fetchMyGistsSmart(token, endCursor);
       setGists((prev) => {
         const seen = new Set((prev ?? []).map((g) => g.id));
-        return [...(prev ?? []), ...next.filter((g) => !seen.has(g.id))];
+        return [...(prev ?? []), ...next.gists.filter((g) => !seen.has(g.id))];
       });
-      setPage((p) => p + 1);
-      setHasMore(next.length >= 50);
+      setEndCursor(next.endCursor);
+      setHasMore(next.hasNextPage);
     } catch {
       /* 失败保持原列表 */
     } finally {

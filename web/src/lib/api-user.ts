@@ -9,6 +9,7 @@ import {
   VIEWER_QUERY,
   VIEWER_ORGS_QUERY,
   VIEWER_REPOS_QUERY,
+  MY_GISTS_QUERY,
   UPDATE_USER_MUTATION,
   CREATE_SSH_KEY_MUTATION,
   IS_FOLLOWING_QUERY,
@@ -27,8 +28,9 @@ import {
   fetchSSHKeys,
   addSSHKey,
   deleteSSHKey,
+  fetchMyGists,
 } from "./rest";
-import type { GitHubUser, Repository, SSHKey } from "./rest";
+import type { GitHubUser, Repository, SSHKey, Gist } from "./rest";
 import { toRepository } from "./api-repo";
 import type { GraphQLRepository } from "./api-repo";
 
@@ -233,6 +235,84 @@ export async function fetchMyReposSmart(
     return fromRest(resp);
   } catch {
     // 网络层错误 → 熔断降级 REST
+    return fromRest(undefined);
+  }
+}
+
+/** 游标分页 Gist 结果（GraphQL pageInfo 映射；REST 无游标 → endCursor=null/hasNextPage=false） */
+export interface PagedGists {
+  gists: Gist[];
+  endCursor: string | null;
+  hasNextPage: boolean;
+}
+
+/** 智能获取当前用户 Gist 列表（GraphQL viewer.gists 游标分页首选 + REST /gists 降级）。
+ * resourcePath 提取 REST gist id（列表跳转详情需 REST id；GraphQL node id 与 REST id 不同）。 */
+export async function fetchMyGistsSmart(
+  token: string,
+  cursor?: string | null,
+): Promise<PagedGists> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>): Promise<PagedGists> =>
+    withRestFallback(
+      async () => {
+        const gists = await fetchMyGists(token, 50, cursor ? 2 : 1);
+        return { gists, endCursor: null, hasNextPage: false };
+      },
+      "fetchMyGistsSmart",
+      gqlResp,
+    );
+  try {
+    const resp: GraphQLResponse<{
+      viewer: {
+        gists: {
+          nodes: {
+            resourcePath: string;
+            description: string | null;
+            isPublic: boolean;
+            createdAt: string;
+            updatedAt: string;
+            owner: { login: string; avatarUrl: string } | null;
+            comments: { totalCount: number };
+            files: { name: string; language: { name: string } | null; size: number | null }[];
+          }[];
+          pageInfo: { endCursor: string | null; hasNextPage: boolean };
+        };
+      };
+    }> = await graphqlRequest(MY_GISTS_QUERY, { after: cursor ?? null }, token);
+    const gists = resp.data?.viewer?.gists;
+    if (!hasGraphQLErrors(resp) && gists) {
+      return {
+        gists: gists.nodes.map((g) => ({
+          // REST gist id = resourcePath 末段（列表跳转详情页需 REST id）
+          id: g.resourcePath.split("/").pop() ?? g.resourcePath,
+          description: g.description,
+          html_url: `https://gist.github.com${g.resourcePath}`,
+          public: g.isPublic,
+          created_at: g.createdAt,
+          updated_at: g.updatedAt,
+          comments: g.comments?.totalCount ?? 0,
+          files: Object.fromEntries(
+            g.files.map((f) => [
+              f.name,
+              {
+                filename: f.name,
+                type: "text/plain",
+                language: f.language?.name ?? null,
+                size: f.size ?? 0,
+                raw_url: "",
+              },
+            ]),
+          ),
+          owner: g.owner
+            ? { login: g.owner.login, avatar_url: g.owner.avatarUrl ?? undefined }
+            : undefined,
+        })),
+        endCursor: gists.pageInfo?.endCursor ?? null,
+        hasNextPage: gists.pageInfo?.hasNextPage ?? false,
+      };
+    }
+    return fromRest(resp);
+  } catch {
     return fromRest(undefined);
   }
 }

@@ -31,9 +31,13 @@ vi.mock("@/lib/api-core", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/api-search", () => ({
-  searchIssuesSmart: vi.fn(),
-}));
+vi.mock("@/lib/api-search", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api-search")>();
+  return {
+    ...actual,
+    searchIssuesSmart: vi.fn(),
+  };
+});
 
 vi.mock("@/lib/rest", async (importOriginal) => {
   const actual = await importOriginal<typeof import("@/lib/rest")>();
@@ -50,6 +54,8 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     fetchPullRequestedReviewers: vi.fn(),
     updateIssueState: vi.fn(),
     updatePullRequestState: vi.fn(),
+    fetchMyIssues: vi.fn(),
+    fetchMyPulls: vi.fn(),
   };
 });
 
@@ -62,6 +68,8 @@ import {
   fetchPullDetailFullSmart,
   updateIssueStateSmart,
   updatePullRequestStateSmart,
+  fetchMyIssuesSmart,
+  fetchMyPullsSmart,
 } from "@/lib/api-issue";
 import { graphqlRequest } from "@/lib/api-core";
 import { searchIssuesSmart } from "@/lib/api-search";
@@ -77,6 +85,8 @@ import {
   fetchPullRequestedReviewers,
   updateIssueState,
   updatePullRequestState,
+  fetchMyIssues,
+  fetchMyPulls,
   type Issue,
   type PullRequest,
 } from "@/lib/rest";
@@ -94,6 +104,8 @@ const mockFetchPullReviews = vi.mocked(fetchPullReviews);
 const mockFetchPullRequestedReviewers = vi.mocked(fetchPullRequestedReviewers);
 const mockUpdateIssueState = vi.mocked(updateIssueState);
 const mockUpdatePullRequestState = vi.mocked(updatePullRequestState);
+const mockFetchMyIssues = vi.mocked(fetchMyIssues);
+const mockFetchMyPulls = vi.mocked(fetchMyPulls);
 
 /** GraphQL issue 节点夹具（GraphQLIssueNode 形状） */
 const gqlIssue = {
@@ -243,6 +255,8 @@ beforeEach(() => {
   mockFetchPullRequestedReviewers.mockResolvedValue([]);
   mockUpdateIssueState.mockResolvedValue(restIssue);
   mockUpdatePullRequestState.mockResolvedValue(restPull);
+  mockFetchMyIssues.mockResolvedValue([restIssue]);
+  mockFetchMyPulls.mockResolvedValue([restIssue]);
 });
 
 describe("fetchIssuesSmart（三级决策：REST 条件 / search / GraphQL 首选降级）", () => {
@@ -594,5 +608,94 @@ describe("updateIssueStateSmart（GraphQL close/reopen issue 主通道 + REST �
       .mockResolvedValueOnce({ errors: [{ message: "boom" }] } as never);
     await updateIssueStateSmart("evil7", "puregit", 42, "closed", "gho_x");
     expect(mockUpdateIssueState).toHaveBeenCalled();
+  });
+});
+
+describe("fetchMyIssuesSmart（用户级「我的 issues」：viewer.issues(filterBy) 首选 + REST 降级）", () => {
+  it("filter 映射 filterBy 变量（assigned→assignee:@me / recent→null）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        viewer: {
+          issues: {
+            nodes: [{ ...gqlIssue, databaseId: 42 }],
+            pageInfo: { endCursor: "cur_1", hasNextPage: true },
+          },
+        },
+      },
+    } as never);
+    const r = await fetchMyIssuesSmart("gho_x", "assigned");
+    expect(mockGraphql).toHaveBeenCalledWith(
+      expect.any(String),
+      { filterBy: { assignee: "@me" }, after: null },
+      "gho_x",
+    );
+    expect(r.items[0].id).toBe(42);
+    expect(r.endCursor).toBe("cur_1");
+    expect(r.hasNextPage).toBe(true);
+    await fetchMyIssuesSmart("gho_x", "recent");
+    expect(mockGraphql).toHaveBeenLastCalledWith(
+      expect.any(String),
+      { filterBy: null, after: null },
+      "gho_x",
+    );
+  });
+
+  it("GraphQL errors / 异常 → 降级 REST（无游标）", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
+    const r1 = await fetchMyIssuesSmart("gho_x");
+    expect(r1.items[0].id).toBe(1);
+    expect(r1.hasNextPage).toBe(false);
+    mockGraphql.mockRejectedValue(new Error("net"));
+    await fetchMyIssuesSmart("gho_x");
+    expect(mockFetchMyIssues).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("fetchMyPullsSmart（用户级「我的 PR」：search is:pr 首选 + REST 降级）", () => {
+  it("page>1 → 直 REST（GraphQL 不调用）", async () => {
+    await fetchMyPullsSmart("gho_x", "authored", 2);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchMyPulls).toHaveBeenCalledWith("gho_x", "authored", 50, 2);
+  });
+
+  it("GraphQL 成功 → 映射 PullRequest 节点（repository.full_name / pull_request 标记）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        search: {
+          nodes: [
+            {
+              databaseId: 77,
+              number: 9,
+              title: "a pr",
+              url: "https://github.com/evil7/puregit/pull/9",
+              state: "OPEN",
+              createdAt: "2026-07-01T00:00:00Z",
+              updatedAt: "2026-07-02T00:00:00Z",
+              closedAt: null,
+              comments: { totalCount: 2 },
+              repository: { nameWithOwner: "evil7/puregit" },
+            },
+          ],
+        },
+      },
+    } as never);
+    const items = await fetchMyPullsSmart("gho_x", "assigned");
+    expect(mockFetchMyPulls).not.toHaveBeenCalled();
+    expect(mockGraphql).toHaveBeenCalledWith(
+      expect.any(String),
+      { q: "is:pr assignee:@me", first: 50 },
+      "gho_x",
+    );
+    expect(items[0].id).toBe(77);
+    expect(items[0].repository?.full_name).toBe("evil7/puregit");
+    expect(items[0].pull_request).toEqual({});
+  });
+
+  it("GraphQL errors / 异常 → 降级 REST", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
+    await fetchMyPullsSmart("gho_x");
+    mockGraphql.mockRejectedValue(new Error("net"));
+    await fetchMyPullsSmart("gho_x");
+    expect(mockFetchMyPulls).toHaveBeenCalledTimes(2);
   });
 });

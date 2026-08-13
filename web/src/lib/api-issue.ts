@@ -38,6 +38,8 @@ import {
   REPO_LABELS_QUERY,
   REPO_ASSIGNEES_QUERY,
   REPO_MILESTONES_QUERY,
+  MY_ISSUES_QUERY,
+  SEARCH_PULLS_QUERY,
   PR_PROJECTS_QUERY,
   PR_DEVELOPMENT_QUERY,
   PR_TIMELINE_QUERY,
@@ -75,6 +77,8 @@ import {
   fetchReleases,
   fetchReleaseDetail,
   fetchLatestRelease,
+  fetchMyIssues,
+  fetchMyPulls,
 } from "./rest";
 import type {
   GitHubUser,
@@ -89,7 +93,7 @@ import type {
   RepoLabel,
   RepoMilestone,
 } from "./rest";
-import { searchIssuesSmart } from "./api-search";
+import { searchIssuesSmart, searchIssueId } from "./api-search";
 import { toRelease } from "./api-repo";
 import type { GraphQLReleaseNode } from "./api-repo";
 
@@ -240,6 +244,123 @@ function pullStates(state: "open" | "closed" | "all"): string[] {
   if (state === "open") return ["OPEN"];
   if (state === "closed") return ["CLOSED", "MERGED"];
   return ["OPEN", "CLOSED", "MERGED"];
+}
+
+/** 用户级「我的 issues」列表（/issues/{tab}）：GraphQL viewer.issues(filterBy) 首选 + REST 降级。
+ * filter 映射 REST /issues?filter=：assigned→assignee:@me / created→createdBy:@me / mentioned→mentioned:@me / recent→无（全部关联）。
+ * cursor 传续接游标（after）；首屏不传。返回 { items, endCursor, hasNextPage } 供「显示更多」续接。 */
+export async function fetchMyIssuesSmart(
+  token: string,
+  filter: "assigned" | "created" | "mentioned" | "recent" = "created",
+  cursor?: string | null,
+): Promise<{ items: Issue[]; endCursor: string | null; hasNextPage: boolean }> {
+  const filterBy =
+    filter === "assigned"
+      ? { assignee: "@me" }
+      : filter === "created"
+        ? { createdBy: "@me" }
+        : filter === "mentioned"
+          ? { mentioned: "@me" }
+          : null; // recent → 无 filterBy（全部关联）
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      async () => {
+        const items = await fetchMyIssues(token, filter, 50, cursor ? 2 : 1);
+        return { items, endCursor: null, hasNextPage: false };
+      },
+      "fetchMyIssuesSmart",
+      gqlResp,
+    );
+  try {
+    const resp: GraphQLResponse<{
+      viewer: {
+        issues: {
+          nodes: GraphQLIssueNode[];
+          pageInfo: { endCursor: string | null; hasNextPage: boolean };
+        };
+      };
+    }> = await graphqlRequest(MY_ISSUES_QUERY, { filterBy, after: cursor ?? null }, token);
+    const issues = resp.data?.viewer?.issues;
+    if (!hasGraphQLErrors(resp) && issues) {
+      return {
+        items: issues.nodes.map(toIssue),
+        endCursor: issues.pageInfo?.endCursor ?? null,
+        hasNextPage: issues.pageInfo?.hasNextPage ?? false,
+      };
+    }
+    return fromRest(resp);
+  } catch {
+    return fromRest(undefined);
+  }
+}
+
+/** 用户级「我的 PR」列表（/pulls/{nav}）：GraphQL search is:pr 首选 + REST 降级。
+ * filter 映射官方 qualifier：authored→author:@me / assigned→assignee:@me / involves→involves:@me / reviews→review-requested:@me / inbox→无。
+ * page>1 分页走 REST（GraphQL search 分页需游标，与 searchIssuesSmart 同模式）。 */
+export async function fetchMyPullsSmart(
+  token: string,
+  filter: "inbox" | "authored" | "assigned" | "involves" | "reviews" = "inbox",
+  page = 1,
+): Promise<Issue[]> {
+  if (page > 1) {
+    return fetchMyPulls(token, filter, 50, page);
+  }
+  const qualifier =
+    filter === "authored"
+      ? "author:@me"
+      : filter === "assigned"
+        ? "assignee:@me"
+        : filter === "involves"
+          ? "involves:@me"
+          : filter === "reviews"
+            ? "review-requested:@me"
+            : "";
+  const q = `is:pr${qualifier ? ` ${qualifier}` : ""}`;
+  try {
+    const resp: GraphQLResponse<{
+      search: {
+        nodes: {
+          databaseId?: number | null;
+          number: number;
+          title: string;
+          url: string;
+          state: string;
+          createdAt: string;
+          updatedAt: string;
+          closedAt: string | null;
+          comments: { totalCount: number };
+          repository: { nameWithOwner: string };
+        }[];
+      };
+    }> = await graphqlRequest(SEARCH_PULLS_QUERY, { q, first: 50 }, token);
+    if (!hasGraphQLErrors(resp) && resp.data?.search) {
+      return resp.data.search.nodes
+        .filter((n) => n && n.number != null)
+        .map((n) => ({
+          id: n.databaseId ?? searchIssueId(n.repository.nameWithOwner, n.number),
+          number: n.number,
+          title: n.title,
+          state: n.state.toLowerCase(),
+          html_url: n.url,
+          user: { login: "ghost" },
+          created_at: n.createdAt,
+          updated_at: n.updatedAt,
+          closed_at: n.closedAt ?? null,
+          comments: n.comments?.totalCount ?? 0,
+          body: null,
+          labels: [],
+          pull_request: {},
+          repository: { full_name: n.repository.nameWithOwner },
+        }));
+    }
+    return withRestFallback(() => fetchMyPulls(token, filter, 50, 1), "fetchMyPullsSmart", resp);
+  } catch {
+    return withRestFallback(
+      () => fetchMyPulls(token, filter, 50, 1),
+      "fetchMyPullsSmart",
+      undefined,
+    );
+  }
 }
 
 /**

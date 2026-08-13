@@ -45,6 +45,7 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     setFollowing: vi.fn(),
     addSSHKey: vi.fn(),
     deleteSSHKey: vi.fn(),
+    fetchMyGists: vi.fn(),
   };
 });
 
@@ -54,6 +55,7 @@ import {
   fetchUserOrgsSmart,
   fetchMyReposSmart,
   fetchSshKeysSmart,
+  fetchMyGistsSmart,
 } from "@/lib/api-user";
 import { graphqlRequest } from "@/lib/api-core";
 import {
@@ -62,6 +64,7 @@ import {
   fetchUserOrgs,
   fetchMyRepos,
   fetchSSHKeys,
+  fetchMyGists,
   type GitHubUser,
   type Repository,
 } from "@/lib/rest";
@@ -72,6 +75,7 @@ const mockFetchUserEmails = vi.mocked(fetchUserEmails);
 const mockFetchUserOrgs = vi.mocked(fetchUserOrgs);
 const mockFetchMyRepos = vi.mocked(fetchMyRepos);
 const mockFetchSSHKeys = vi.mocked(fetchSSHKeys);
+const mockFetchMyGists = vi.mocked(fetchMyGists);
 
 /** GraphQL viewer 节点夹具（ViewerProfile 映射源） */
 const gqlViewer = {
@@ -164,6 +168,26 @@ beforeEach(() => {
       verified: true,
       read_only: false,
       last_used: null,
+    },
+  ]);
+  mockFetchMyGists.mockResolvedValue([
+    {
+      id: "abc123",
+      description: "a gist",
+      html_url: "https://gist.github.com/alice/abc123",
+      public: false,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-02",
+      files: {
+        "a.ts": {
+          filename: "a.ts",
+          type: "text/plain",
+          language: "TypeScript",
+          size: 10,
+          raw_url: "",
+        },
+      },
+      owner: { login: "alice", avatar_url: "https://avatars/a.png" },
     },
   ]);
 });
@@ -322,5 +346,51 @@ describe("fetchSshKeysSmart（REST 唯一通道：GraphQL 无 databaseId，删�
     expect(mockGraphql).not.toHaveBeenCalled();
     expect(mockFetchSSHKeys).toHaveBeenCalledWith("gho_x");
     expect(keys[0].id).toBe(1);
+  });
+});
+
+describe("fetchMyGistsSmart（GraphQL viewer.gists 游标分页首选 + REST 降级）", () => {
+  it("GraphQL 成功 → 映射（resourcePath 提取 REST id / isPublic→public / files 转 Record）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        viewer: {
+          gists: {
+            nodes: [
+              {
+                resourcePath: "/alice/abc123",
+                description: "a gist",
+                isPublic: false,
+                createdAt: "2026-01-01T00:00:00Z",
+                updatedAt: "2026-01-02T00:00:00Z",
+                owner: { login: "alice", avatarUrl: "https://avatars/a.png" },
+                comments: { totalCount: 3 },
+                files: [{ name: "a.ts", language: { name: "TypeScript" }, size: 10 }],
+              },
+            ],
+            pageInfo: { endCursor: "cur_1", hasNextPage: true },
+          },
+        },
+      },
+    } as never);
+    const { gists, endCursor, hasNextPage } = await fetchMyGistsSmart("gho_x");
+    expect(mockFetchMyGists).not.toHaveBeenCalled();
+    expect(endCursor).toBe("cur_1");
+    expect(hasNextPage).toBe(true);
+    // REST gist id 从 resourcePath 末段提取（详情页 fetchGistDetail 需 REST id）
+    expect(gists[0].id).toBe("abc123");
+    expect(gists[0].public).toBe(false);
+    expect(gists[0].comments).toBe(3);
+    expect(Object.keys(gists[0].files)).toEqual(["a.ts"]);
+    expect(gists[0].files["a.ts"].language).toBe("TypeScript");
+  });
+
+  it("GraphQL errors / 异常 → 降级 REST（page 近似续接）", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
+    const r1 = await fetchMyGistsSmart("gho_x");
+    expect(r1.gists[0].id).toBe("abc123");
+    expect(r1.hasNextPage).toBe(false);
+    mockGraphql.mockRejectedValue(new Error("net"));
+    await fetchMyGistsSmart("gho_x");
+    expect(mockFetchMyGists).toHaveBeenCalledTimes(2);
   });
 });

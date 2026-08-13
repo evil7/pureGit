@@ -11,6 +11,7 @@ import {
   ORG_PROFILE_QUERY,
   USER_REPOS_QUERY,
   ORG_REPOS_QUERY,
+  ORG_REPOS_ALL_QUERY,
   UPDATE_ORG_MUTATION,
   ORG_MEMBERS_QUERY,
   STARRED_REPOS_QUERY,
@@ -28,6 +29,8 @@ import {
 } from "./rest";
 import type { Repository, OrgMember, OrgDetail } from "./rest";
 import type { PagedRepos } from "./api-user";
+import { toRepository } from "./api-repo";
+import type { GraphQLRepository } from "./api-repo";
 
 // ===== 用户/组织主页：GraphQL 首选 + REST 降级 =====
 
@@ -375,6 +378,32 @@ export async function fetchProfileReposSmart(
   }
   // 匿名强制 REST
   return fromRest(undefined);
+}
+
+/** 智能获取组织全部仓库（组织设置「仓库」列表）：GraphQL organization.repositories(first:100) 首选 + REST 降级。 */
+export async function fetchOrgReposSmart(
+  org: string,
+  token?: string | null,
+): Promise<Repository[]> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        organization: { repositories: { nodes: GraphQLRepository[] } } | null;
+      }> = await graphqlRequest(ORG_REPOS_ALL_QUERY, { login: org }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.organization) {
+        return resp.data.organization.repositories.nodes.map((g) => toRepository(g, org));
+      }
+      return withRestFallback(() => fetchOrgRepos(org, 100, token), "fetchOrgReposSmart", resp);
+    } catch {
+      return withRestFallback(
+        () => fetchOrgRepos(org, 100, token),
+        "fetchOrgReposSmart",
+        undefined,
+      );
+    }
+  }
+  // 匿名强制 REST
+  return fetchOrgRepos(org, 100, token);
 }
 
 /**

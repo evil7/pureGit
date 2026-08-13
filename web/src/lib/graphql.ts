@@ -606,6 +606,45 @@ export const USER_REPOS_QUERY = /* GraphQL */ `
   }
 `;
 
+/** 组织仓库全量（组织设置「仓库」列表：first:100 一次取全，含 diskUsage 大小） */
+export const ORG_REPOS_ALL_QUERY = /* GraphQL */ `
+  query OrgReposAll($login: String!) {
+    organization(login: $login) {
+      repositories(first: 100, orderBy: { field: PUSHED_AT, direction: DESC }) {
+        nodes {
+          databaseId
+          name
+          nameWithOwner
+          description
+          homepageUrl
+          url
+          stargazerCount
+          forkCount
+          primaryLanguage {
+            name
+          }
+          licenseInfo {
+            spdxId
+          }
+          updatedAt
+          defaultBranchRef {
+            name
+          }
+          isPrivate
+          isFork
+          parent {
+            nameWithOwner
+            defaultBranchRef {
+              name
+            }
+          }
+          diskUsage
+        }
+      }
+    }
+  }
+`;
+
 /** 组织仓库分页续接（主页 Repositories 翻页；after 游标续接） */
 export const ORG_REPOS_QUERY = /* GraphQL */ `
   query OrgRepos($login: String!, $after: String) {
@@ -1504,6 +1543,35 @@ export const SEARCH_ISSUES_QUERY = /* GraphQL */ `
   }
 `;
 
+/** 用户级 PR 列表（/pulls/{nav}）：search is:pr + qualifier。
+ * ⚠️ search type: ISSUE 搜 is:pr 返回 PullRequest 节点（PullRequest 非 Issue 子类型），
+ * 故须 `... on PullRequest` 内联片段（`... on Issue` 不匹配 PR，节点会变空对象）。 */
+export const SEARCH_PULLS_QUERY = /* GraphQL */ `
+  query SearchPulls($q: String!, $first: Int!) {
+    search(query: $q, type: ISSUE, first: $first) {
+      issueCount
+      nodes {
+        ... on PullRequest {
+          databaseId
+          number
+          title
+          url
+          state
+          createdAt
+          updatedAt
+          closedAt
+          comments {
+            totalCount
+          }
+          repository {
+            nameWithOwner
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** Insights Pulse 统计（一次 GraphQL 请求并行 6 个 issueCount，官方 Pulse Overview 卡语义）
  * 日期 qualifier（>=since）与 REST 语法一致；GraphQL 不可用/报错时 smart 层降级 REST /search 并行。 */
 export const PULSE_STATS_QUERY = /* GraphQL */ `
@@ -1584,6 +1652,84 @@ export const VIEWER_REPOS_QUERY = /* GraphQL */ `
           }
           isPrivate
           diskUsage
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+      }
+    }
+  }
+`;
+
+/** 当前用户的 issues 列表（/issues/{tab}：assigned/created/mentioned/recent）。
+ * filterBy 映射 REST /issues?filter=；recent 无对应 → 不传 filterBy（全部关联）。after 游标续接。 */
+export const MY_ISSUES_QUERY = /* GraphQL */ `
+  query MyIssues($filterBy: IssueFilters, $after: String) {
+    viewer {
+      issues(
+        first: 50
+        after: $after
+        filterBy: $filterBy
+        orderBy: { field: CREATED_AT, direction: DESC }
+      ) {
+        nodes {
+          databaseId
+          number
+          title
+          state
+          url
+          createdAt
+          updatedAt
+          closedAt
+          author {
+            login
+          }
+          comments {
+            totalCount
+          }
+          labels(first: 10) {
+            nodes {
+              name
+              color
+            }
+          }
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+      }
+    }
+  }
+`;
+
+/** 当前用户的 Gist 列表（/gists）：viewer.gists 按最近 push 排序，after 游标续接。
+ * resourcePath 提取 REST gist id（列表跳转详情需 REST id；GraphQL node id 与 REST id 不同）。 */
+export const MY_GISTS_QUERY = /* GraphQL */ `
+  query MyGists($after: String) {
+    viewer {
+      gists(first: 50, after: $after, orderBy: { field: PUSHED_AT, direction: DESC }) {
+        nodes {
+          resourcePath
+          description
+          isPublic
+          createdAt
+          updatedAt
+          owner {
+            login
+            avatarUrl
+          }
+          comments {
+            totalCount
+          }
+          files(limit: 100) {
+            name
+            language {
+              name
+            }
+            size
+          }
         }
         pageInfo {
           endCursor

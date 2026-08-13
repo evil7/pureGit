@@ -13,7 +13,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
-import { fetchOrgRepos, type Repository } from "@/lib/api";
+import { fetchOrgReposSmart, type Repository } from "@/lib/api";
 
 /** KB → 人类可读大小（与 RepositoriesSettings 同规则） */
 function formatSize(kb?: number): string | null {
@@ -35,7 +35,7 @@ export default function OrgReposSettings() {
     let cancelled = false;
     setRepos(null);
     setError(null);
-    fetchOrgRepos(org, 100, token)
+    fetchOrgReposSmart(org, token)
       .then((list) => !cancelled && setRepos(list))
       .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     return () => {

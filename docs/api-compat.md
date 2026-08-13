@@ -147,6 +147,11 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | **Insights Pulse** | | | | | |
 | `fetchPulseStatsSmart`（Pulse 统计卡：6 个 issueCount 一次 GraphQL） | ✅ | ✅ 降级（REST 并行 6 search） | — | — | ✅ |
 | `fetchTopCommittersSmart`（Top committers：GraphQL Commit.history 抽样 + 前端聚合计数） | ✅ | ✅ 降级（REST 分页 2 页） | — | — | ✅ |
+| **用户级列表（我的 issues / PR / Gists / 组织仓库）** | | | | | |
+| `fetchMyIssuesSmart`（我的 issues：viewer.issues(filterBy) 游标分页；assigned/created/mentioned → filterBy assignee/createdBy/mentioned=@me，recent → 无过滤） | ✅ | ✅ 降级 | — | — | ✅ |
+| `fetchMyPullsSmart`（我的 PR：search is:pr + qualifier；`... on PullRequest` 片段——PullRequest 非 Issue 子类型，`... on Issue` 不匹配；page>1 分页走 REST） | ✅ | ✅ 降级 | — | — | ✅ |
+| `fetchMyGistsSmart`（我的 Gists：viewer.gists 游标分页；resourcePath 提取 REST gist id——GraphQL node id ≠ REST id，详情页 fetchGistDetail 需 REST id） | ✅ | ✅ 降级 | — | — | ✅ |
+| `fetchOrgReposSmart`（组织仓库全量：organization.repositories(first:100) 含 diskUsage 大小） | ✅ | ✅ 降级 | — | — | ✅ |
 ### 2.2 保持 REST-only（⚠️ 有 GraphQL 但合理保留 / ✗ 无 GraphQL）—— 全部有据可查
 
 | API 名 | octokit_graphQL | octokit_rest | selfcode_fetch | worker_proxy | already_smart_now | 不可抗力理由（§4） |
