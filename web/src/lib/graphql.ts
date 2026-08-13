@@ -486,9 +486,9 @@ export const USER_PROFILE_QUERY = /* GraphQL */ `
 `;
 
 /** 组织主页（公开数据，GraphQL 首选）
- * 扩展：membersWithRole.totalCount（成员数，需认证）、
- * publicRepos（visibility:PUBLIC）、repositories.totalCount（权限内总数）。
- * 注：Organization 无公开 members 字段（仅 membersWithRole），匿名 GraphQL 跳过 → REST 降级无成员数。 */
+ * 扩展：publicRepos（visibility:PUBLIC）、repositories.totalCount（权限内总数）、viewerCanAdminister。
+ * 收敛：成员数据（membersWithRole）需 read:org 权限，对启用 OAuth App 访问限制的第三方组织
+ * 会 403 导致整查询降级 → 移出主查询，改由 People tab 独立请求（fetchOrgMembersSmart）按权限按需拉取。 */
 export const ORG_PROFILE_QUERY = /* GraphQL */ `
   query OrgProfile($login: String!) {
     organization(login: $login) {
@@ -499,9 +499,6 @@ export const ORG_PROFILE_QUERY = /* GraphQL */ `
       location
       websiteUrl
       publicRepos: repositories(visibility: PUBLIC) {
-        totalCount
-      }
-      membersWithRole {
         totalCount
       }
       viewerCanAdminister
@@ -2198,6 +2195,7 @@ export const ORG_MEMBERS_QUERY = /* GraphQL */ `
   query OrgMembers($login: String!) {
     organization(login: $login) {
       membersWithRole(first: 50) {
+        totalCount
         nodes {
           login
           avatarUrl

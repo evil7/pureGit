@@ -63,8 +63,6 @@ export interface ProfileData {
   pronouns: string | null;
   /** 加入的组织（仅用户页；REST 降级为空数组） */
   organizations: { avatarUrl: string | null; login: string }[];
-  /** 组织成员数（仅组织页 membersWithRole.totalCount；匿名/降级为 0） */
-  members: number;
   /** 用户页：viewer 是否已关注该用户（GraphQL viewerIsFollowing；REST 降级 null） */
   viewerIsFollowing: boolean | null;
   /** 组织页：viewer 是否可管理（GraphQL viewerCanAdminister；REST 降级 false） */
@@ -121,8 +119,6 @@ interface GraphQLProfile {
   starredRepositories?: { totalCount: number } | null;
   /** alias：visibility:PUBLIC 的公开仓库数 */
   publicRepos?: { totalCount: number } | null;
-  /** 组织成员数（仅 Organization 查询返回） */
-  membersWithRole?: { totalCount: number } | null;
   repositories: {
     totalCount?: number;
     nodes: GraphQLProfileRepo[];
@@ -183,7 +179,6 @@ function toProfileData(g: GraphQLProfile, publicRepos: number): ProfileData {
       avatarUrl: o.avatarUrl,
       login: o.login,
     })),
-    members: g.membersWithRole?.totalCount ?? 0,
     viewerIsFollowing: g.viewerIsFollowing ?? null,
     viewerCanAdminister: g.viewerCanAdminister ?? false,
     starCount: g.starredRepositories?.totalCount ?? null,
@@ -238,7 +233,6 @@ export async function fetchProfileSmart(
               status: null,
               pronouns: null,
               organizations: [],
-              members: 0,
               viewerIsFollowing: null,
               viewerCanAdminister: false,
               starCount: null,
@@ -270,7 +264,6 @@ export async function fetchProfileSmart(
             status: null,
             pronouns: null,
             organizations: [],
-            members: 0,
             viewerIsFollowing: null,
             viewerCanAdminister: false,
             starCount,
@@ -646,34 +639,63 @@ export async function updateOrganizationSmart(
 // 原则（见 docs/api-compat.md）：页面一律从本模块调用；GraphQL 首选 + REST 自动降级。
 // 不可抗力保持 REST-only 的 API（compare/updateRepository/GPG/block/notifications 等）见文档清单。
 
-/** 智能获取组织成员：GraphQL organization.membersWithRole 首选，失败降级 REST。 */
+/** 组织成员列表查询结果（含总数；totalCount 用于侧栏成员数展示，REST 降级以列表长度兜底） */
+export interface OrgMembersResult {
+  members: OrgMember[];
+  totalCount: number;
+}
+
+/** 智能获取组织成员：GraphQL organization.membersWithRole 首选，失败降级 REST。
+ * 收敛：成员数据需 read:org 权限，仅自己可管理的组织（viewerCanAdminister）才应调用；
+ * 受限/第三方组织会 403 → 降级 REST 也失败 → 由调用方静默置空，不阻塞公开主页。 */
 export async function fetchOrgMembersSmart(
   org: string,
   token?: string | null,
-): Promise<OrgMember[]> {
+): Promise<OrgMembersResult> {
   if (token) {
     try {
       const resp: GraphQLResponse<{
         organization: {
-          membersWithRole: { nodes: { login: string; avatarUrl: string; url: string }[] };
+          membersWithRole: {
+            totalCount: number;
+            nodes: { login: string; avatarUrl: string; url: string }[];
+          };
         } | null;
       }> = await graphqlRequest(ORG_MEMBERS_QUERY, { login: org }, token);
       if (!hasGraphQLErrors(resp) && resp.data?.organization) {
-        return resp.data.organization.membersWithRole.nodes.map((m) => ({
-          login: m.login,
-          avatar_url: m.avatarUrl,
-          html_url: m.url,
-        }));
+        return {
+          members: resp.data.organization.membersWithRole.nodes.map((m) => ({
+            login: m.login,
+            avatar_url: m.avatarUrl,
+            html_url: m.url,
+          })),
+          totalCount: resp.data.organization.membersWithRole.totalCount,
+        };
       }
       // GraphQL 失败 → 熔断降级 REST
-      return withRestFallback(() => fetchOrgMembers(org, token), "fetchOrgMembersSmart", resp);
+      return withRestFallback(
+        async () => {
+          const members = await fetchOrgMembers(org, token);
+          return { members, totalCount: members.length };
+        },
+        "fetchOrgMembersSmart",
+        resp,
+      );
     } catch {
       // 网络层错误 → 熔断降级 REST
-      return withRestFallback(() => fetchOrgMembers(org, token), "fetchOrgMembersSmart", undefined);
+      return withRestFallback(
+        async () => {
+          const members = await fetchOrgMembers(org, token);
+          return { members, totalCount: members.length };
+        },
+        "fetchOrgMembersSmart",
+        undefined,
+      );
     }
   }
   // 匿名强制 REST
-  return fetchOrgMembers(org, token);
+  const members = await fetchOrgMembers(org, token);
+  return { members, totalCount: members.length };
 }
 
 // ===== 组织成员角色 / 邀请 / 团队（增补） =====

@@ -16,6 +16,8 @@
  * API：GraphQL 首选 + REST 降级（见 api-org.ts）。
  * 权限差异（用户 4 问核实）：API 自动处置——user(login:)/organization(login:) 对他人只返回公开仓库，
  * 自查看含私有；repositories(visibility:PUBLIC) 恒为公开数，repositories.totalCount 为权限内总数。
+ * 成员收敛：org 成员数据（membersWithRole）需 read:org 权限，受限第三方组织会 403 拖垮主查询——
+ * 故主查询不取成员数，People tab 仅在 viewerCanAdminister（自己可管理）时显示并独立请求成员列表。
  * Achievements/Highlights 无公开 API（官方仅 SSR HTML），按用户确认省略。
  */
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -48,7 +50,7 @@ import {
   isFollowingSmart,
   setFollowingSmart,
   type ProfileData,
-  type OrgMember,
+  type OrgMembersResult,
 } from "@/lib/api";
 import { PAGE_SHELL } from "@/lib/layout";
 import PageLayout from "@/components/PageLayout";
@@ -85,7 +87,7 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
   const [tab, setTab] = useState<ProfileTab>("repositories");
   // Stars/People 懒加载（切换 tab 时拉取）
   const [stars, setStars] = useState<StarsData | null>(null);
-  const [people, setPeople] = useState<OrgMember[] | null>(null);
+  const [people, setPeople] = useState<OrgMembersResult | null>(null);
   // 页码分页：Repositories 用 GraphQL 游标链（page 1 = data.repos，page>1 = fetchProfileReposSmart 游标续接）
   const [repoPage, setRepoPage] = useState(1);
   const [pageRepos, setPageRepos] = useState<import("@/lib/api").Repository[] | null>(null);
@@ -137,14 +139,15 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
           </>
         ),
       });
-    } else {
+    } else if (data.viewerCanAdminister) {
+      // 收敛：仅自己可管理的组织才显示 People tab（成员数据需 read:org 权限，第三方组织不请求）
       common.push({
         value: "people",
         icon: Users,
         label: (
           <>
             {t("profile.tabPeople")}{" "}
-            {people && <span className="text-muted-foreground">{people.length}</span>}
+            {people && <span className="text-muted-foreground">{people.totalCount}</span>}
           </>
         ),
       });
@@ -187,10 +190,14 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
               .then((f) => !cancelled && setFollowingState(f))
               .catch(() => !cancelled && setFollowingState(false));
           }
-        } else {
+        } else if (res.data.viewerCanAdminister) {
+          // 收敛：仅自己可管理的组织才请求成员列表（第三方组织成员数据需 read:org，不发无谓请求）
           fetchOrgMembersSmart(login, token)
             .then((m) => !cancelled && setPeople(m))
-            .catch(() => !cancelled && setPeople([]));
+            .catch(() => !cancelled && setPeople({ members: [], totalCount: 0 }));
+        } else {
+          // 非自己管理组织：不请求成员数据，People tab 亦不显示
+          setPeople({ members: [], totalCount: 0 });
         }
       })
       .catch((e: unknown) => !cancelled && setError(normalizeApiError(e)));
@@ -297,6 +304,7 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
               kind={kind}
               canEdit={canEdit}
               privateRepos={privateRepos}
+              memberCount={people?.totalCount ?? 0}
               canFollow={canFollow}
               following={following}
               followBusy={followBusy}
@@ -420,13 +428,13 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
           </>
         )}
 
-        {/* People（组织页）：成员列表 */}
+        {/* People（组织页）：成员列表（仅自己可管理组织显示，见 tabOptions 收敛） */}
         {tab === "people" && (
           <>
             {people ? (
-              people.length > 0 ? (
+              people.members.length > 0 ? (
                 <div className="flex flex-col gap-0.5">
-                  {people.map((m) => (
+                  {people.members.map((m) => (
                     <Link
                       key={m.login}
                       to={`/${m.login}`}
@@ -468,6 +476,7 @@ function ProfileSidebar({
   kind,
   canEdit,
   privateRepos,
+  memberCount,
   canFollow,
   following,
   followBusy,
@@ -478,6 +487,7 @@ function ProfileSidebar({
   kind: "user" | "org";
   canEdit: boolean;
   privateRepos: number;
+  memberCount: number;
   canFollow: boolean;
   following: boolean | null;
   followBusy: boolean;
@@ -578,10 +588,10 @@ function ProfileSidebar({
               {t("profile.followingCount")}
             </span>
           </span>
-        ) : data.members > 0 ? (
+        ) : memberCount > 0 ? (
           <span className="flex items-center gap-1">
             <Users className="size-3.5" />
-            <span className="font-medium text-foreground">{data.members}</span>
+            <span className="font-medium text-foreground">{memberCount}</span>
             {t("profile.membersCount")}
           </span>
         ) : null}
