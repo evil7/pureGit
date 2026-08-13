@@ -60,6 +60,38 @@ export function hasGraphQLErrors<T>(resp: GraphQLResponse<T>): boolean {
 
 // ===== 常用 GraphQL 查询（按需取字段） =====
 
+/** 仓库统计（footer 本项目 star/fork 数；轻量查询，仅取计数） */
+export const REPO_STATS_QUERY = /* GraphQL */ `
+  query RepoStats($owner: String!, $name: String!) {
+    repository(owner: $owner, name: $name) {
+      stargazerCount
+      forkCount
+    }
+  }
+`;
+
+/** 仓库最新提交（文件列表顶部提交信息行）。
+ * 用 object(expression) 解析任意 git 表达式（branch/HEAD/tag/SHA），等价 REST listCommits(sha) 语义。 */
+export const LATEST_COMMIT_QUERY = /* GraphQL */ `
+  query LatestCommit($owner: String!, $name: String!, $expression: String!) {
+    repository(owner: $owner, name: $name) {
+      object(expression: $expression) {
+        ... on Commit {
+          oid
+          message
+          committedDate
+          author {
+            avatarUrl
+            user {
+              login
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** 仓库信息（按需字段，优于 REST 全量返回） */
 export const REPOSITORY_QUERY = /* GraphQL */ `
   query Repository($owner: String!, $name: String!) {
@@ -600,6 +632,7 @@ export const ISSUES_QUERY = /* GraphQL */ `
       }
       issues(first: $first, states: $states, orderBy: { field: CREATED_AT, direction: DESC }) {
         nodes {
+          databaseId
           number
           title
           state
@@ -640,6 +673,7 @@ export const ISSUE_DETAIL_QUERY = /* GraphQL */ `
   query IssueDetail($owner: String!, $name: String!, $number: Int!) {
     repository(owner: $owner, name: $name) {
       issue(number: $number) {
+        databaseId
         number
         title
         state
@@ -924,6 +958,7 @@ export const ISSUE_DETAIL_WITH_COMMENTS_QUERY = /* GraphQL */ `
   query IssueDetailWithComments($owner: String!, $name: String!, $number: Int!) {
     repository(owner: $owner, name: $name) {
       issue(number: $number) {
+        databaseId
         number
         title
         state
@@ -1444,23 +1479,30 @@ export const SEARCH_ISSUES_QUERY = /* GraphQL */ `
 /** Insights Pulse 统计（一次 GraphQL 请求并行 6 个 issueCount，官方 Pulse Overview 卡语义）
  * 日期 qualifier（>=since）与 REST 语法一致；GraphQL 不可用/报错时 smart 层降级 REST /search 并行。 */
 export const PULSE_STATS_QUERY = /* GraphQL */ `
-  query PulseStats($repo: String!, $since: String!) {
-    activePrs: search(query: "repo:$repo is:pr is:open", type: ISSUE) {
+  query PulseStats(
+    $activePrsQ: String!
+    $activeIssuesQ: String!
+    $mergedPrsQ: String!
+    $openPrsQ: String!
+    $closedIssuesQ: String!
+    $newIssuesQ: String!
+  ) {
+    activePrs: search(query: $activePrsQ, type: ISSUE) {
       issueCount
     }
-    activeIssues: search(query: "repo:$repo is:issue is:open", type: ISSUE) {
+    activeIssues: search(query: $activeIssuesQ, type: ISSUE) {
       issueCount
     }
-    mergedPrs: search(query: "repo:$repo is:pr is:merged merged:>=$since", type: ISSUE) {
+    mergedPrs: search(query: $mergedPrsQ, type: ISSUE) {
       issueCount
     }
-    openPrs: search(query: "repo:$repo is:pr is:open", type: ISSUE) {
+    openPrs: search(query: $openPrsQ, type: ISSUE) {
       issueCount
     }
-    closedIssues: search(query: "repo:$repo is:issue is:closed closed:>=$since", type: ISSUE) {
+    closedIssues: search(query: $closedIssuesQ, type: ISSUE) {
       issueCount
     }
-    newIssues: search(query: "repo:$repo is:issue created:>=$since", type: ISSUE) {
+    newIssues: search(query: $newIssuesQ, type: ISSUE) {
       issueCount
     }
   }

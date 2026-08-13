@@ -175,7 +175,10 @@ export function FileEditorPage() {
     if (!token || busy) return;
     const target = fullPath;
     if (!target || !target.trim() || !commitMessage.trim()) return;
-    const useNewBranch = commitMode === "pr" && newBranch.trim();
+    // 新建分支名：pr 模式且输入非空 → 分支名；否则 null（direct 模式/空输入）
+    // ⚠️ 不能是布尔 false（`false ?? branch` 会得 false——?? 只对 null/undefined 生效）
+    const useNewBranch: string | null =
+      commitMode === "pr" && newBranch.trim() ? newBranch.trim() : null;
     setBusy(true);
     setError(null);
     try {

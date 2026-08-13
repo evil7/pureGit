@@ -6,7 +6,7 @@
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
 import { SEARCH_REPOS_QUERY, SEARCH_USERS_QUERY, SEARCH_ISSUES_QUERY } from "./graphql";
-import { searchRepositories, searchUsers, searchIssues } from "./rest";
+import { searchRepositories, searchUsers, searchIssues, fetchTrendingRepositories } from "./rest";
 import type { GitHubUser, Repository, Issue, SearchResponse } from "./rest";
 // ===== 搜索：GraphQL search 首选 + REST /search 降级 =====
 
@@ -200,6 +200,41 @@ export function searchIssueId(fullName: string, number: number): number {
   let h = 0;
   for (let i = 0; i < fullName.length; i++) h = (h * 31 + fullName.charCodeAt(i)) | 0;
   return h ^ (number * 2654435761);
+}
+
+/** 智能获取趋势仓库（热点）：GraphQL search 首选（`created:>since sort:stars`）+ REST 降级。
+ * 趋势本身无官方 API，用 search 按 star 排序模拟（近 days 天创建）；登录态走 GraphQL，匿名/降级走 REST。 */
+export async function fetchTrendingRepositoriesSmart(
+  days = 30,
+  perPage = 20,
+  token?: string | null,
+): Promise<Repository[]> {
+  const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
+  const q = `created:>${since} sort:stars`;
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{ search: { nodes: GraphQLSearchRepo[] } }> =
+        await graphqlRequest(SEARCH_REPOS_QUERY, { q, first: perPage }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.search) {
+        return resp.data.search.nodes.map(toSearchRepo);
+      }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchTrendingRepositories(days, perPage, token),
+        "fetchTrendingRepositoriesSmart",
+        resp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => fetchTrendingRepositories(days, perPage, token),
+        "fetchTrendingRepositoriesSmart",
+        undefined,
+      );
+    }
+  }
+  // 匿名强制 REST
+  return fetchTrendingRepositories(days, perPage, token);
 }
 
 /** GraphQL 评论节点 → REST IssueComment */

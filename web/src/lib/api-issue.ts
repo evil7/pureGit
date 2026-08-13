@@ -94,6 +94,7 @@ import type { GraphQLReleaseNode } from "./api-repo";
 
 /** GraphQL issue 节点（列表与详情共用） */
 interface GraphQLIssueNode {
+  databaseId?: number | null;
   number: number;
   title: string;
   state: string;
@@ -110,10 +111,10 @@ interface GraphQLIssueNode {
   milestone?: { title: string } | null;
 }
 
-/** GraphQL issue 节点 → REST Issue */
+/** GraphQL issue 节点 → REST Issue（id 用 databaseId 保证列表 key 唯一） */
 function toIssue(g: GraphQLIssueNode): Issue {
   return {
-    id: -1,
+    id: g.databaseId ?? -1,
     number: g.number,
     title: g.title,
     state: g.state.toLowerCase(),

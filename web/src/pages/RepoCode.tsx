@@ -64,7 +64,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   fetchFileTree,
-  fetchLatestCommit,
   fetchFileCommit,
   fetchFileMeta,
   deleteFileContent,
@@ -78,6 +77,7 @@ import {
   fetchBranchesSmart,
   fetchReadmeSmart,
   fetchDirContentsSmart,
+  fetchLatestCommitSmart,
 } from "@/lib/api";
 import { parseTreePath } from "@/lib/repo-path";
 import { WORKER_BASE } from "@/lib/worker-base";
@@ -384,11 +384,11 @@ function LatestCommitLine({ branch }: { branch: string }) {
   const { owner = "", repo = "" } = useParams();
   const { token } = useAuth();
   const { fmt } = useDateFormat();
-  const [commit, setCommit] = useState<Awaited<ReturnType<typeof fetchLatestCommit>>>(null);
+  const [commit, setCommit] = useState<Awaited<ReturnType<typeof fetchLatestCommitSmart>>>(null);
 
   useEffect(() => {
     let cancelled = false;
-    fetchLatestCommit(owner, repo, branch, token).then((c) => !cancelled && setCommit(c));
+    fetchLatestCommitSmart(owner, repo, branch, token).then((c) => !cancelled && setCommit(c));
     return () => {
       cancelled = true;
     };

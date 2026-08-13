@@ -35,6 +35,18 @@ function sinceQualifier(since: string): string {
   return since.slice(0, 10);
 }
 
+/** Pulse 6 项统计的 search query 映射（GraphQL 变量与 REST 降级共用单一来源） */
+function pulseQueries(repoQ: string, sinceQ: string): Record<string, string> {
+  return {
+    activePrsQ: `repo:${repoQ} is:pr is:open`,
+    activeIssuesQ: `repo:${repoQ} is:issue is:open`,
+    mergedPrsQ: `repo:${repoQ} is:pr is:merged merged:>=${sinceQ}`,
+    openPrsQ: `repo:${repoQ} is:pr is:open`,
+    closedIssuesQ: `repo:${repoQ} is:issue is:closed closed:>=${sinceQ}`,
+    newIssuesQ: `repo:${repoQ} is:issue created:>=${sinceQ}`,
+  };
+}
+
 /** 智能获取 Pulse 统计：GraphQL 一次请求首选，失败降级 REST 并行 6 个 search。 */
 export async function fetchPulseStatsSmart(
   owner: string,
@@ -44,12 +56,13 @@ export async function fetchPulseStatsSmart(
 ): Promise<PulseStats> {
   const repoQ = `${owner}/${repo}`;
   const sinceQ = sinceQualifier(since);
+  const queries = pulseQueries(repoQ, sinceQ);
   // GraphQL 首选（一次请求，省额度）
   if (token) {
     try {
       const resp: GraphQLResponse<Record<string, { issueCount: number }>> = await graphqlRequest(
         PULSE_STATS_QUERY,
-        { repo: repoQ, since: sinceQ },
+        queries,
         token,
       );
       if (!hasGraphQLErrors(resp) && resp.data) {
@@ -87,14 +100,9 @@ async function restPulse(
   sinceQ: string,
   token?: string | null,
 ): Promise<PulseStats> {
-  const queries = [
-    ["activePrs", `repo:${repoQ} is:pr is:open`],
-    ["activeIssues", `repo:${repoQ} is:issue is:open`],
-    ["mergedPrs", `repo:${repoQ} is:pr is:merged merged:>=${sinceQ}`],
-    ["openPrs", `repo:${repoQ} is:pr is:open`],
-    ["closedIssues", `repo:${repoQ} is:issue is:closed closed:>=${sinceQ}`],
-    ["newIssues", `repo:${repoQ} is:issue created:>=${sinceQ}`],
-  ] as const;
+  const queries = Object.entries(pulseQueries(repoQ, sinceQ)).map(
+    ([key, q]) => [key.replace(/Q$/, ""), q] as const,
+  );
   const results = await Promise.all(
     queries.map(async ([key, q]) => {
       try {

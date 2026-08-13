@@ -17,7 +17,8 @@ import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/format";
 import { Tip } from "@/components/Tip";
-import { fetchRateLimit, fetchPublicRepoStats, type RepoStats } from "@/lib/rest";
+import { fetchRateLimit, type RepoStats } from "@/lib/rest";
+import { fetchPublicRepoStatsSmart } from "@/lib/api";
 import {
   getApiUsage,
   hasApiUsageData,
@@ -91,7 +92,7 @@ export default function AppFooter() {
   useEffect(() => {
     if (loading) return;
     let cancelled = false;
-    fetchPublicRepoStats(PROJECT_REPO.owner, PROJECT_REPO.name, token)
+    fetchPublicRepoStatsSmart(PROJECT_REPO.owner, PROJECT_REPO.name, token)
       .then((s) => !cancelled && setStats(s))
       .catch(() => undefined);
     return () => {

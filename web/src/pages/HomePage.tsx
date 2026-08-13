@@ -45,7 +45,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useDateFormat, formatDate } from "@/hooks/useDateFormat";
 import {
-  fetchTrendingRepositories,
+  fetchTrendingRepositoriesSmart,
   fetchReceivedEvents,
   fetchMyReposSmart,
   fetchRepositorySmart,
@@ -789,7 +789,7 @@ function TrendingSection({ days }: { days: number }) {
     setError(null);
     setPage(1);
     // 拉取更多（100 条）供本地分页，每页 10
-    fetchTrendingRepositories(days, 100, token)
+    fetchTrendingRepositoriesSmart(days, 100, token)
       .then((items) => {
         if (!cancelled) setRepos(items);
       })

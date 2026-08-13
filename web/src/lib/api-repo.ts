@@ -8,6 +8,8 @@ import type { GraphQLResponse } from "./api-core";
 import { logWarn } from "./api-log";
 import {
   REPOSITORY_QUERY,
+  REPO_STATS_QUERY,
+  LATEST_COMMIT_QUERY,
   REPO_WITH_RELEASES_QUERY,
   CREATE_REPOSITORY_MUTATION,
   UPDATE_REPOSITORY_MUTATION,
@@ -54,6 +56,8 @@ import {
   fetchDirContents,
   fetchReadme,
   fetchRootFiles,
+  fetchPublicRepoStats,
+  fetchLatestCommit,
 } from "./rest";
 import { FILE_RAW_QUERY, FILE_EDIT_QUERY, TREE_ENTRIES_QUERY, repoRawBase } from "./repo-raw";
 import { fetchRawContentSmart } from "./raw-proxy";
@@ -64,9 +68,87 @@ import type {
   ReadmeInfo,
   Release,
   DirEntry,
+  RepoStats,
 } from "./rest";
 
 // ===== 仓库创建/管理 + 文件写操作 =====
+
+/** 智能获取公开仓库 star/fork 计数（footer 本项目统计）：GraphQL 首选（轻量）+ REST 降级（匿名/失败）。 */ export async function fetchPublicRepoStatsSmart(
+  owner: string,
+  name: string,
+  token?: string | null,
+): Promise<RepoStats> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: { stargazerCount: number; forkCount: number } | null;
+      }> = await graphqlRequest(REPO_STATS_QUERY, { owner, name }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        return {
+          stargazers_count: resp.data.repository.stargazerCount,
+          forks_count: resp.data.repository.forkCount,
+        };
+      }
+      return withRestFallback(
+        () => fetchPublicRepoStats(owner, name, token),
+        "fetchPublicRepoStatsSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchPublicRepoStats(owner, name, token),
+        "fetchPublicRepoStatsSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchPublicRepoStats(owner, name, token);
+}
+
+/** 智能获取仓库最新提交（文件列表顶部信息行）：GraphQL object(expression) 首选 + REST 降级（匿名/失败）。 */
+export async function fetchLatestCommitSmart(
+  owner: string,
+  name: string,
+  branch = "HEAD",
+  token?: string | null,
+): Promise<Awaited<ReturnType<typeof fetchLatestCommit>>> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          object: {
+            oid: string;
+            message: string;
+            committedDate: string;
+            author: { avatarUrl: string; user: { login: string } | null } | null;
+          } | null;
+        } | null;
+      }> = await graphqlRequest(LATEST_COMMIT_QUERY, { owner, name, expression: branch }, token);
+      const c = resp.data?.repository?.object;
+      if (!hasGraphQLErrors(resp) && c) {
+        return {
+          sha: c.oid,
+          commit: { message: c.message, committer: { date: c.committedDate } },
+          author: c.author?.user
+            ? { login: c.author.user.login, avatar_url: c.author.avatarUrl }
+            : null,
+        };
+      }
+      return withRestFallback(
+        () => fetchLatestCommit(owner, name, branch, token),
+        "fetchLatestCommitSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchLatestCommit(owner, name, branch, token),
+        "fetchLatestCommitSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchLatestCommit(owner, name, branch, token);
+}
 
 /**
  * 智能创建仓库：个人 GraphQL createRepository 首选 + REST 降级；
