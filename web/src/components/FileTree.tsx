@@ -9,7 +9,7 @@ import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { TreeNode } from "@/lib/file-tree";
+import type { TreeNode } from "@/lib/repo/file-tree";
 
 /** 按关键词过滤树（路径包含匹配），保留匹配节点及其祖先 */
 function filterTree(node: TreeNode, q: string): TreeNode | null {

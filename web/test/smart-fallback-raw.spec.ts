@@ -24,20 +24,20 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/api-core", () => ({
+vi.mock("@/lib/api/api-core", () => ({
   graphqlRequest: vi.fn(),
   hasGraphQLErrors: (resp: { errors?: unknown[] } | undefined) => Boolean(resp?.errors?.length),
 }));
 
-vi.mock("@/lib/rest", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rest")>();
+vi.mock("@/lib/restapi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/restapi")>();
   return {
     ...actual,
     fetchFileContent: vi.fn(),
   };
 });
 
-vi.mock("@/lib/raw-proxy", () => ({
+vi.mock("@/lib/repo/raw-proxy", () => ({
   RAW_MAX_BYTES: 100 * 1024 * 1024,
   rawUrlToProxy: vi.fn((url: string) => url),
   buildRawDirectUrl: vi.fn(
@@ -50,10 +50,10 @@ vi.mock("@/lib/raw-proxy", () => ({
   fetchRawContentSmart: vi.fn(),
 }));
 
-import { fetchFileContentSmart, API_REST_MAX_BYTES, API_GQL_MAX_BYTES } from "@/lib/api-repo";
-import { graphqlRequest } from "@/lib/api-core";
-import { fetchFileContent } from "@/lib/rest";
-import { fetchRawContentSmart } from "@/lib/raw-proxy";
+import { fetchFileContentSmart, API_REST_MAX_BYTES, API_GQL_MAX_BYTES } from "@/lib/api/api-file";
+import { graphqlRequest } from "@/lib/api/api-core";
+import { fetchFileContent } from "@/lib/restapi";
+import { fetchRawContentSmart } from "@/lib/repo/raw-proxy";
 
 const mockGraphql = vi.mocked(graphqlRequest);
 const mockFetchFileContent = vi.mocked(fetchFileContent);
@@ -175,8 +175,8 @@ describe("raw-proxy URL 构造纯函数（经真实模块验证）", () => {
   // （vi.resetModules + 直接静态导入 raw-proxy 会冲突——改用独立 describe + 动态 import）
   it("rawUrlToProxy / buildRawDirectUrl / buildRawProxyUrl 正确编码", async () => {
     vi.resetModules();
-    vi.doUnmock("@/lib/raw-proxy");
-    const raw = await import("@/lib/raw-proxy");
+    vi.doUnmock("@/lib/repo/raw-proxy");
+    const raw = await import("@/lib/repo/raw-proxy");
     // 直接 URL 构造
     expect(raw.buildRawDirectUrl("o r", "re po", "feat/x", "a/b.ts")).toBe(
       "https://raw.githubusercontent.com/o%20r/re%20po/feat%2Fx/a/b.ts",
@@ -196,8 +196,8 @@ describe("raw-proxy URL 构造纯函数（经真实模块验证）", () => {
 describe("raw-proxy fetchRawContentSmart（真实模块 + global fetch mock）", () => {
   it("直连成功 → 返回文本（不转代理）", async () => {
     vi.resetModules();
-    vi.doUnmock("@/lib/raw-proxy");
-    const raw = await import("@/lib/raw-proxy");
+    vi.doUnmock("@/lib/repo/raw-proxy");
+    const raw = await import("@/lib/repo/raw-proxy");
     const fetchMock = vi.fn(async () => mockRes(true, "direct text"));
     vi.stubGlobal("fetch", fetchMock);
     const c = await raw.fetchRawContentSmart("o", "r", "main", "a.ts");
@@ -208,8 +208,8 @@ describe("raw-proxy fetchRawContentSmart（真实模块 + global fetch mock）",
 
   it("直连失败（网络错误）→ 转 $raw 代理成功", async () => {
     vi.resetModules();
-    vi.doUnmock("@/lib/raw-proxy");
-    const raw = await import("@/lib/raw-proxy");
+    vi.doUnmock("@/lib/repo/raw-proxy");
+    const raw = await import("@/lib/repo/raw-proxy");
     const fetchMock = vi
       .fn()
       .mockRejectedValueOnce(new TypeError("Failed to fetch"))
@@ -223,8 +223,8 @@ describe("raw-proxy fetchRawContentSmart（真实模块 + global fetch mock）",
 
   it("directFirst=false → 跳过直连直接代理", async () => {
     vi.resetModules();
-    vi.doUnmock("@/lib/raw-proxy");
-    const raw = await import("@/lib/raw-proxy");
+    vi.doUnmock("@/lib/repo/raw-proxy");
+    const raw = await import("@/lib/repo/raw-proxy");
     const fetchMock = vi.fn(async () => mockRes(true, "proxy text"));
     vi.stubGlobal("fetch", fetchMock);
     const c = await raw.fetchRawContentSmart("o", "r", "main", "a.ts", false);
@@ -235,8 +235,8 @@ describe("raw-proxy fetchRawContentSmart（真实模块 + global fetch mock）",
 
   it("allowProxy=false 且直连失败 → 返回 null（仅直连）", async () => {
     vi.resetModules();
-    vi.doUnmock("@/lib/raw-proxy");
-    const raw = await import("@/lib/raw-proxy");
+    vi.doUnmock("@/lib/repo/raw-proxy");
+    const raw = await import("@/lib/repo/raw-proxy");
     const fetchMock = vi.fn().mockRejectedValue(new TypeError("blocked"));
     vi.stubGlobal("fetch", fetchMock);
     const c = await raw.fetchRawContentSmart("o", "r", "main", "a.ts", true, false);
@@ -247,8 +247,8 @@ describe("raw-proxy fetchRawContentSmart（真实模块 + global fetch mock）",
 
   it("代理 404 / 超限 → null", async () => {
     vi.resetModules();
-    vi.doUnmock("@/lib/raw-proxy");
-    const raw = await import("@/lib/raw-proxy");
+    vi.doUnmock("@/lib/repo/raw-proxy");
+    const raw = await import("@/lib/repo/raw-proxy");
     const fetchMock = vi.fn().mockResolvedValue(mockRes(false, ""));
     vi.stubGlobal("fetch", fetchMock);
     expect(await raw.fetchRawContentSmart("o", "r", "main", "missing")).toBeNull();

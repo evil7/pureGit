@@ -18,8 +18,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/api-core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api-core")>();
+vi.mock("@/lib/api/api-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/api-core")>();
   return {
     ...actual,
     graphqlRequest: vi.fn(),
@@ -27,12 +27,12 @@ vi.mock("@/lib/api-core", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/raw-proxy", () => ({
+vi.mock("@/lib/repo/raw-proxy", () => ({
   fetchRawContentSmart: vi.fn(),
 }));
 
-vi.mock("@/lib/rest", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rest")>();
+vi.mock("@/lib/restapi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/restapi")>();
   return {
     ...actual,
     fetchCurrentUser: vi.fn(),
@@ -56,8 +56,8 @@ import {
   fetchMyReposSmart,
   fetchSshKeysSmart,
   fetchMyGistsSmart,
-} from "@/lib/api-user";
-import { graphqlRequest } from "@/lib/api-core";
+} from "@/lib/api/api-user";
+import { graphqlRequest } from "@/lib/api/api-core";
 import {
   fetchCurrentUser,
   fetchUserEmails,
@@ -67,7 +67,7 @@ import {
   fetchMyGists,
   type GitHubUser,
   type Repository,
-} from "@/lib/rest";
+} from "@/lib/restapi";
 
 const mockGraphql = vi.mocked(graphqlRequest);
 const mockFetchCurrentUser = vi.mocked(fetchCurrentUser);

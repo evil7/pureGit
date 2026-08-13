@@ -9,7 +9,7 @@ import { useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { AlertTriangle, ShieldCheck } from "lucide-react";
-import { describeScopes } from "@/lib/scopes";
+import { describeScopes } from "@/lib/auth/scopes";
 import { Button } from "@/components/ui/button";
 
 export default function ScopeWarningBanner() {

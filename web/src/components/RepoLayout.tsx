@@ -17,11 +17,11 @@ import {
   fetchSecurityAdvisoriesCount,
   normalizeApiError,
   type ApiError,
-} from "@/lib/rest";
+} from "@/lib/restapi";
 import { fetchRepoHomeSmart, fetchRootFilesSmart, type Repository } from "@/lib/api";
-import type { Release } from "@/lib/rest";
-import { RepoDataContext } from "@/lib/repo-context";
-import { PAGE_SHELL } from "@/lib/layout";
+import type { Release } from "@/lib/restapi";
+import { RepoDataContext } from "@/lib/repo/repo-context";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 import PageLayout from "@/components/PageLayout";
 import { Skeleton } from "@/components/ui/skeleton";
 

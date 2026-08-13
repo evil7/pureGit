@@ -34,11 +34,11 @@ import {
   fetchRepositoryIdSmart,
   categorySlug,
 } from "@/lib/api";
-import { apiErrorMessage, normalizeApiError, ApiError } from "@/lib/rest";
-import { parseSearchSyntax } from "@/lib/search-syntax";
+import { apiErrorMessage, normalizeApiError, ApiError } from "@/lib/restapi";
+import { parseSearchSyntax } from "@/lib/api/search-syntax";
 import { get as emojiGet } from "node-emoji";
 import { MarkdownView } from "@/components/MarkdownView";
-import { repoRawBase } from "@/lib/repo-raw";
+import { repoRawBase } from "@/lib/repo/repo-raw";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { UserAvatar } from "@/components/UserAvatar";
 import { LoginPrompt } from "@/components/LoginPrompt";
@@ -51,7 +51,7 @@ import type {
   DiscussionDetail,
   DiscussionComment,
   DiscussionsData,
-} from "@/lib/rest";
+} from "@/lib/restapi";
 
 /** :emoji: → unicode（GraphQL category.emoji 返回 shortcode） */
 const emoji = (code: string) => emojiGet(code) ?? code;

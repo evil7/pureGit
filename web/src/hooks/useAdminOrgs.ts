@@ -9,7 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useAuth } from "@/hooks/useAuth";
 import { fetchUserOrgsSmart, fetchViewerSmart } from "@/lib/api";
-import { fetchOrgMemberships } from "@/lib/rest";
+import { fetchOrgMemberships } from "@/lib/restapi";
 import type { SwitcherEntity } from "@/components/AccountSwitcher";
 
 /** 个人账户 + admin 组织 → 切换实体列表（个人在前，组织按序） */

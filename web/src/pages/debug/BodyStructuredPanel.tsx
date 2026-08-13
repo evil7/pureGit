@@ -16,8 +16,8 @@ import {
   jsonToStructuredRows,
   structuredRowToJson,
   type StructuredRow,
-} from "@/lib/debug-gql-structured";
-import { openApiSchemaToStructured } from "@/lib/debug-rest-structured";
+} from "@/lib/debug/debug-gql-structured";
+import { openApiSchemaToStructured } from "@/lib/debug/debug-rest-structured";
 import { StructuredTable } from "./StructuredTable";
 
 interface BodyStructuredPanelProps {

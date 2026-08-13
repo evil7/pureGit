@@ -20,11 +20,11 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/Logo";
 import { NotFoundSceneLayout } from "@/components/NotFoundScene";
-import { triggerLoginSpotlight } from "@/lib/login-spotlight";
+import { triggerLoginSpotlight } from "@/lib/auth/login-spotlight";
 import { useI18n } from "@/i18n";
-import { ApiError, normalizeApiError } from "@/lib/rest";
-import { getPrefsToken } from "@/lib/prefs-sync";
-import { PAGE_SHELL } from "@/lib/layout";
+import { ApiError, normalizeApiError } from "@/lib/restapi";
+import { getPrefsToken } from "@/lib/auth/prefs-sync";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 
 /** 统一外壳：居中内容 + PAGE_SHELL（顶部间距；禁止 py-*）。
  * min-h 扣除 Nav/Footer chrome（约 7rem）→ 内容在可视区域内真正居中（修复：原 60svh 偏上）。 */

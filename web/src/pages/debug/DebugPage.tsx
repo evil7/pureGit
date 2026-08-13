@@ -19,17 +19,22 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import { useAuth } from "@/hooks/useAuth";
-import { EMPTY_REQUEST, executeDebug } from "@/lib/debug-api";
-import type { DebugProtocol, DebugRequest, DebugResult, HeaderRow } from "@/lib/debug-api";
-import { loadHistory, addHistoryItem, clearHistory, type HistoryItem } from "@/lib/debug-store";
+import { EMPTY_REQUEST, executeDebug } from "@/lib/debug/debug-api";
+import type { DebugProtocol, DebugRequest, DebugResult, HeaderRow } from "@/lib/debug/debug-api";
+import {
+  loadHistory,
+  addHistoryItem,
+  clearHistory,
+  type HistoryItem,
+} from "@/lib/debug/debug-store";
 import {
   endpointToRequest,
   matchEndpoint,
   endpointStillMatches,
   type OpenApiEndpoint,
-} from "@/lib/debug-openapi";
-import { syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
-import { buildGqlSchemaContext, fetchGqlSchemaIntrospection } from "@/lib/debug-graphql";
+} from "@/lib/debug/debug-openapi";
+import { syncParamsFromUrl, type DocParams } from "@/lib/debug/debug-params";
+import { buildGqlSchemaContext, fetchGqlSchemaIntrospection } from "@/lib/debug/debug-graphql";
 import { cn } from "@/lib/utils";
 import {
   loadGqlSchema,

@@ -11,21 +11,11 @@ import {
 // 路由级懒加载（堵点修复 3：首屏只加载首页与导航，页面按需加载）
 const HomePage = lazy(() => import("@/pages/HomePage"));
 const SearchPage = lazy(() => import("@/pages/SearchPage"));
-const UserIssuesPage = lazy(() =>
-  import("@/pages/UserNavPages").then((m) => ({ default: m.UserIssuesPage })),
-);
-const UserPullsPage = lazy(() =>
-  import("@/pages/UserNavPages").then((m) => ({ default: m.UserPullsPage })),
-);
-const ReposNavPage = lazy(() =>
-  import("@/pages/UserNavPages").then((m) => ({ default: m.ReposNavPage })),
-);
-const GistsPage = lazy(() =>
-  import("@/pages/UserNavPages").then((m) => ({ default: m.GistsPage })),
-);
-const NotificationsPage = lazy(() =>
-  import("@/pages/UserNavPages").then((m) => ({ default: m.NotificationsPage })),
-);
+const UserIssuesPage = lazy(() => import("@/pages/user/UserIssuesPage"));
+const UserPullsPage = lazy(() => import("@/pages/user/UserPullsPage"));
+const ReposNavPage = lazy(() => import("@/pages/user/ReposNavPage"));
+const GistsPage = lazy(() => import("@/pages/user/GistsPage"));
+const NotificationsPage = lazy(() => import("@/pages/user/NotificationsPage"));
 const GistDetailPage = lazy(() =>
   import("@/pages/GistPages").then((m) => ({ default: m.GistDetailPage })),
 );
@@ -37,9 +27,9 @@ const NewGistPage = lazy(() =>
 );
 const RepoLayout = lazy(() => import("@/components/RepoLayout"));
 const RepoCode = lazy(() => import("@/pages/RepoCode"));
-const CodeIndex = lazy(() => import("@/pages/RepoCode").then((m) => ({ default: m.CodeIndex })));
-const TreePage = lazy(() => import("@/pages/RepoCode").then((m) => ({ default: m.TreePage })));
-const BlobPage = lazy(() => import("@/pages/RepoCode").then((m) => ({ default: m.BlobPage })));
+const CodeIndex = lazy(() => import("@/pages/CodeIndex"));
+const TreePage = lazy(() => import("@/pages/TreePage"));
+const BlobPage = lazy(() => import("@/pages/BlobPage"));
 const FileEditorPage = lazy(() =>
   import("@/components/FileEditorPage").then((m) => ({ default: m.FileEditorPage })),
 );
@@ -48,9 +38,7 @@ const IssueDetailPage = lazy(() =>
   import("@/pages/IssueDetailPage").then((m) => ({ default: m.IssueDetailPage })),
 );
 const PullsPage = lazy(() => import("@/pages/PullsPages"));
-const PullDetailPage = lazy(() =>
-  import("@/pages/PullsPages").then((m) => ({ default: m.PullDetailPage })),
-);
+const PullDetailPage = lazy(() => import("@/pages/PullDetailPage"));
 const NewIssuePage = lazy(() => import("@/pages/NewIssuePage"));
 const NewPullRequestPage = lazy(() => import("@/pages/NewPullRequestPage"));
 const NewRepositoryPage = lazy(() => import("@/pages/NewRepositoryPage"));
@@ -63,16 +51,10 @@ const SecurityAdvisoryDetailPage = lazy(() =>
 );
 const InsightsPage = lazy(() => import("@/pages/InsightsPage"));
 const WikiPage = lazy(() => import("@/pages/WikiPage"));
-const ActionsPages = lazy(() => import("@/pages/ActionsPages"));
-const WorkflowsPage = lazy(() =>
-  import("@/pages/ActionsPages").then((m) => ({ default: m.WorkflowsPage })),
-);
-const RunDetailPage = lazy(() =>
-  import("@/pages/ActionsPages").then((m) => ({ default: m.RunDetailPage })),
-);
-const JobDetailPage = lazy(() =>
-  import("@/pages/ActionsPages").then((m) => ({ default: m.JobDetailPage })),
-);
+const ActionsPage = lazy(() => import("@/pages/actions/ActionsPage"));
+const WorkflowsPage = lazy(() => import("@/pages/actions/WorkflowsPage"));
+const RunDetailPage = lazy(() => import("@/pages/actions/RunDetailPage"));
+const JobDetailPage = lazy(() => import("@/pages/actions/JobDetailPage"));
 const DiscussionsPage = lazy(() => import("@/pages/DiscussionsPage"));
 const DiscussionDetailPage = lazy(() =>
   import("@/pages/DiscussionsPage").then((m) => ({ default: m.DiscussionDetailPage })),
@@ -121,7 +103,7 @@ import Nav from "@/components/Nav";
 import AppFooter from "@/components/AppFooter";
 import ScopeWarningBanner from "@/components/ScopeWarningBanner";
 import { AppErrorPage, NotFoundPage } from "@/components/ErrorPages";
-import { normalizeApiError } from "@/lib/rest";
+import { normalizeApiError } from "@/lib/restapi";
 
 /**
  * 全局布局（data router 重构）：Nav + main(Suspense+Outlet) + Footer。
@@ -316,7 +298,7 @@ const router = createBrowserRouter([
           { path: "discussions/categories/:slug", element: <DiscussionCategoryRedirect /> },
           { path: "discussions/:number", element: <DiscussionDetailPage /> },
           { path: "wiki/*", element: <WikiPage /> },
-          { path: "actions", element: <ActionsPages /> },
+          { path: "actions", element: <ActionsPage /> },
           { path: "actions/workflows", element: <WorkflowsPage /> },
           { path: "actions/runs/:runId", element: <RunDetailPage /> },
           { path: "actions/runs/:runId/job/:jobId", element: <JobDetailPage /> },

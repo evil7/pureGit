@@ -25,8 +25,8 @@ import {
   preloadAll,
 } from "./schema-loader";
 import type { LoadResult, PreloadProgress } from "./schema-loader";
-import { filterRestEndpoints } from "@/lib/debug-openapi";
-import type { OpenApiEndpoint, OpenApiGroup, RestTagInfo } from "@/lib/debug-openapi";
+import { filterRestEndpoints } from "@/lib/debug/debug-openapi";
+import type { OpenApiEndpoint, OpenApiGroup, RestTagInfo } from "@/lib/debug/debug-openapi";
 import { TreeSearchInput } from "./TreeSearchInput";
 import { SchemaHeader } from "./SchemaHeader";
 import { TreeListSkeleton } from "./TreeListSkeleton";

@@ -73,7 +73,7 @@ import {
   structuredRowsToJson,
   type StructuredField,
   type StructuredRow,
-} from "@/lib/debug-gql-structured";
+} from "@/lib/debug/debug-gql-structured";
 
 /* ── 类型夹具：用 graphql-js 运行时类型直接构造（嵌套 input / 枚举 / 列表全覆盖） ── */
 

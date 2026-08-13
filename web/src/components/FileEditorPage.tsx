@@ -32,18 +32,18 @@ import { CodeEditor } from "@/components/CodeEditor";
 import { InlineError } from "@/components/InlineError";
 import { useAuth } from "@/hooks/useAuth";
 import { FileTreeSidebar } from "@/pages/RepoCode";
-import { useRepoTree, type TreeNode } from "@/lib/file-tree";
+import { useRepoTree, type TreeNode } from "@/lib/repo/file-tree";
 import {
   fetchFileTree,
   updateFileContent,
   createBranch,
   apiErrorMessage,
   type GitTree,
-} from "@/lib/rest";
+} from "@/lib/restapi";
 // 编辑模式数据走 fetchFileEditSmart（一次 GraphQL 拿 blob 内容+sha，
 // 降级链完备；不再单独 REST fetchFileMeta + smart 内容两条通道）
 import { fetchFileEditSmart } from "@/lib/api";
-import { PAGE_SHELL, CONTENT_FILL } from "@/lib/layout";
+import { PAGE_SHELL, CONTENT_FILL } from "@/lib/ui/layout";
 import { cn } from "@/lib/utils";
 
 export function FileEditorPage() {

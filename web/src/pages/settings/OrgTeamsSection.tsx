@@ -38,7 +38,7 @@ import {
   apiErrorMessage,
   type OrgTeam,
 } from "@/lib/api";
-import type { OrgMember } from "@/lib/rest";
+import type { OrgMember } from "@/lib/restapi";
 import { useAuth } from "@/hooks/useAuth";
 import { PermissionGate } from "@/components/WriteGate";
 

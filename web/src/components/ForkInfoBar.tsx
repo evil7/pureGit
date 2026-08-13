@@ -28,7 +28,7 @@ import { InlineError } from "@/components/InlineError";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
-import { useRepoData } from "@/lib/repo-context";
+import { useRepoData } from "@/lib/repo/repo-context";
 import { fetchCompare, mergeUpstream, apiErrorMessage, type CompareResult } from "@/lib/api";
 
 export function ForkInfoBar() {

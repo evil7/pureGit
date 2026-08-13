@@ -22,8 +22,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/api-core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api-core")>();
+vi.mock("@/lib/api/api-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/api-core")>();
   return {
     ...actual,
     graphqlRequest: vi.fn(),
@@ -31,16 +31,16 @@ vi.mock("@/lib/api-core", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/api-search", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api-search")>();
+vi.mock("@/lib/api/api-search", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/api-search")>();
   return {
     ...actual,
     searchIssuesSmart: vi.fn(),
   };
 });
 
-vi.mock("@/lib/rest", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rest")>();
+vi.mock("@/lib/restapi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/restapi")>();
   return {
     ...actual,
     fetchIssues: vi.fn(),
@@ -65,14 +65,16 @@ import {
   setIssueSubscriptionSmart,
   fetchPullsSmart,
   fetchPullDetailSmart,
+  fetchMyIssuesSmart,
+  fetchMyPullsSmart,
+} from "@/lib/api/api-issue";
+import {
   fetchPullDetailFullSmart,
   updateIssueStateSmart,
   updatePullRequestStateSmart,
-  fetchMyIssuesSmart,
-  fetchMyPullsSmart,
-} from "@/lib/api-issue";
-import { graphqlRequest } from "@/lib/api-core";
-import { searchIssuesSmart } from "@/lib/api-search";
+} from "@/lib/api/api-review";
+import { graphqlRequest } from "@/lib/api/api-core";
+import { searchIssuesSmart } from "@/lib/api/api-search";
 import {
   fetchIssues,
   fetchIssueDetail,
@@ -89,7 +91,7 @@ import {
   fetchMyPulls,
   type Issue,
   type PullRequest,
-} from "@/lib/rest";
+} from "@/lib/restapi";
 
 const mockGraphql = vi.mocked(graphqlRequest);
 const mockSearch = vi.mocked(searchIssuesSmart);
@@ -611,33 +613,75 @@ describe("updateIssueStateSmart（GraphQL close/reopen issue 主通道 + REST �
   });
 });
 
-describe("fetchMyIssuesSmart（用户级「我的 issues」：viewer.issues(filterBy) 首选 + REST 降级）", () => {
-  it("filter 映射 filterBy 变量（assigned→assignee:@me / recent→null）", async () => {
+describe("fetchMyIssuesSmart（用户级「我的 issues」：search is:issue + @me 首选 + REST 降级）", () => {
+  it("filter 映射 qualifier（assigned→assignee:@me / recent→involves:@me）", async () => {
     mockGraphql.mockResolvedValue({
       data: {
-        viewer: {
-          issues: {
-            nodes: [{ ...gqlIssue, databaseId: 42 }],
-            pageInfo: { endCursor: "cur_1", hasNextPage: true },
-          },
+        search: {
+          nodes: [
+            {
+              number: 42,
+              title: "Fix the bug",
+              url: "https://github.com/evil7/puregit/issues/42",
+              state: "OPEN",
+              createdAt: "2026-07-01T00:00:00Z",
+              closedAt: null,
+              comments: { totalCount: 3 },
+              author: { login: "alice" },
+              labels: { nodes: [{ name: "bug", color: "d73a4a" }] },
+              repository: { nameWithOwner: "evil7/puregit" },
+            },
+          ],
+          pageInfo: { endCursor: "cur_1", hasNextPage: true },
         },
       },
     } as never);
     const r = await fetchMyIssuesSmart("gho_x", "assigned");
     expect(mockGraphql).toHaveBeenCalledWith(
       expect.any(String),
-      { filterBy: { assignee: "@me" }, after: null },
+      { q: "is:issue assignee:@me", first: 50, after: null },
       "gho_x",
     );
-    expect(r.items[0].id).toBe(42);
+    expect(r.items[0].number).toBe(42);
+    expect(r.items[0].state).toBe("open");
+    expect(r.items[0].repository).toEqual({ full_name: "evil7/puregit" });
     expect(r.endCursor).toBe("cur_1");
     expect(r.hasNextPage).toBe(true);
     await fetchMyIssuesSmart("gho_x", "recent");
     expect(mockGraphql).toHaveBeenLastCalledWith(
       expect.any(String),
-      { filterBy: null, after: null },
+      { q: "is:issue involves:@me", first: 50, after: null },
       "gho_x",
     );
+  });
+
+  it("search 节点 → searchIssueId 派生 id（无 databaseId）+ author 兜底 ghost", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        search: {
+          nodes: [
+            {
+              number: 1,
+              title: "t",
+              url: "https://github.com/evil7/puregit/issues/1",
+              state: "CLOSED",
+              createdAt: "2026-07-01T00:00:00Z",
+              closedAt: "2026-07-02T00:00:00Z",
+              comments: { totalCount: 0 },
+              author: null,
+              labels: undefined,
+              repository: { nameWithOwner: "evil7/puregit" },
+            },
+          ],
+          pageInfo: { endCursor: null, hasNextPage: false },
+        },
+      },
+    } as never);
+    const r = await fetchMyIssuesSmart("gho_x", "created");
+    expect(Number.isInteger(r.items[0].id)).toBe(true);
+    expect(r.items[0].user).toEqual({ login: "ghost" });
+    expect(r.items[0].labels).toEqual([]);
+    expect(r.items[0].closed_at).toBe("2026-07-02T00:00:00Z");
   });
 
   it("GraphQL errors / 异常 → 降级 REST（无游标）", async () => {

@@ -10,7 +10,7 @@
  *   light/dark/system 全部自动跟随
  */
 import { useEffect, useState } from "react";
-import { PREFS_SYNC_EVENT, requestPrefsPush } from "@/lib/prefs-sync";
+import { PREFS_SYNC_EVENT, requestPrefsPush } from "@/lib/auth/prefs-sync";
 
 export type Theme = "light" | "dark" | "system";
 

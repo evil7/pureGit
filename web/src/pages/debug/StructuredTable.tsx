@@ -25,7 +25,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { cn } from "@/lib/utils";
-import type { StructuredRow } from "@/lib/debug-gql-structured";
+import type { StructuredRow } from "@/lib/debug/debug-gql-structured";
 
 interface StructuredTableProps {
   t: (k: string, vars?: Record<string, unknown>) => string;

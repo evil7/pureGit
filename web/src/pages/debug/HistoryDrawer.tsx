@@ -10,7 +10,7 @@ import { Button } from "@/components/ui/button";
 import { Drawer, DrawerContent, DrawerHeader, DrawerTitle } from "@/components/ui/drawer";
 import { cn } from "@/lib/utils";
 import { REST_METHOD_COLOR, statusColorClass } from "./rest-meta";
-import type { HistoryItem } from "@/lib/debug-store";
+import type { HistoryItem } from "@/lib/debug/debug-store";
 
 interface HistoryDrawerProps {
   t: (k: string) => string;

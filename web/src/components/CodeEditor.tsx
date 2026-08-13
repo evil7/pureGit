@@ -18,10 +18,10 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { inferLang } from "@/lib/shiki";
+import { inferLang } from "@/lib/code/shiki";
 import { useCodeTheme } from "@/hooks/useCodeTheme";
 import { useTheme } from "@/hooks/useTheme";
-import { createCmEditor } from "@/lib/codemirror";
+import { createCmEditor } from "@/lib/code/codemirror";
 import { cn } from "@/lib/utils";
 import type { GraphQLSchema } from "graphql";
 

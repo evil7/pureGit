@@ -19,7 +19,7 @@
  * 【测试方式】纯函数单元测试，无任何网络/DOM 依赖。
  */
 import { describe, it, expect } from "vitest";
-import { parsePatch, diffLinesToRows } from "@/lib/diff-lines";
+import { parsePatch, diffLinesToRows } from "@/lib/code/diff-lines";
 
 describe("parsePatch", () => {
   it("undefined / 空串 → 空数组", () => {

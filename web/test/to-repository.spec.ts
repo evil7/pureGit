@@ -16,7 +16,7 @@
  * 【测试方式】纯函数单元测试，无任何网络请求（零真实 API 接触，无风控风险）。
  */
 import { describe, it, expect } from "vitest";
-import { toRepository, type GraphQLRepository } from "@/lib/api-repo";
+import { toRepository, type GraphQLRepository } from "@/lib/api/api-repo";
 
 /** 完整字段夹具（覆盖全部映射路径） */
 const fullGql: GraphQLRepository = {

@@ -94,7 +94,7 @@ export function useI18n() {
         /* ignore */
       }
       // 云同步（本地已生效；未登录静默跳过；动态 import 避免循环依赖）
-      void import("@/lib/prefs-sync").then((m) => m.requestPrefsPush());
+      void import("@/lib/auth/prefs-sync").then((m) => m.requestPrefsPush());
     },
   };
 }

@@ -104,7 +104,7 @@ import {
   type GqlFieldNode,
   type GqlSchemaContext,
   type GqlSelectionMap,
-} from "@/lib/debug-graphql";
+} from "@/lib/debug/debug-graphql";
 
 /* ── mini schema 夹具（覆盖 object/interface/union/enum/scalar/list/non-null/input/deprecated） ── */
 

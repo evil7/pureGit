@@ -52,7 +52,7 @@ import {
   parseVariablesJson,
   validateVariables,
   validateVariablesText,
-} from "@/lib/debug-gql-variables";
+} from "@/lib/debug/debug-gql-variables";
 
 /* ── mini schema 夹具（标量 + 枚举 + input 嵌套） ── */
 

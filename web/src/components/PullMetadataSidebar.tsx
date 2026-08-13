@@ -16,7 +16,7 @@ import { GitPullRequest, Lock, LockOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
-import { apiErrorMessage, type GitHubUser } from "@/lib/rest";
+import { apiErrorMessage, type GitHubUser } from "@/lib/restapi";
 import {
   setPullLockedSmart,
   fetchPullProjectsSmart,
@@ -24,7 +24,7 @@ import {
   type PullProjectItem,
   type PullDevelopment,
 } from "@/lib/api";
-import { toastSuccess, toastError } from "@/lib/toast";
+import { toastSuccess, toastError } from "@/lib/ui/toast";
 import { SidebarSection, SubscribeButton } from "@/components/SidebarSection";
 import { ParticipantsSection } from "@/components/ParticipantsSection";
 import {

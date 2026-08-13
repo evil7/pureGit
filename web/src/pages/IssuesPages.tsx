@@ -26,12 +26,13 @@ import { useAuth } from "@/hooks/useAuth";
 import { useIsDark } from "@/hooks/useIsDark";
 import { useI18n, tStatic } from "@/i18n";
 import { fetchIssuesSmart } from "@/lib/api";
-import { apiErrorMessage } from "@/lib/rest";
-import type { Issue } from "@/lib/rest";
+import { apiErrorMessage } from "@/lib/restapi";
+import type { Issue } from "@/lib/restapi";
 import { RepoSearchInput } from "@/components/RepoSearchInput";
 import { cn } from "@/lib/utils";
-import { formatCount } from "@/lib/format";
-import { getLabelStyle } from "@/lib/label-color";
+import { addQualifier, getQualifier, hasQualifier, removeQualifier } from "@/lib/api/search-syntax";
+import { formatCount } from "@/lib/ui/format";
+import { getLabelStyle } from "@/lib/ui/label-color";
 import PageLayout from "@/components/PageLayout";
 import { useDateFormat } from "@/hooks/useDateFormat";
 
@@ -46,13 +47,14 @@ const FILTERS: {
     | "issues.created"
     | "issues.mentioned"
     | "issues.recent";
-  query: string;
+  /** 点击后设置到搜索框的 qualifier（all 为空 = 清除 q） */
+  qualifier: string;
 }[] = [
-  { key: "all", labelKey: "issues.all", query: "" },
-  { key: "assigned", labelKey: "issues.assigned", query: "assignee=@me" },
-  { key: "created", labelKey: "issues.created", query: "author=@me" },
-  { key: "mentioned", labelKey: "issues.mentioned", query: "q=mentions:@me" },
-  { key: "recent", labelKey: "issues.recent", query: "sort=updated" },
+  { key: "all", labelKey: "issues.all", qualifier: "" },
+  { key: "assigned", labelKey: "issues.assigned", qualifier: "assignee:@me" },
+  { key: "created", labelKey: "issues.created", qualifier: "author:@me" },
+  { key: "mentioned", labelKey: "issues.mentioned", qualifier: "mentions:@me" },
+  { key: "recent", labelKey: "issues.recent", qualifier: "sort:updated-desc" },
 ];
 
 export default function IssuesPage() {
@@ -62,13 +64,8 @@ export default function IssuesPage() {
   const { fmt } = useDateFormat();
   const [searchParams, setSearchParams] = useSearchParams();
 
-  // URL query 驱动（官方风格）：state / author / assignee / labels / sort / q / filter
+  // URL query 驱动（官方风格）：单一 q（token 化语法）+ state（Open/Closed tab）+ page
   const state = (searchParams.get("state") as IssueState) ?? "open";
-  const filterKey = searchParams.get("filter") ?? "all";
-  const author = searchParams.get("author") ?? "";
-  const assignee = searchParams.get("assignee") ?? "";
-  const labels = searchParams.get("labels") ?? "";
-  const sort = searchParams.get("sort") ?? "created";
   const q = searchParams.get("q") ?? "";
   // 页码分页（URL 驱动，可分享）
   const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
@@ -78,19 +75,13 @@ export default function IssuesPage() {
   const [closedCount, setClosedCount] = useState<number | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
-  const searchInput = q;
 
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    const filters = {
-      author: author || undefined,
-      assignee: assignee || undefined,
-      labels: labels || undefined,
-      sort: sort !== "created" ? sort : undefined,
-      q: q || undefined,
-    };
+    // 过滤统一收敛为单一 q 增量（author/assignee/mentions/sort 均为 q 内 qualifier）
+    const filters = { q: q || undefined };
     fetchIssuesSmart(owner!, repo!, state, token, filters, undefined, page)
       .then(({ items, openCount: openCountRes, closedCount: closedCountRes }) => {
         if (!cancelled) {
@@ -108,7 +99,7 @@ export default function IssuesPage() {
     return () => {
       cancelled = true;
     };
-  }, [owner, repo, state, token, author, assignee, labels, sort, q, page]);
+  }, [owner, repo, state, token, q, page]);
 
   // 更新 URL query（官方风格，可分享）
   const updateParams = (patch: Record<string, string | null>) => {
@@ -129,10 +120,7 @@ export default function IssuesPage() {
           ? closedCount
           : openCount + closedCount
       : null;
-  const totalPages =
-    baseTotal != null && !author && !assignee && !labels && !q && sort === "created"
-      ? Math.max(1, Math.ceil(baseTotal / 30))
-      : 1;
+  const totalPages = baseTotal != null && !q ? Math.max(1, Math.ceil(baseTotal / 30)) : 1;
   const goPage = (p: number) => {
     updateParams({ page: p > 1 ? String(p) : null });
     window.scrollTo({ top: 0, behavior: "smooth" });
@@ -148,37 +136,22 @@ export default function IssuesPage() {
             <h3 className="mb-1 px-3 text-xs font-semibold uppercase tracking-wide text-muted-foreground">
               {t("issues.filters")}
             </h3>
-            {FILTERS.map(({ key, labelKey, query }) => {
+            {FILTERS.map(({ key, labelKey, qualifier }) => {
+              // 高亮判断直接基于 q 内 qualifier（搜索框 token 与左栏预设联动，单一事实源）
               const isActive =
-                filterKey === key ||
-                (key === "assigned" && assignee === "@me" && !author && !q && !sort) ||
-                (key === "created" && author === "@me" && !assignee && !q && !sort) ||
-                (key === "mentioned" &&
-                  q.includes("mentions:@me") &&
-                  !author &&
-                  !assignee &&
-                  !sort) ||
-                (key === "recent" && sort === "updated" && !author && !assignee && !q);
+                (key === "all" && !q) ||
+                (key === "assigned" && hasQualifier(q, "assignee", "@me")) ||
+                (key === "created" && hasQualifier(q, "author", "@me")) ||
+                (key === "mentioned" && hasQualifier(q, "mentions", "@me")) ||
+                (key === "recent" && hasQualifier(q, "sort", "updated-desc"));
               return (
                 <Link
                   key={key}
-                  to={`/${owner}/${repo}/issues?${query}${query ? "&" : ""}state=${state}`}
+                  to={`/${owner}/${repo}/issues?${qualifier ? `q=${encodeURIComponent(qualifier)}&` : ""}state=${state}`}
                   onClick={(e) => {
                     e.preventDefault();
-                    // 解析该 filter 的 query 参数，应用到 URL（其余过滤参数清空）
-                    const patch: Record<string, string | null> = {
-                      filter: key,
-                      author: null,
-                      assignee: null,
-                      labels: null,
-                      q: null,
-                      sort: null,
-                    };
-                    for (const pair of query.split("&").filter(Boolean)) {
-                      const [k, v] = pair.split("=");
-                      patch[k] = decodeURIComponent(v);
-                    }
-                    updateParams(patch);
+                    // 预设项 = 整体替换 q（qualifier 为空即清除过滤）
+                    updateParams({ q: qualifier || null });
                   }}
                   className={cn(
                     "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
@@ -192,19 +165,10 @@ export default function IssuesPage() {
                 </Link>
               );
             })}
-            {(author || assignee || labels || q || sort !== "created") && (
+            {q && (
               <button
                 type="button"
-                onClick={() =>
-                  updateParams({
-                    author: null,
-                    assignee: null,
-                    labels: null,
-                    q: null,
-                    sort: null,
-                    filter: "all",
-                  })
-                }
+                onClick={() => updateParams({ q: null })}
                 className="mt-2 flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10"
               >
                 <X className="size-3.5" />
@@ -269,15 +233,22 @@ export default function IssuesPage() {
           </Button>
         </div>
 
-        {/* 过滤工具条：搜索 + Author/Labels/Sort（官方风格） */}
+        {/* 过滤工具条：搜索 + Author/Sort（官方风格；下拉均操作 q 内 qualifier，与搜索框单一事实源联动） */}
         <div className="mb-3 flex flex-wrap items-center gap-2">
           <RepoSearchInput
-            defaultValue={searchInput}
+            defaultValue={q}
             placeholder={t("issues.searchPlaceholder")}
             onSubmit={(raw) => updateParams({ q: raw || null })}
             className="min-w-0 flex-1"
           />
-          <Select value={author} onValueChange={(v) => updateParams({ author: v || null })}>
+          <Select
+            value={hasQualifier(q, "author", "@me") ? "@me" : ""}
+            onValueChange={(v) => {
+              const next =
+                v === "@me" ? addQualifier(q, "author", "@me") : removeQualifier(q, "author");
+              updateParams({ q: next || null });
+            }}
+          >
             <SelectTrigger className="h-8 w-auto min-w-24 text-xs">
               <SelectValue placeholder={t("issues.author")} />
             </SelectTrigger>
@@ -285,7 +256,22 @@ export default function IssuesPage() {
               <SelectItem value="@me">{t("issues.by")} @me</SelectItem>
             </SelectContent>
           </Select>
-          <Select value={sort} onValueChange={(v) => updateParams({ sort: v })}>
+          <Select
+            value={
+              getQualifier(q, "sort") === "comments-desc"
+                ? "comments"
+                : getQualifier(q, "sort") === "updated-desc"
+                  ? "updated"
+                  : "created"
+            }
+            onValueChange={(v) => {
+              const next =
+                v === "created"
+                  ? removeQualifier(q, "sort")
+                  : addQualifier(q, "sort", v === "comments" ? "comments-desc" : "updated-desc");
+              updateParams({ q: next || null });
+            }}
+          >
             <SelectTrigger className="h-8 w-auto min-w-24 text-xs">
               <SlidersHorizontal className="size-3.5" />
               <SelectValue placeholder={t("issues.sort")} />
@@ -293,6 +279,7 @@ export default function IssuesPage() {
             <SelectContent>
               <SelectItem value="created">{t("issues.sort.newest")}</SelectItem>
               <SelectItem value="comments">{t("issues.sort.comments")}</SelectItem>
+              <SelectItem value="updated">{t("issues.sort.updated")}</SelectItem>
             </SelectContent>
           </Select>
         </div>

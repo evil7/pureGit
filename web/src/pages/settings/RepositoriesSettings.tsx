@@ -17,7 +17,7 @@ import { Tip } from "@/components/Tip";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { fetchMyReposSmart, apiErrorMessage, type Repository } from "@/lib/api";
-import { updateDefaultBranch } from "@/lib/rest";
+import { updateDefaultBranch } from "@/lib/restapi";
 
 /** KB → 人类可读大小（官方显示 532 KB / 12.5 MB 风格） */
 function formatSize(kb?: number): string | null {

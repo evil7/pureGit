@@ -24,7 +24,7 @@ import { AccountSwitcherCard } from "@/components/AccountSwitcherCard";
 import { useManageableEntities } from "@/hooks/useAdminOrgs";
 import { Skeleton } from "@/components/ui/skeleton";
 import { cn } from "@/lib/utils";
-import { PAGE_SHELL } from "@/lib/layout";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 import PageLayout from "@/components/PageLayout";
 import { fetchOrgDetailSmart, type OrgDetail } from "@/lib/api";
 

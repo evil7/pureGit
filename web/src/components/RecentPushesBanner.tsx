@@ -22,7 +22,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { useDateFormat } from "@/hooks/useDateFormat";
-import { useRepoData } from "@/lib/repo-context";
+import { useRepoData } from "@/lib/repo/repo-context";
 import { fetchRecentBranchesSmart, type RecentBranch } from "@/lib/api";
 
 /** 时间窗口：14 天内（官方分支页 recent 语义） */

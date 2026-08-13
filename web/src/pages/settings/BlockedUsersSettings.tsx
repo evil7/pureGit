@@ -21,7 +21,7 @@ import {
   unblockUser,
   apiErrorMessage,
   type BlockedUser,
-} from "@/lib/rest";
+} from "@/lib/restapi";
 
 export default function BlockedUsersSettings() {
   const { token, canWrite } = useAuth();

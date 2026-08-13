@@ -33,10 +33,10 @@ import {
   fetchRepoSubscriptionSmart,
   setRepoSubscriptionSmart,
 } from "@/lib/api";
-import { type RepoSubscription } from "@/lib/rest";
-import { useRepoData } from "@/lib/repo-context";
+import { type RepoSubscription } from "@/lib/restapi";
+import { useRepoData } from "@/lib/repo/repo-context";
 import { cn } from "@/lib/utils";
-import { formatCount } from "@/lib/format";
+import { formatCount } from "@/lib/ui/format";
 import { useI18n } from "@/i18n";
 
 export function StarForkButtons({

@@ -13,7 +13,7 @@
  * - 分支名假设不含 `/`（GitHub 分支名可含 `/`，此时分支段被当路径——记录为已知行为边界）
  */
 import { describe, it, expect } from "vitest";
-import { parseTreePath } from "@/lib/repo-path";
+import { parseTreePath } from "@/lib/repo/repo-path";
 
 describe("parseTreePath（tree/blob 路径提取）", () => {
   it("tree 分支根 → 空串", () => {

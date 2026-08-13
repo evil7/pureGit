@@ -6,7 +6,7 @@
  * 用法：<LangDot lang={repo.language} />
  */
 import { cn } from "@/lib/utils";
-import { langColorOrFallback } from "@/lib/lang-colors";
+import { langColorOrFallback } from "@/lib/code/lang-colors";
 
 export function LangDot({ lang, className }: { lang?: string | null; className?: string }) {
   return (

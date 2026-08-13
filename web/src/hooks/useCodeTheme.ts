@@ -13,7 +13,7 @@ import {
   subscribeCodeTheme,
   type CodeThemeDef,
   type CodeThemeId,
-} from "@/lib/code-theme";
+} from "@/lib/code/code-theme";
 
 export function useCodeTheme() {
   const [id, setId] = useState<CodeThemeId>(getCodeThemeId);

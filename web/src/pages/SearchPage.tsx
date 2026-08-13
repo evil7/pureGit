@@ -1,18 +1,20 @@
 /**
- * 全站搜索页（过滤 chips 换 shadcn Popover+Command + tabs 仿主页手写）
+ * 全站搜索页（type tabs：repos/issues/prs/users/discussions，全部 GraphQL 主通道）
  *
  * 布局（用户拍板，极简 · 不遵循官方）：
  * - 第一行：搜索框 + 搜索按钮
- * - 过滤 chips 行紧挨 input 下方（shadcn Popover + Command：语言可搜索 combobox、
- *   license/archived Command 列表、数值/日期/文本输入）
+ * - 过滤 chips 行紧挨 input 下方（shadcn Popover + Command，按当前 tab 显示对应 qualifier）
  * - 结果面板 tabs（仿主页手写下划线：border-b 容器 + border-b-2 高亮）+ 排序下拉最右
  * - 分页最多 99 页；去语法高亮；qualifier 全部原生传给 API
  *
  * 状态模型：URL 唯一真源 `q`（完整查询串含全部 qualifier）+ `type`（tab 类型）。
+ * 搜索策略（官方同一 search 端点 + 按类型独立路由，全部 GraphQL）：
+ *   issues/prs 同走 search type:ISSUE，注入 is:issue / is:pr 限定（PR 走 `... on PullRequest` 片段）；
+ *   discussions 走 search type:DISCUSSION；code/commits 官方 GraphQL 无此 SearchType → 不提供。
  */
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
-import { Check, Search, X } from "lucide-react";
+import { Check, Search, X, CircleDot, XCircle, MessageSquare, ThumbsUp } from "lucide-react";
 import { InlineError } from "@/components/InlineError";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -41,13 +43,29 @@ import { UserAvatar } from "@/components/UserAvatar";
 import { SearchInput } from "@/components/SearchInput";
 import { Pager } from "@/components/Pager";
 import { useAuth } from "@/hooks/useAuth";
+import { useIsDark } from "@/hooks/useIsDark";
+import { useDateFormat } from "@/hooks/useDateFormat";
 import { useI18n, tStatic } from "@/i18n";
-import { searchRepositoriesSmart, searchUsersSmart } from "@/lib/api";
-import { apiErrorMessage } from "@/lib/rest";
-import { PAGE_SHELL } from "@/lib/layout";
-import { formatCount } from "@/lib/format";
-import { addQualifier, removeQualifier, getQualifier } from "@/lib/search-syntax";
-import type { Repository, GitHubUser } from "@/lib/rest";
+import { get as emojiGet } from "node-emoji";
+import {
+  searchRepositoriesSmart,
+  searchUsersSmart,
+  searchIssuesSmart,
+  searchPullsSmart,
+  searchDiscussionsSmart,
+} from "@/lib/api";
+import { apiErrorMessage } from "@/lib/restapi";
+import { PAGE_SHELL } from "@/lib/ui/layout";
+import { formatCount } from "@/lib/ui/format";
+import { getLabelStyle } from "@/lib/ui/label-color";
+import { addQualifier, removeQualifier, getQualifier } from "@/lib/api/search-syntax";
+import type {
+  Repository,
+  GitHubUser,
+  Issue,
+  DiscussionSearchItem,
+  SearchResponse,
+} from "@/lib/restapi";
 
 /** 搜索结果每页条数 */
 const PAGE_SIZE = 20;
@@ -59,13 +77,46 @@ type SearchLabelKey =
   | "search.sort.best"
   | "search.sort.stars"
   | "search.sort.updated"
+  | "search.tab.repos"
+  | "search.tab.issues"
+  | "search.tab.prs"
+  | "search.tab.users"
+  | "search.tab.discussions"
   | "search.advanced.language"
   | "search.advanced.stars"
   | "search.advanced.forks"
   | "search.advanced.created"
   | "search.advanced.topic"
   | "search.advanced.license"
-  | "search.advanced.archived";
+  | "search.advanced.archived"
+  | "search.advanced.author"
+  | "search.advanced.label"
+  | "search.advanced.assignee"
+  | "search.advanced.milestone"
+  | "search.advanced.location"
+  | "search.advanced.followers"
+  | "search.advanced.repos";
+
+/** 结果类型 tab（官方 /search 的 type 维度；issues/prs 共用 search type:ISSUE 注入 is: 区分） */
+type SearchTab = "repos" | "issues" | "prs" | "users" | "discussions";
+
+/** tab 顺序（对齐官方：Repos→Issues→PR→Users→Discussions；code/commits 官方 GraphQL 无 SearchType 不提供） */
+const TABS: { value: SearchTab; labelKey: SearchLabelKey }[] = [
+  { value: "repos", labelKey: "search.tab.repos" },
+  { value: "issues", labelKey: "search.tab.issues" },
+  { value: "prs", labelKey: "search.tab.prs" },
+  { value: "users", labelKey: "search.tab.users" },
+  { value: "discussions", labelKey: "search.tab.discussions" },
+];
+
+/** URL type 参数 ↔ tab 值映射（repos 为默认无参数） */
+const TYPE_PARAM: Record<SearchTab, string | null> = {
+  repos: null,
+  issues: "issues",
+  prs: "prs",
+  users: "users",
+  discussions: "discussions",
+};
 
 /** 语言下拉选项（datalist：可输入 + 下拉选择） */
 const LANG_OPTIONS = [
@@ -82,33 +133,71 @@ const LANG_OPTIONS = [
   "Ruby",
 ];
 
-/** 排序（值 = q 内 sort: qualifier；best 不写） */
+/** 排序（值 = q 内 sort: qualifier；best 不写；仅 repos 类型生效） */
 const SORT_OPTIONS: { value: string; labelKey: SearchLabelKey }[] = [
   { value: "best", labelKey: "search.sort.best" },
   { value: "stars", labelKey: "search.sort.stars" },
   { value: "updated", labelKey: "search.sort.updated" },
 ];
 
-/** 过滤 chips（语言 = datalist 可输入+下拉；点击展开 inline 输入/选择，回车加入 q） */
-const ADVANCED_ITEMS: {
+/** 过滤 chip（点击展开 inline 输入/选择，回车加入 q） */
+interface FilterItem {
   key: string;
   labelKey: SearchLabelKey;
   kind: "lang" | "number" | "date" | "text" | "license" | "archived";
   placeholder: string;
-}[] = [
-  {
-    key: "language",
-    labelKey: "search.advanced.language",
-    kind: "lang",
-    placeholder: "TypeScript",
-  },
-  { key: "stars", labelKey: "search.advanced.stars", kind: "number", placeholder: ">100" },
-  { key: "forks", labelKey: "search.advanced.forks", kind: "number", placeholder: ">50" },
-  { key: "created", labelKey: "search.advanced.created", kind: "date", placeholder: ">2024-01-01" },
-  { key: "topic", labelKey: "search.advanced.topic", kind: "text", placeholder: "react" },
-  { key: "license", labelKey: "search.advanced.license", kind: "license", placeholder: "mit" },
-  { key: "archived", labelKey: "search.advanced.archived", kind: "archived", placeholder: "true" },
+}
+
+/** issue/PR 共享过滤 qualifier（PR 另有 review:/draft: 等高级词，chips 保留高频子集） */
+const ISSUE_FILTER_ITEMS: FilterItem[] = [
+  { key: "author", labelKey: "search.advanced.author", kind: "text", placeholder: "username" },
+  { key: "label", labelKey: "search.advanced.label", kind: "text", placeholder: "bug" },
+  { key: "assignee", labelKey: "search.advanced.assignee", kind: "text", placeholder: "username" },
+  { key: "milestone", labelKey: "search.advanced.milestone", kind: "text", placeholder: "v1.0" },
 ];
+
+/** 按 tab 配置过滤 chips（官方各类型高级过滤字段子集，qualifier 原生传给 API） */
+const FILTER_ITEMS: Record<SearchTab, FilterItem[]> = {
+  repos: [
+    {
+      key: "language",
+      labelKey: "search.advanced.language",
+      kind: "lang",
+      placeholder: "TypeScript",
+    },
+    { key: "stars", labelKey: "search.advanced.stars", kind: "number", placeholder: ">100" },
+    { key: "forks", labelKey: "search.advanced.forks", kind: "number", placeholder: ">50" },
+    {
+      key: "created",
+      labelKey: "search.advanced.created",
+      kind: "date",
+      placeholder: ">2024-01-01",
+    },
+    { key: "topic", labelKey: "search.advanced.topic", kind: "text", placeholder: "react" },
+    { key: "license", labelKey: "search.advanced.license", kind: "license", placeholder: "mit" },
+    {
+      key: "archived",
+      labelKey: "search.advanced.archived",
+      kind: "archived",
+      placeholder: "true",
+    },
+  ],
+  issues: ISSUE_FILTER_ITEMS,
+  prs: ISSUE_FILTER_ITEMS,
+  users: [
+    { key: "location", labelKey: "search.advanced.location", kind: "text", placeholder: "China" },
+    {
+      key: "followers",
+      labelKey: "search.advanced.followers",
+      kind: "number",
+      placeholder: ">100",
+    },
+    { key: "repos", labelKey: "search.advanced.repos", kind: "number", placeholder: ">10" },
+  ],
+  discussions: [
+    { key: "author", labelKey: "search.advanced.author", kind: "text", placeholder: "username" },
+  ],
+};
 
 /** 常见 license（License chip 选择器） */
 const LICENSE_OPTIONS = [
@@ -140,30 +229,164 @@ function UserCard({ user }: { user: GitHubUser }) {
   );
 }
 
+/** issue/PR 搜索结果卡片（跨仓库：标题 + 来源仓库 + 状态/评论 + 作者/时间/标签） */
+function IssueSearchCard({
+  item,
+  isPr,
+  fmt,
+}: {
+  item: Issue;
+  isPr: boolean;
+  fmt: (iso: string) => string;
+}) {
+  const isDark = useIsDark();
+  const repo = item.repository?.full_name ?? "";
+  return (
+    <Card className="hover:bg-accent/50 transition-colors">
+      <CardContent className="space-y-1.5 p-4">
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <div className="min-w-0">
+            <Link
+              to={isPr ? `/${repo}/pull/${item.number}` : `/${repo}/issues/${item.number}`}
+              className="line-clamp-2 font-medium text-primary hover:underline"
+            >
+              {item.title}
+            </Link>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {repo} · #{item.number}
+            </p>
+          </div>
+          <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+            {item.state === "open" ? (
+              <CircleDot className="size-3.5 text-[#1a7f37] dark:text-[#3fb950]" />
+            ) : (
+              <XCircle className="size-3.5 text-[#8250df] dark:text-[#a371f7]" />
+            )}
+            <span className="flex items-center gap-1">
+              <MessageSquare className="size-3.5" />
+              {item.comments}
+            </span>
+          </span>
+        </div>
+        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
+          <span>
+            <Link
+              to={`/${item.user.login}`}
+              className="font-medium text-foreground hover:underline"
+            >
+              {item.user.login}
+            </Link>{" "}
+            {item.state === "closed" ? tStatic("issues.closed") : tStatic("issues.opened")}{" "}
+            {fmt(item.state === "closed" && item.closed_at ? item.closed_at : item.created_at)}
+          </span>
+          {item.labels && item.labels.length > 0 && (
+            <span className="flex flex-wrap items-center gap-1">
+              {item.labels.slice(0, 3).map((l) => (
+                <Badge
+                  key={l.name}
+                  className="text-[11px] font-medium"
+                  style={getLabelStyle(l.color, isDark)}
+                >
+                  {l.name}
+                </Badge>
+              ))}
+            </span>
+          )}
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** 讨论搜索结果卡片（跨仓库：标题 + 分类 emoji + 来源仓库 + 作者 + 评论/点赞 + answered） */
+function DiscussionSearchCard({
+  item,
+  fmt,
+}: {
+  item: DiscussionSearchItem;
+  fmt: (iso: string) => string;
+}) {
+  const repo = item.repository.full_name;
+  return (
+    <Card className="hover:bg-accent/50 transition-colors">
+      <CardContent className="space-y-1.5 p-4">
+        <div className="flex items-start justify-between gap-2 min-w-0">
+          <div className="min-w-0">
+            <Link
+              to={`/${repo}/discussions/${item.number}`}
+              className="line-clamp-2 font-medium text-primary hover:underline"
+            >
+              <span className="mr-1.5">{emojiGet(item.category.emoji) ?? item.category.emoji}</span>
+              {item.title}
+            </Link>
+            <p className="mt-0.5 truncate text-xs text-muted-foreground">
+              {repo} · #{item.number} · {item.category.name}
+            </p>
+          </div>
+          <span className="flex shrink-0 items-center gap-2 text-xs text-muted-foreground">
+            {item.answered ? (
+              <CircleDot className="size-3.5 text-[#1a7f37] dark:text-[#3fb950]" />
+            ) : (
+              <CircleDot className="size-3.5 text-muted-foreground" />
+            )}
+            <span className="flex items-center gap-1">
+              <MessageSquare className="size-3.5" />
+              {item.commentsCount}
+            </span>
+            <span className="flex items-center gap-1">
+              <ThumbsUp className="size-3.5" />
+              {item.upvoteCount}
+            </span>
+          </span>
+        </div>
+        <p className="text-xs text-muted-foreground">
+          <Link
+            to={`/${item.author.login}`}
+            className="font-medium text-foreground hover:underline"
+          >
+            {item.author.login}
+          </Link>{" "}
+          {tStatic("discussions.opened")} {fmt(item.createdAt)}
+        </p>
+      </CardContent>
+    </Card>
+  );
+}
+
+/** issue/PR 搜索注入类型词：尊重用户已写的 is:/type: 类型词，未指定时补 is:issue / is:pr */
+function withIssueType(raw: string, word: "issue" | "pr"): string {
+  if (/(?:^|\s)(?:is|type):(?:issue|pr)(?:\s|$)/i.test(raw)) return raw;
+  const base = raw.trim();
+  return base ? `${base} is:${word}` : `is:${word}`;
+}
+
 export default function SearchPage() {
   const { token } = useAuth();
   const { t } = useI18n();
+  const { fmt } = useDateFormat();
   const [searchParams, setSearchParams] = useSearchParams();
   // URL 唯一真源：q（完整查询串含全部 qualifier）+ type（tab 类型）
   const q = searchParams.get("q") ?? "";
-  const [tab, setTab] = useState<"repos" | "users">(
-    searchParams.get("type") === "users" ? "users" : "repos",
-  );
+  const [tab, setTab] = useState<SearchTab>(() => {
+    const tp = searchParams.get("type");
+    return TABS.find((x) => TYPE_PARAM[x.value] === tp)?.value ?? "repos";
+  });
 
   // 输入框草稿（URL q 变化时同步）
   const [draft, setDraft] = useState(q);
   useEffect(() => setDraft(q), [q]);
 
+  // 各类型结果（仅当前 tab 有数据；切换 tab 触发重新搜索）
   const [repos, setRepos] = useState<Repository[]>([]);
+  const [issues, setIssues] = useState<Issue[]>([]);
+  const [prs, setPrs] = useState<Issue[]>([]);
   const [users, setUsers] = useState<GitHubUser[]>([]);
-  const [repoTotal, setRepoTotal] = useState<number | null>(null);
-  const [userTotal, setUserTotal] = useState<number | null>(null);
+  const [discussions, setDiscussions] = useState<DiscussionSearchItem[]>([]);
+  const [total, setTotal] = useState<number | null>(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [elapsedMs, setElapsedMs] = useState<number | null>(null);
-  // 两个结果区独立页码
-  const [repoPage, setRepoPage] = useState(1);
-  const [userPage, setUserPage] = useState(1);
+  const [page, setPage] = useState(1);
   // 高级过滤展开项（null = 收起）
   const [openChip, setOpenChip] = useState<string | null>(null);
   // 搜索竞态防护
@@ -177,46 +400,44 @@ export default function SearchPage() {
     setSearchParams(params, { replace: true });
   };
 
-  /** 切换 tab：更新 URL type（保留各自页码） */
-  const changeTab = (v: "repos" | "users") => {
+  /** 切换 tab：更新 URL type 并重置页码 */
+  const changeTab = (v: SearchTab) => {
     setTab(v);
+    setPage(1);
     const params = new URLSearchParams(searchParams);
-    if (v === "users") params.set("type", "users");
+    const tp = TYPE_PARAM[v];
+    if (tp) params.set("type", tp);
     else params.delete("type");
     setSearchParams(params, { replace: true });
   };
 
   /** 提交搜索（输入框 Enter/按钮）：重置页码 */
   const submitSearch = (raw: string) => {
-    setRepoPage(1);
-    setUserPage(1);
+    setPage(1);
     setQ(raw);
   };
 
   /** chips 通用操作：追加/替换（空值 = 移除）；重置页码并收起展开 */
   const applyQualifier = (key: string, value: string) => {
     setOpenChip(null);
-    setRepoPage(1);
-    setUserPage(1);
+    setPage(1);
     if (!value.trim()) setQ(removeQualifier(q, key));
     else setQ(addQualifier(q, key, value.trim()));
   };
   const sortValue = getQualifier(q, "sort") ?? "best";
   const changeSort = (v: string) => {
-    setRepoPage(1);
-    setUserPage(1);
+    setPage(1);
     if (v === "best") setQ(removeQualifier(q, "sort"));
     else setQ(addQualifier(q, "sort", v));
   };
 
-  // q / token / repoPage / userPage 变化 → 并行搜索仓库 + 用户/组织
+  // q / token / tab / page 变化 → 按当前 tab 调用对应 smart 搜索（仅搜当前 tab，避免并发浪费额度）
   useEffect(() => {
     if (!q.trim()) return;
     const seq = ++searchSeq.current;
     setLoading(true);
     setError(null);
-    setRepoTotal(null);
-    setUserTotal(null);
+    setTotal(null);
     const started = performance.now();
     const finish = () => {
       if (seq === searchSeq.current) {
@@ -224,42 +445,65 @@ export default function SearchPage() {
         setLoading(false);
       }
     };
-    Promise.all([
-      searchRepositoriesSmart(q, token, repoPage).then((d) => {
-        if (seq === searchSeq.current) {
-          setRepos(d.items);
-          setRepoTotal(d.total_count);
-        }
-      }),
-      searchUsersSmart(q, token, userPage).then((d) => {
-        if (seq === searchSeq.current) {
-          setUsers(d.items);
-          setUserTotal(d.total_count);
-        }
-      }),
-    ])
+    const apply = <T,>(d: SearchResponse<T>, set: (items: T[]) => void) => {
+      if (seq === searchSeq.current) {
+        set(d.items);
+        setTotal(d.total_count);
+      }
+    };
+    (async () => {
+      switch (tab) {
+        case "repos":
+          apply(await searchRepositoriesSmart(q, token, page), setRepos);
+          break;
+        case "issues":
+          apply(await searchIssuesSmart(withIssueType(q, "issue"), token, page), setIssues);
+          break;
+        case "prs":
+          apply(await searchPullsSmart(withIssueType(q, "pr"), token, page), setPrs);
+          break;
+        case "users":
+          apply(await searchUsersSmart(q, token, page), setUsers);
+          break;
+        case "discussions":
+          apply(await searchDiscussionsSmart(q, token, page), setDiscussions);
+          break;
+      }
+    })()
       .catch((e) => {
         if (seq === searchSeq.current) setError(apiErrorMessage(e, "搜索失败"));
       })
       .finally(finish);
-  }, [q, token, repoPage, userPage]);
+  }, [q, token, tab, page]);
 
-  /** 仓库区翻页 */
-  const goRepoPage = (p: number) => {
-    setRepoPage(p);
-    window.scrollTo({ top: 0, behavior: "smooth" });
-  };
-  /** 用户/组织区翻页 */
-  const goUserPage = (p: number) => {
-    setUserPage(p);
+  /** 翻页（当前 tab 通用） */
+  const goPage = (p: number) => {
+    setPage(p);
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // 过滤 chips 行（语言 datalist 可输入+下拉 + 高级过滤；点击展开 inline 输入/选择，回车加入输入框 q）
+  /** 渲染当前 tab 结果列表（空态 + 列表 + 分页） */
+  function renderResults<T>(items: T[], render: (item: T) => ReactNode): ReactNode {
+    if (items.length === 0) return <EmptyHint />;
+    return (
+      <>
+        <div className="flex flex-col gap-3">{items.map(render)}</div>
+        {total != null && total > PAGE_SIZE && (
+          <Pager
+            page={page}
+            totalPages={Math.min(MAX_PAGES, Math.ceil(total / PAGE_SIZE))}
+            onChange={goPage}
+          />
+        )}
+      </>
+    );
+  }
+
+  // 过滤 chips 行（按当前 tab 显示对应 qualifier；点击展开 inline 输入/选择，回车加入输入框 q）
   const filterChips = (
     <div className="flex flex-wrap items-center gap-1.5">
       <span className="text-xs font-medium text-muted-foreground">{t("search.filterLabel")}</span>
-      {ADVANCED_ITEMS.map((item) => {
+      {FILTER_ITEMS[tab].map((item) => {
         const active = getQualifier(q, item.key);
         return (
           <Popover
@@ -415,66 +659,51 @@ export default function SearchPage() {
       {/* 过滤 chips 行：紧挨 input 下方 */}
       <div className="mt-3">{filterChips}</div>
 
-      {/* 结果面板 tabs（仿主页手写下划线：border-b 容器 + border-b-2 高亮）+ 计数 label + 排序下拉最右 */}
+      {/* 结果面板 tabs（仿主页手写下划线：border-b 容器 + border-b-2 高亮）+ 计数 label + 排序下拉最右（仅 repos） */}
       <div className="mb-4 mt-4 flex items-end justify-between border-b">
         <div className="flex gap-1">
-          <button
-            type="button"
-            onClick={() => changeTab("repos")}
-            className={cn(
-              "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
-              tab === "repos"
-                ? "border-foreground font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t("search.tab.repos")}
-            {repoTotal != null && (
-              <Badge
-                variant="secondary"
-                className="px-1.5 py-0 text-xs font-normal text-muted-foreground"
-              >
-                {formatCount(repoTotal)}
-              </Badge>
-            )}
-          </button>
-          <button
-            type="button"
-            onClick={() => changeTab("users")}
-            className={cn(
-              "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
-              tab === "users"
-                ? "border-foreground font-medium text-foreground"
-                : "border-transparent text-muted-foreground hover:text-foreground",
-            )}
-          >
-            {t("search.tab.users")}
-            {userTotal != null && (
-              <Badge
-                variant="secondary"
-                className="px-1.5 py-0 text-xs font-normal text-muted-foreground"
-              >
-                {formatCount(userTotal)}
-              </Badge>
-            )}
-          </button>
+          {TABS.map((tb) => (
+            <button
+              key={tb.value}
+              type="button"
+              onClick={() => changeTab(tb.value)}
+              className={cn(
+                "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
+                tab === tb.value
+                  ? "border-foreground font-medium text-foreground"
+                  : "border-transparent text-muted-foreground hover:text-foreground",
+              )}
+            >
+              {t(tb.labelKey)}
+              {tab === tb.value && total != null && (
+                <Badge
+                  variant="secondary"
+                  className="px-1.5 py-0 text-xs font-normal text-muted-foreground"
+                >
+                  {formatCount(total)}
+                </Badge>
+              )}
+            </button>
+          ))}
         </div>
         <div className="flex items-end gap-2">
           {elapsedMs != null && (
             <span className="mb-2 text-xs text-muted-foreground">{elapsedMs} ms</span>
           )}
-          <Select value={sortValue} onValueChange={changeSort}>
-            <SelectTrigger className="mb-1 h-8 w-36 text-xs">
-              <SelectValue />
-            </SelectTrigger>
-            <SelectContent>
-              {SORT_OPTIONS.map((s) => (
-                <SelectItem key={s.value} value={s.value}>
-                  {t(s.labelKey)}
-                </SelectItem>
-              ))}
-            </SelectContent>
-          </Select>
+          {tab === "repos" && (
+            <Select value={sortValue} onValueChange={changeSort}>
+              <SelectTrigger className="mb-1 h-8 w-36 text-xs">
+                <SelectValue />
+              </SelectTrigger>
+              <SelectContent>
+                {SORT_OPTIONS.map((s) => (
+                  <SelectItem key={s.value} value={s.value}>
+                    {t(s.labelKey)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
         </div>
       </div>
 
@@ -497,53 +726,26 @@ export default function SearchPage() {
         </div>
       )}
 
-      {/* 结果区：按 tab 显示仓库或用户/组织（计数已移到 tab 的 label，此处不再重复标题） */}
+      {/* 结果区：按 tab 渲染对应卡片（计数已移到 tab label，仅当前 tab 有数据） */}
       {!loading && !error && q.trim() && (
-        <>
-          {tab === "repos" ? (
-            <div>
-              {repos.length === 0 ? (
-                <EmptyHint />
-              ) : (
-                <>
-                  <div className="flex flex-col gap-3">
-                    {repos.map((r) => (
-                      <RepositoryCard key={r.id} repo={r} />
-                    ))}
-                  </div>
-                  {repoTotal != null && repoTotal > PAGE_SIZE && (
-                    <Pager
-                      page={repoPage}
-                      totalPages={Math.min(MAX_PAGES, Math.ceil(repoTotal / PAGE_SIZE))}
-                      onChange={goRepoPage}
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          ) : (
-            <div>
-              {users.length === 0 ? (
-                <EmptyHint />
-              ) : (
-                <>
-                  <div className="flex flex-col gap-3">
-                    {users.map((u) => (
-                      <UserCard key={u.login} user={u} />
-                    ))}
-                  </div>
-                  {userTotal != null && userTotal > PAGE_SIZE && (
-                    <Pager
-                      page={userPage}
-                      totalPages={Math.min(MAX_PAGES, Math.ceil(userTotal / PAGE_SIZE))}
-                      onChange={goUserPage}
-                    />
-                  )}
-                </>
-              )}
-            </div>
-          )}
-        </>
+        <div>
+          {tab === "repos" && renderResults(repos, (r) => <RepositoryCard key={r.id} repo={r} />)}
+          {tab === "issues" &&
+            renderResults(issues, (i) => (
+              <IssueSearchCard key={i.id} item={i} isPr={false} fmt={fmt} />
+            ))}
+          {tab === "prs" &&
+            renderResults(prs, (p) => <IssueSearchCard key={p.id} item={p} isPr fmt={fmt} />)}
+          {tab === "users" && renderResults(users, (u) => <UserCard key={u.login} user={u} />)}
+          {tab === "discussions" &&
+            renderResults(discussions, (d) => (
+              <DiscussionSearchCard
+                key={`${d.repository.full_name}#${d.number}`}
+                item={d}
+                fmt={fmt}
+              />
+            ))}
+        </div>
       )}
 
       {!q.trim() && (

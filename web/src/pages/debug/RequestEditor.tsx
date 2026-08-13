@@ -45,12 +45,12 @@ import { GqlVariablesPanel } from "./GqlVariablesPanel";
 import { BodyStructuredPanel } from "./BodyStructuredPanel";
 import { GraphQLLogo } from "./GraphQLLogo";
 import { COMMON_HEADER_PRESETS, type HeaderPreset } from "./header-presets";
-import { buildUrlFromParams, syncParamsFromUrl, type DocParams } from "@/lib/debug-params";
-import { collectGqlOperations, type GqlOperationInfo } from "@/lib/debug-graphql";
-import { validateVariablesText } from "@/lib/debug-gql-variables";
+import { buildUrlFromParams, syncParamsFromUrl, type DocParams } from "@/lib/debug/debug-params";
+import { collectGqlOperations, type GqlOperationInfo } from "@/lib/debug/debug-graphql";
+import { validateVariablesText } from "@/lib/debug/debug-gql-variables";
 import { METHOD_COLOR, REST_API_BASE, normalizeRestUrl, CT_BY_BODY } from "./rest-meta";
-import type { DebugRequest, BodyType, HeaderRow } from "@/lib/debug-api";
-import type { OpenApiEndpoint } from "@/lib/debug-openapi";
+import type { DebugRequest, BodyType, HeaderRow } from "@/lib/debug/debug-api";
+import type { OpenApiEndpoint } from "@/lib/debug/debug-openapi";
 import type { GraphQLSchema } from "graphql";
 
 const REST_METHODS = ["GET", "HEAD", "POST", "PATCH", "PUT", "DELETE", "OPTIONS"] as const;
@@ -221,21 +221,21 @@ export function RequestEditor({
     if (req.protocol === "graphql") {
       // R2：Variables tab（json 视图）→ 格式化 variables JSON；Query tab → 格式化 query
       if (reqTab === "variables") {
-        void import("@/lib/debug-api").then(({ prettyJson }) => {
+        void import("@/lib/debug/debug-api").then(({ prettyJson }) => {
           const out = prettyJson(req.variables);
           if (out !== req.variables) set({ variables: out });
         });
         return;
       }
       // 延迟 import 避免首屏加载 graphql 格式化逻辑
-      void import("@/lib/debug-api").then(({ formatGraphQL }) => {
+      void import("@/lib/debug/debug-api").then(({ formatGraphQL }) => {
         const out = formatGraphQL(req.query);
         if (out !== null) set({ query: out });
       });
       return;
     }
     if (req.bodyType === "json") {
-      void import("@/lib/debug-api").then(({ prettyJson }) => {
+      void import("@/lib/debug/debug-api").then(({ prettyJson }) => {
         const out = prettyJson(req.body);
         if (out !== req.body) set({ body: out });
       });

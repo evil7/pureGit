@@ -15,9 +15,9 @@ import { Star, Plug, Zap } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { formatCount } from "@/lib/format";
+import { formatCount } from "@/lib/ui/format";
 import { Tip } from "@/components/Tip";
-import { fetchRateLimit, type RepoStats } from "@/lib/rest";
+import { fetchRateLimit, type RepoStats } from "@/lib/restapi";
 import { fetchPublicRepoStatsSmart } from "@/lib/api";
 import {
   getApiUsage,
@@ -25,7 +25,7 @@ import {
   setApiUsage,
   subscribeUsageChange,
   type ApiUsage,
-} from "@/lib/octokit";
+} from "@/lib/api/octokit";
 
 /** 本项目 GitHub 仓库（owner/name + URL；如地址变更在此修改） */
 const PROJECT_REPO = { owner: "evil7", name: "puregit" } as const;

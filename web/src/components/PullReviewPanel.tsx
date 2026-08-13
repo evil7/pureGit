@@ -45,11 +45,16 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/useAuth";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { UserAvatar } from "@/components/UserAvatar";
-import { apiErrorMessage, type PullReview, type ReviewEvent, type Collaborator } from "@/lib/rest";
+import {
+  apiErrorMessage,
+  type PullReview,
+  type ReviewEvent,
+  type Collaborator,
+} from "@/lib/restapi";
 import { fetchCollaboratorsSmart } from "@/lib/api";
-import { COPILOT_AVATAR, copilotDisplayName, isCopilotLogin } from "@/lib/copilot";
-import { REVIEW_STATE_BADGE_TINTED, REVIEW_STATE_ICON } from "@/lib/state-colors";
-import { toastSuccess } from "@/lib/toast";
+import { COPILOT_AVATAR, copilotDisplayName, isCopilotLogin } from "@/lib/repo/copilot";
+import { REVIEW_STATE_BADGE_TINTED, REVIEW_STATE_ICON } from "@/lib/ui/state-colors";
+import { toastSuccess } from "@/lib/ui/toast";
 import type { PullReviewSummary } from "@/lib/api";
 
 // ReviewChangesDialog 内动态 import @/lib/api（submitPullReviewSmart），避免首屏循环依赖

@@ -54,7 +54,7 @@ import {
   type GqlSchemaTree,
   type GqlSearchHit,
   type GqlSelectionMap,
-} from "@/lib/debug-graphql";
+} from "@/lib/debug/debug-graphql";
 import type { GraphQLSchema } from "graphql";
 import { getGqlVersion } from "./schema-loader";
 import { TreeSearchInput } from "./TreeSearchInput";

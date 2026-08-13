@@ -17,7 +17,7 @@ import {
   triggerLoginSpotlight,
   type SpotlightTarget,
   type SpotlightOptions,
-} from "@/lib/login-spotlight";
+} from "@/lib/auth/login-spotlight";
 
 export function LoginPrompt({
   title,

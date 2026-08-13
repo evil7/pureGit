@@ -105,7 +105,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchReleasesSmart` / `fetchReleaseDetailSmart` | ✅ | ✅ | — | — | ✅ |
 | `isStarredSmart` / `setStarredSmart` | ✅ | ✅ | — | — | ✅ |
 | `forkRepositorySmart`（fork 无 GraphQL mutation） | ✗ | ✅ | — | — | ✅（REST-only） |
-| `searchRepositoriesSmart` / `searchUsersSmart` / `searchIssuesSmart` | ✅ | ✅ | — | — | ✅ |
+| `searchRepositoriesSmart` / `searchUsersSmart` / `searchIssuesSmart` / `searchPullsSmart` / `searchDiscussionsSmart` | ✅ | ✅（discussions 无 REST 端点） | — | — | ✅ |
 | `fetchDiscussionsSmart` / `fetchDiscussionDetailSmart` / `createDiscussionSmart` / `addDiscussionCommentSmart` | ✅ | ✗（REST 无端点） | — | — | ✅ |
 | `fetchOrgMembersSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchOrgMembersWithRolesSmart`（成员含角色/2FA：membersWithRole.edges 单请求替代两请求合并） | ✅ | ✅ 降级 | — | — | ✅ |

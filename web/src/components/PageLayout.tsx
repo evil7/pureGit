@@ -25,7 +25,7 @@
  */
 import type { ReactNode } from "react";
 import { cn } from "@/lib/utils";
-import { SIDEBAR_STICKY, SIDEBAR_STICKY_SCROLL, CONTENT_FILL } from "@/lib/layout";
+import { SIDEBAR_STICKY, SIDEBAR_STICKY_SCROLL, CONTENT_FILL } from "@/lib/ui/layout";
 
 export type SideSticky = "nav" | "tool" | "none";
 export type SideBreakpoint = "md" | "lg" | "xl";

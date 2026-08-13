@@ -27,8 +27,8 @@ import {
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
 import { createPullRequestSmart, fetchBranchesSmart } from "@/lib/api";
-import { fetchCompare, type CompareResult } from "@/lib/rest";
-import { PAGE_SHELL } from "@/lib/layout";
+import { fetchCompare, type CompareResult } from "@/lib/restapi";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { DiffView } from "@/components/DiffView";

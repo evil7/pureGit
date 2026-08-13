@@ -13,7 +13,7 @@
  *
  * 用法：<LangColorBar languages={repo.languages} />
  */
-import { langColorOrFallback } from "@/lib/lang-colors";
+import { langColorOrFallback } from "@/lib/code/lang-colors";
 import { Tip } from "@/components/Tip";
 
 export function LangColorBar({

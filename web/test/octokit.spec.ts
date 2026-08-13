@@ -19,20 +19,20 @@
  * - 额度/熔断为模块级单例：beforeEach 重置 usage；熔断时间用 fake timers + setSystemTime 控制
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { notifyModeFallback } from "@/lib/toast";
+import { notifyModeFallback } from "@/lib/ui/toast";
 
-vi.mock("@/lib/toast", () => ({
+vi.mock("@/lib/ui/toast", () => ({
   notifyModeFallback: vi.fn(),
 }));
 
-vi.mock("@/lib/prefs-sync", () => ({
+vi.mock("@/lib/auth/prefs-sync", () => ({
   PREFS_SYNC_EVENT: "puregit:prefs-synced",
   setPrefsAuth: vi.fn(),
   getPrefsToken: vi.fn(() => null),
   requestPrefsPush: vi.fn(),
 }));
 
-type Octokit = typeof import("@/lib/octokit");
+type Octokit = typeof import("@/lib/api/octokit");
 let octokit: Octokit;
 
 /** 简单 localStorage mock（node 环境注入） */
@@ -61,7 +61,7 @@ beforeEach(async () => {
   vi.useRealTimers();
   // 额度/熔断为模块级单例：每次全新 import 获得干净状态，避免跨用例污染
   vi.resetModules();
-  octokit = await import("@/lib/octokit");
+  octokit = await import("@/lib/api/octokit");
 });
 
 describe("模式偏好（localStorage）", () => {

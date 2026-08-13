@@ -19,14 +19,14 @@ import {
   BarChart3,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import { formatCount } from "@/lib/format";
+import { formatCount } from "@/lib/ui/format";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { StarForkButtons } from "@/components/StarForkButtons";
 import { WriteGate } from "@/components/WriteGate";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
-import type { Repository } from "@/lib/rest";
+import type { Repository } from "@/lib/restapi";
 
 const TABS: {
   to: string;

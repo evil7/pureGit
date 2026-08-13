@@ -15,11 +15,11 @@
 
 import { createContext, useContext, useEffect, useMemo, useState, type ReactNode } from "react";
 import { fetchCurrentUserSmart } from "@/lib/api";
-import { getDeviceId } from "@/lib/session";
-import { WORKER_BASE } from "@/lib/worker-base";
-import { setPrefsAuth, syncPrefsFromCloud } from "@/lib/prefs-sync";
-import { computeMissingScopes } from "@/lib/scopes";
-import { readCache, writeCache, clearCache } from "@/lib/session-cache";
+import { getDeviceId } from "@/lib/auth/session";
+import { WORKER_BASE } from "@/lib/auth/worker-base";
+import { setPrefsAuth, syncPrefsFromCloud } from "@/lib/auth/prefs-sync";
+import { computeMissingScopes } from "@/lib/auth/scopes";
+import { readCache, writeCache, clearCache } from "@/lib/auth/session-cache";
 
 /** 缓存提前失效余量（ms）：接近过期即视为失效，避免边界竞态 */
 const CACHE_SKEW = 60_000;

@@ -22,17 +22,19 @@ import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { CommentsSection } from "@/components/CommentsSection";
 import { useAuth } from "@/hooks/useAuth";
 import { addIssueCommentSmart } from "@/lib/api";
-import type { IssueComment } from "@/lib/rest";
+import type { IssueComment } from "@/lib/restapi";
 
 vi.mock("@/hooks/useAuth", () => ({ useAuth: vi.fn() }));
 vi.mock("@/hooks/useDateFormat", () => ({ useDateFormat: () => ({ fmt: (s: string) => s }) }));
 vi.mock("@/i18n", () => ({ useI18n: () => ({ t: (k: string) => k }), tStatic: (k: string) => k }));
 vi.mock("@/lib/api", () => ({ addIssueCommentSmart: vi.fn() }));
-vi.mock("@/lib/rest", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rest")>();
+vi.mock("@/lib/restapi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/restapi")>();
   return { ...actual, apiErrorMessage: (e: unknown, fb?: string) => fb ?? String(e) };
 });
-vi.mock("@/lib/repo-raw", () => ({ repoRawBase: () => "https://raw.githubusercontent.com/o/r" }));
+vi.mock("@/lib/repo/repo-raw", () => ({
+  repoRawBase: () => "https://raw.githubusercontent.com/o/r",
+}));
 vi.mock("@/components/MarkdownView", () => ({
   MarkdownView: ({ children }: { children?: unknown }) => (
     <div data-testid="md-view">{String(children)}</div>

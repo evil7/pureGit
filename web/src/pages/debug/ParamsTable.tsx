@@ -39,7 +39,7 @@ import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { cn } from "@/lib/utils";
-import type { DebugParam } from "@/lib/debug-api";
+import type { DebugParam } from "@/lib/debug/debug-api";
 
 interface ParamsTableProps {
   t: (k: string, vars?: Record<string, unknown>) => string;

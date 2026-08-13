@@ -19,7 +19,7 @@ import {
   logMainRequest,
   logWarn,
   setApiLogDev,
-} from "@/lib/api-log";
+} from "@/lib/api/api-log";
 
 function capture(fn: () => void): string[] {
   const lines: string[] = [];

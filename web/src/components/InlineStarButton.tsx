@@ -22,7 +22,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { setStarredSmart } from "@/lib/api";
 import { cn } from "@/lib/utils";
-import { formatCount } from "@/lib/format";
+import { formatCount } from "@/lib/ui/format";
 
 export function InlineStarButton({
   fullName,

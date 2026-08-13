@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { fetchUserOrgsSmart, type UserOrgItem } from "@/lib/api";
-import { fetchOrgMemberships } from "@/lib/rest";
+import { fetchOrgMemberships } from "@/lib/restapi";
 
 export function OrganizationsSection() {
   const { token } = useAuth();

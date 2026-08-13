@@ -30,12 +30,17 @@ import {
   fetchIssueDetailWithCommentsSmart,
   updateIssueStateSmart,
 } from "@/lib/api";
-import { apiErrorMessage, fetchIssueSubscription, normalizeApiError, ApiError } from "@/lib/rest";
-import type { Issue, IssueComment } from "@/lib/rest";
+import {
+  apiErrorMessage,
+  fetchIssueSubscription,
+  normalizeApiError,
+  ApiError,
+} from "@/lib/restapi";
+import type { Issue, IssueComment } from "@/lib/restapi";
 import { CommentsSection } from "@/components/CommentsSection";
 import { MarkdownView } from "@/components/MarkdownView";
-import { repoRawBase } from "@/lib/repo-raw";
-import { STATE_BADGE_SOLID } from "@/lib/state-colors";
+import { repoRawBase } from "@/lib/repo/repo-raw";
+import { STATE_BADGE_SOLID } from "@/lib/ui/state-colors";
 import { UserAvatar } from "@/components/UserAvatar";
 import { AssigneesEditor, LabelsEditor, MilestoneEditor } from "@/components/MetadataEditors";
 import { ParticipantsSection } from "@/components/ParticipantsSection";
@@ -43,7 +48,7 @@ import { SubscribeButton } from "@/components/SidebarSection";
 import { cn } from "@/lib/utils";
 import PageLayout from "@/components/PageLayout";
 import { useDateFormat } from "@/hooks/useDateFormat";
-import { toastSuccess, toastError } from "@/lib/toast";
+import { toastSuccess, toastError } from "@/lib/ui/toast";
 
 export function IssueDetailPage() {
   const { owner, repo, number } = useParams<{

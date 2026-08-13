@@ -65,7 +65,7 @@ import {
   type OpenApiEndpoint,
   type RestReqFile,
   type RestResMinFile,
-} from "@/lib/debug-openapi";
+} from "@/lib/debug/debug-openapi";
 
 /** 构造测试端点（method/path/op.params） */
 function ep(

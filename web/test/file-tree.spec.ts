@@ -20,7 +20,7 @@
  * 【测试方式】纯函数单元测试，无任何网络/DOM 依赖。
  */
 import { describe, it, expect } from "vitest";
-import { buildTree, type TreeNode } from "@/lib/file-tree";
+import { buildTree, type TreeNode } from "@/lib/repo/file-tree";
 
 /** 便捷读取 Map children */
 function child(node: TreeNode, name: string): TreeNode {

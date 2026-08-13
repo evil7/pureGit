@@ -12,7 +12,7 @@ import { Button } from "@/components/ui/button";
 import { Toggle } from "@/components/ui/toggle";
 import { CodeEditor } from "@/components/CodeEditor";
 import { cn } from "@/lib/utils";
-import type { DebugResult } from "@/lib/debug-api";
+import type { DebugResult } from "@/lib/debug/debug-api";
 
 /** 响应体字节数格式化（B/KB/MB） */
 function formatSize(bytes: number): string {

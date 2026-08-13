@@ -35,10 +35,10 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
-import { fetchContributors, type Contributor, type Issue } from "@/lib/rest";
+import { fetchContributors, type Contributor, type Issue } from "@/lib/restapi";
 import { fetchIssuesSmart } from "@/lib/api";
 import { MarkdownView } from "@/components/MarkdownView";
-import { repoRawBase } from "@/lib/repo-raw";
+import { repoRawBase } from "@/lib/repo/repo-raw";
 import { SegmentedControl } from "@/components/SegmentedControl";
 
 /* ===== text-expander 事件类型（包 d.ts 只给 TextExpanderMatch/Result） ===== */

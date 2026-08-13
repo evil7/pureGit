@@ -14,11 +14,11 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import { fetchReleasesSmart } from "@/lib/api";
-import { normalizeApiError, type ApiError } from "@/lib/rest";
+import { normalizeApiError, type ApiError } from "@/lib/restapi";
 import { useI18n, tStatic } from "@/i18n";
-import type { Release } from "@/lib/rest";
+import type { Release } from "@/lib/restapi";
 import { MarkdownView } from "@/components/MarkdownView";
-import { repoRawBase } from "@/lib/repo-raw";
+import { repoRawBase } from "@/lib/repo/repo-raw";
 import PageLayout from "@/components/PageLayout";
 import { cn } from "@/lib/utils";
 

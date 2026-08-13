@@ -16,7 +16,7 @@ import { Monitor, Moon, Sun, Plug, Zap, AlertTriangle, Lock, PencilLine } from "
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { useCodeTheme } from "@/hooks/useCodeTheme";
 import { useDateFormat, type DateFormat } from "@/hooks/useDateFormat";
-import { CODE_THEMES } from "@/lib/code-theme";
+import { CODE_THEMES } from "@/lib/code/code-theme";
 import { useI18n, type Lang, type I18nKey } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
@@ -25,8 +25,8 @@ import {
   setApiUsage,
   subscribeUsageChange,
   type ApiUsage,
-} from "@/lib/octokit";
-import { fetchRateLimit } from "@/lib/rest";
+} from "@/lib/api/octokit";
+import { fetchRateLimit } from "@/lib/restapi";
 import { useAuth } from "@/hooks/useAuth";
 import { CodeView } from "@/components/CodeView";
 import { SegmentedControl, type SegmentedOption } from "@/components/SegmentedControl";

@@ -37,8 +37,8 @@ import { Badge } from "@/components/ui/badge";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import { MarkdownView } from "@/components/MarkdownView";
 import { UserAvatar } from "@/components/UserAvatar";
-import { repoRawBase } from "@/lib/repo-raw";
-import { isCopilotLogin, COPILOT_AVATAR, copilotDisplayName } from "@/lib/copilot";
+import { repoRawBase } from "@/lib/repo/repo-raw";
+import { isCopilotLogin, COPILOT_AVATAR, copilotDisplayName } from "@/lib/repo/copilot";
 import type { PullTimelineEvent } from "@/lib/api";
 import { ReviewStateBadge } from "./PullReviewPanel";
 

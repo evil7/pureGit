@@ -8,10 +8,11 @@
  * GraphQL 首选 / 降级 REST），不重复全量测。本文件聚焦 **独特逻辑**：
  * - searchIssueId：GraphQL search 节点无 databaseId → 由仓库 full_name + number
  *   派生稳定唯一 id（React key 需要；同输入必同输出）
- * - searchRepositoriesSmart / searchUsersSmart / searchIssuesSmart 的 GraphQL 成功路径
- *   转换（toSearchRepo：id 兜底 -1、owner 从 nameWithOwner.split("/")[0] 派生、
+ * - searchRepositoriesSmart / searchUsersSmart / searchIssuesSmart / searchPullsSmart 的 GraphQL
+ *   成功路径转换（toSearchRepo：id 兜底 -1、owner 从 nameWithOwner.split("/")[0] 派生、
  *   topics 恒空、default_branch 恒 "main"；users：name/avatar_url/bio ?? undefined；
- *   issues：附带 repository.full_name）
+ *   issues/prs：附带 repository.full_name；prs：打 pull_request 标记 + author/labels）
+ * - searchDiscussionsSmart：GraphQL 唯一通道（REST 无 discussion 端点），匿名返回空
  * - 分页 page>1 → 直 REST（不消耗 GraphQL 配额）
  *
  * 【测试方式与风控红线】全部 mock（graphqlRequest / rest 层），
@@ -19,8 +20,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/api-core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api-core")>();
+vi.mock("@/lib/api/api-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/api-core")>();
   return {
     ...actual,
     graphqlRequest: vi.fn(),
@@ -28,8 +29,8 @@ vi.mock("@/lib/api-core", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/rest", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rest")>();
+vi.mock("@/lib/restapi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/restapi")>();
   return {
     ...actual,
     searchRepositories: vi.fn(),
@@ -42,10 +43,12 @@ import {
   searchRepositoriesSmart,
   searchUsersSmart,
   searchIssuesSmart,
+  searchPullsSmart,
+  searchDiscussionsSmart,
   searchIssueId,
-} from "@/lib/api-search";
-import { graphqlRequest } from "@/lib/api-core";
-import { searchRepositories, searchUsers, searchIssues } from "@/lib/rest";
+} from "@/lib/api/api-search";
+import { graphqlRequest } from "@/lib/api/api-core";
+import { searchRepositories, searchUsers, searchIssues } from "@/lib/restapi";
 
 const mockGraphql = vi.mocked(graphqlRequest);
 const mockSearchRepos = vi.mocked(searchRepositories);
@@ -289,5 +292,122 @@ describe("searchIssuesSmart", () => {
     mockGraphql.mockRejectedValue(new TypeError("net"));
     await searchIssuesSmart("x", "gho_x");
     expect(mockSearchIssues).toHaveBeenCalledTimes(1);
+  });
+});
+
+describe("searchPullsSmart（PR 用 `... on PullRequest` 片段）", () => {
+  const gqlPrNode = {
+    databaseId: 7,
+    number: 9,
+    title: "PR title",
+    url: "https://github.com/evil7/puregit/pull/9",
+    state: "OPEN",
+    createdAt: "2026-07-01T00:00:00Z",
+    updatedAt: "2026-07-01T00:00:00Z",
+    closedAt: null,
+    comments: { totalCount: 3 },
+    author: { login: "alice", avatarUrl: "https://a.png" },
+    labels: { nodes: [{ name: "enhancement", color: "a2eeef" }] },
+    repository: { nameWithOwner: "evil7/puregit" },
+  };
+
+  it("GraphQL 成功 → 打 pull_request 标记 + repository 附带 + author/labels 映射", async () => {
+    mockGraphql.mockResolvedValue({
+      data: { search: { issueCount: 1, nodes: [gqlPrNode] } },
+    } as never);
+    const r = await searchPullsSmart("is:pr", "gho_x");
+    expect(r.total_count).toBe(1);
+    expect(r.items[0]).toMatchObject({
+      id: searchIssueId("evil7/puregit", 9),
+      number: 9,
+      state: "open",
+      pull_request: {},
+      repository: { full_name: "evil7/puregit" },
+      user: { login: "alice" },
+      labels: [{ name: "enhancement", color: "a2eeef" }],
+    });
+  });
+
+  it("page>1 → 直 REST（不消耗 GraphQL）", async () => {
+    await searchPullsSmart("is:pr", "gho_x", 2);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockSearchIssues).toHaveBeenCalled();
+  });
+
+  it("GraphQL errors / 异常 → 降级 REST", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
+    await searchPullsSmart("is:pr", "gho_x");
+    expect(mockSearchIssues).toHaveBeenCalledTimes(1);
+    mockGraphql.mockRejectedValue(new Error("net"));
+    await searchPullsSmart("is:pr", "gho_x");
+    expect(mockSearchIssues).toHaveBeenCalledTimes(2);
+  });
+
+  it("token 空 → 直 REST", async () => {
+    await searchPullsSmart("is:pr", undefined);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockSearchIssues).toHaveBeenCalled();
+  });
+});
+
+describe("searchDiscussionsSmart（GraphQL 唯一通道）", () => {
+  const gqlDiscussionNode = {
+    number: 3,
+    title: "Roadmap 讨论",
+    createdAt: "2026-07-01T00:00:00Z",
+    category: { id: "cat1", name: "Ideas", emoji: "💡" },
+    author: { login: "alice", avatarUrl: "https://a.png" },
+    answerChosenAt: "2026-07-02T00:00:00Z",
+    comments: { totalCount: 5 },
+    upvoteCount: 12,
+    repository: { nameWithOwner: "evil7/puregit" },
+  };
+
+  it("GraphQL 成功 → 讨论映射（category/author/answered/comments/upvote + repository）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: { search: { discussionCount: 1, nodes: [gqlDiscussionNode] } },
+    } as never);
+    const r = await searchDiscussionsSmart("react", "gho_x");
+    expect(r.total_count).toBe(1);
+    expect(r.items[0]).toMatchObject({
+      number: 3,
+      title: "Roadmap 讨论",
+      category: { id: "cat1", name: "Ideas", emoji: "💡" },
+      author: { login: "alice", avatar_url: "https://a.png" },
+      answered: true,
+      commentsCount: 5,
+      upvoteCount: 12,
+      repository: { full_name: "evil7/puregit" },
+    });
+  });
+
+  it("author 缺失 → ghost 兜底", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        search: {
+          discussionCount: 1,
+          nodes: [{ ...gqlDiscussionNode, author: null }],
+        },
+      },
+    } as never);
+    const r = await searchDiscussionsSmart("react", "gho_x");
+    expect(r.items[0].author).toEqual({ login: "ghost", avatar_url: "" });
+  });
+
+  it("page>1 → 空结果（GraphQL 无游标续接，讨论搜索仅首屏）", async () => {
+    const r = await searchDiscussionsSmart("react", "gho_x", 2);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(r.items).toEqual([]);
+  });
+
+  it("token 空 → 空结果（匿名 GraphQL 恒 403，无 REST discussion 端点）", async () => {
+    const r = await searchDiscussionsSmart("react", undefined);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(r.items).toEqual([]);
+  });
+
+  it("GraphQL errors → 抛错（无 REST 降级）", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "boom" }] } as never);
+    await expect(searchDiscussionsSmart("react", "gho_x")).rejects.toThrow("boom");
   });
 });

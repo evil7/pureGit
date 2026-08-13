@@ -24,10 +24,10 @@
 import { useState, type ComponentProps, type ReactNode } from "react";
 import MarkdownPreview from "@uiw/react-markdown-preview";
 import { Check, Copy } from "lucide-react";
-import { githubSyntax, parseRepoFromRawBase } from "@/lib/markdown-plugins";
-import { rawImgFallbackSrc } from "@/lib/raw-proxy";
+import { githubSyntax, parseRepoFromRawBase } from "@/lib/markdown/markdown-plugins";
+import { rawImgFallbackSrc } from "@/lib/repo/raw-proxy";
 import { useIsDark } from "@/hooks/useIsDark";
-import type { OutlineItem } from "@/lib/markdown-outline";
+import type { OutlineItem } from "@/lib/markdown/markdown-outline";
 
 /** 从 pre 子节点递归提取纯文本（复制内容 = 代码原文，去高亮 span 包装） */
 function extractCodeText(node: ReactNode): string {

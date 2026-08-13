@@ -34,10 +34,10 @@ import {
   apiErrorMessage,
   type RepoLabel,
   type RepoMilestone,
-} from "@/lib/rest";
+} from "@/lib/restapi";
 import { fetchRepoLabelsSmart, fetchRepoAssigneesSmart, fetchRepoMilestonesSmart } from "@/lib/api";
-import { getLabelStyle } from "@/lib/label-color";
-import { toastSuccess } from "@/lib/toast";
+import { getLabelStyle } from "@/lib/ui/label-color";
+import { toastSuccess } from "@/lib/ui/toast";
 
 /** 侧栏标签类型（name+color，与 pr.labels / issue.labels 一致） */
 export type SidebarLabel = { name: string; color: string };

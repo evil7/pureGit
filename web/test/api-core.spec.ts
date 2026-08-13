@@ -12,12 +12,12 @@
  * - HTTP 4xx/5xx（token 失效等）→ 不熔断（非网络问题）
  * - 正常 → 原样返回 GraphQL 响应
  *
- * 【测试隔离】mock @/lib/octokit（决策函数）与 @/lib/graphql（底层请求），
+ * 【测试隔离】mock @/lib/api/octokit（决策函数）与 @/lib/graphql（底层请求），
  * 仅验证 api-core 自身的决策/熔断逻辑。
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/octokit", () => ({
+vi.mock("@/lib/api/octokit", () => ({
   shouldUseGraphQL: vi.fn(),
   triggerGqlCooldown: vi.fn(),
 }));
@@ -27,18 +27,18 @@ vi.mock("@/lib/graphql", () => ({
   hasGraphQLErrors: vi.fn(() => false),
 }));
 
-vi.mock("@/lib/api-log", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api-log")>();
+vi.mock("@/lib/api/api-log", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/api-log")>();
   return {
     ...actual,
     logError: vi.fn(),
   };
 });
 
-import { graphqlRequest, withRestFallback } from "@/lib/api-core";
-import { shouldUseGraphQL, triggerGqlCooldown } from "@/lib/octokit";
+import { graphqlRequest, withRestFallback } from "@/lib/api/api-core";
+import { shouldUseGraphQL, triggerGqlCooldown } from "@/lib/api/octokit";
 import { graphqlRequest as rawGraphqlRequest } from "@/lib/graphql";
-import { logError } from "@/lib/api-log";
+import { logError } from "@/lib/api/api-log";
 
 const mockShouldGraphQL = vi.mocked(shouldUseGraphQL);
 const mockTriggerCooldown = vi.mocked(triggerGqlCooldown);

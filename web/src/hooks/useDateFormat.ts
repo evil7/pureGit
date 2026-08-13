@@ -11,7 +11,7 @@
  * 云端同步：改动经 requestPrefsPush()，PREFS_SYNC_EVENT 后重读。
  */
 import { useEffect, useMemo, useState } from "react";
-import { PREFS_SYNC_EVENT, requestPrefsPush } from "@/lib/prefs-sync";
+import { PREFS_SYNC_EVENT, requestPrefsPush } from "@/lib/auth/prefs-sync";
 import { useI18n } from "@/i18n";
 
 export type DateFormat = "absolute" | "iso" | "relative";

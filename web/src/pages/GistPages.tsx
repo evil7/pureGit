@@ -47,8 +47,8 @@ import {
   unstarGist,
   type Gist,
 } from "@/lib/api";
-import { inferLang } from "@/lib/shiki";
-import { PAGE_SHELL } from "@/lib/layout";
+import { inferLang } from "@/lib/code/shiki";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 import { cn } from "@/lib/utils";
 
 // ===== Gist 编辑器页面（新建 /gist/new 与编辑 /gist/:id/edit 共用） =====

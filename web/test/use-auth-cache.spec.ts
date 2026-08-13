@@ -12,7 +12,7 @@
  * - clearCache：清除缓存
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { SESSION_CACHE_KEY, readCache, writeCache, clearCache } from "@/lib/session-cache";
+import { SESSION_CACHE_KEY, readCache, writeCache, clearCache } from "@/lib/auth/session-cache";
 
 /** node 环境注入的 sessionStorage mock */
 function makeStorage(): Storage {

@@ -84,8 +84,8 @@ import {
   buildUrlFromParams,
   syncParamsFromUrl,
   type DocParams,
-} from "@/lib/debug-params";
-import type { DebugParam } from "@/lib/debug-api";
+} from "@/lib/debug/debug-params";
+import type { DebugParam } from "@/lib/debug/debug-api";
 
 const ORGS_REPOS_DOC: DocParams = {
   path: "/orgs/{org}/repos",

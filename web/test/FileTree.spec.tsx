@@ -25,7 +25,7 @@ import { describe, it, expect, afterEach } from "vitest";
 import { render, screen, fireEvent, cleanup } from "@testing-library/react";
 import { MemoryRouter, Routes, Route, useLocation } from "react-router-dom";
 import { FileTree } from "@/components/FileTree";
-import { buildTree } from "@/lib/file-tree";
+import { buildTree } from "@/lib/repo/file-tree";
 
 afterEach(cleanup);
 

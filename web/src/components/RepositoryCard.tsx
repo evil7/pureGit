@@ -5,8 +5,8 @@ import { Card, CardContent } from "@/components/ui/card";
 import { LangDot } from "@/components/LangDot";
 import { RepoVisibilityBadge } from "@/components/RepoVisibilityBadge";
 import { useI18n } from "@/i18n";
-import { formatCount } from "@/lib/format";
-import type { Repository } from "@/lib/rest";
+import { formatCount } from "@/lib/ui/format";
+import type { Repository } from "@/lib/restapi";
 
 export function RepositoryCard({ repo }: { repo: Repository }) {
   const { t } = useI18n();

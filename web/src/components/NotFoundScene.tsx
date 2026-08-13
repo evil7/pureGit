@@ -28,7 +28,7 @@ import {
   type LucideIcon,
 } from "lucide-react";
 import { Logo } from "@/components/Logo";
-import { PAGE_SHELL } from "@/lib/layout";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 
 /** 随机浮点 [min, max) */
 function rand(min: number, max: number) {

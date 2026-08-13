@@ -4,7 +4,7 @@
  * 左栏/请求编辑器/历史列表共用：方法彩色徽标映射、响应状态码配色、URL 规整。
  * REST 方法徽标与 GraphQL 方法共用同一语义色彩（GET/query 青、POST/mutation 橙等）。
  */
-import type { BodyType } from "@/lib/debug-api";
+import type { BodyType } from "@/lib/debug/debug-api";
 
 /** REST 方法 → 彩色徽标类（Postman 语义；LeftPanel/RequestEditor/RestTree 共用） */
 export const REST_METHOD_COLOR: Record<string, string> = {

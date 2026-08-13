@@ -15,7 +15,7 @@
  * 无 DOM/网络依赖，node 环境可测）。
  */
 import { describe, it, expect } from "vitest";
-import { githubSyntax, parseRepoFromRawBase } from "@/lib/markdown-plugins";
+import { githubSyntax, parseRepoFromRawBase } from "@/lib/markdown/markdown-plugins";
 import type { Root } from "mdast";
 
 /** 便捷构造单文本节点树 */

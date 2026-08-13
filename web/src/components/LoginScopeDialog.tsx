@@ -26,7 +26,7 @@ import { useI18n } from "@/i18n";
 import { KeyRound, ShieldCheck, Eye, PencilLine } from "lucide-react";
 import { SegmentedControl, type SegmentedOption } from "@/components/SegmentedControl";
 import { InlineError } from "@/components/InlineError";
-import { LOGIN_TRIGGER_ID } from "@/lib/login-trigger";
+import { LOGIN_TRIGGER_ID } from "@/lib/auth/login-trigger";
 
 /** 登录按钮 + 权限选择对话框 */
 export function LoginScopeDialog({

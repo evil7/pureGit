@@ -58,15 +58,15 @@
 import { describe, it, expect } from "vitest";
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
-import type { OpenApiEndpoint, RestReqFile } from "@/lib/debug-openapi";
-import { endpointToRequest, matchEndpoint, endpointStillMatches } from "@/lib/debug-openapi";
+import type { OpenApiEndpoint, RestReqFile } from "@/lib/debug/debug-openapi";
+import { endpointToRequest, matchEndpoint, endpointStillMatches } from "@/lib/debug/debug-openapi";
 import {
   buildUrlFromParams,
   syncParamsFromUrl,
   type DocParams,
   parsePathSeg,
-} from "@/lib/debug-params";
-import { openApiSchemaToStructured } from "@/lib/debug-rest-structured";
+} from "@/lib/debug/debug-params";
+import { openApiSchemaToStructured } from "@/lib/debug/debug-rest-structured";
 
 const REST_DIR = fileURLToPath(new URL("../public/debug/rest/", import.meta.url));
 

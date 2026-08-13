@@ -25,13 +25,15 @@ import {
   parseSearchSyntax,
   buildSearchQuery,
   matchSearch,
+  tokenizeSearch,
+  serializeSearch,
   parseQueryQualifiers,
   getQualifier,
   hasQualifier,
   addQualifier,
   removeQualifier,
   toggleQualifier,
-} from "@/lib/search-syntax";
+} from "@/lib/api/search-syntax";
 
 describe("parseSearchSyntax", () => {
   it("空串 → 空过滤器", () => {
@@ -229,15 +231,15 @@ describe("parseQueryQualifiers / getQualifier / hasQualifier", () => {
   it("比较符 op 提取（> >= < <=），值剥离比较符", () => {
     const tokens = parseQueryQualifiers("stars:>100 forks:>=5 size:<100 pushed:<=2024-01-01");
     const byKey = Object.fromEntries(tokens.map((t) => [t.key, t]));
-    expect(byKey.stars).toEqual({ key: "stars", op: ">", value: "100" });
-    expect(byKey.forks).toEqual({ key: "forks", op: ">=", value: "5" });
-    expect(byKey.size).toEqual({ key: "size", op: "<", value: "100" });
-    expect(byKey.pushed).toEqual({ key: "pushed", op: "<=", value: "2024-01-01" });
+    expect(byKey.stars).toEqual({ key: "stars", negated: false, op: ">", value: "100" });
+    expect(byKey.forks).toEqual({ key: "forks", negated: false, op: ">=", value: "5" });
+    expect(byKey.size).toEqual({ key: "size", negated: false, op: "<", value: "100" });
+    expect(byKey.pushed).toEqual({ key: "pushed", negated: false, op: "<=", value: "2024-01-01" });
   });
 
   it("引号值整体取值并去引号", () => {
     const tokens = parseQueryQualifiers('label:"good first issue"');
-    expect(tokens).toEqual([{ key: "label", op: "", value: "good first issue" }]);
+    expect(tokens).toEqual([{ key: "label", negated: false, op: "", value: "good first issue" }]);
   });
 
   it("getQualifier：返回 op+value，无则 null", () => {
@@ -281,5 +283,76 @@ describe("addQualifier / removeQualifier / toggleQualifier", () => {
     expect(toggleQualifier("is:open", "is", "open")).toBe("");
     expect(toggleQualifier("is:open", "is", "closed")).toBe("is:closed");
     expect(toggleQualifier("language:js is:open", "language", "ts")).toBe("is:open language:ts");
+  });
+});
+
+describe("tokenizeSearch / serializeSearch（正反向解析核心）", () => {
+  it("正向：自由文本 + token 列表分离", () => {
+    const p = tokenizeSearch("hello is:open label:bug");
+    expect(p.freeText).toBe("hello");
+    expect(p.tokens.map((t) => `${t.key}=${t.value}`)).toEqual(["is=open", "label=bug"]);
+  });
+
+  it("正向：否定 -qualifier 标记 negated", () => {
+    const p = tokenizeSearch("-label:bug -author:alice");
+    expect(p.tokens).toEqual([
+      { key: "label", negated: true, op: "", value: "bug", raw: "-label:bug" },
+      { key: "author", negated: true, op: "", value: "alice", raw: "-author:alice" },
+    ]);
+  });
+
+  it("正向：比较符 op 提取", () => {
+    const p = tokenizeSearch("comments:>10 stars:>=5");
+    expect(p.tokens.map((t) => [t.key, t.op, t.value])).toEqual([
+      ["comments", ">", "10"],
+      ["stars", ">=", "5"],
+    ]);
+  });
+
+  it("反向：serializeSearch 保序重建", () => {
+    const p = tokenizeSearch("bug -label:wontfix author:alice");
+    expect(serializeSearch(p)).toBe("bug -label:wontfix author:alice");
+  });
+
+  it("反向：serializeSearch 注入隐含限定", () => {
+    const p = tokenizeSearch("bug");
+    expect(serializeSearch(p, { inject: ["repo:o/r", "is:pr", "is:open"] })).toBe(
+      "bug repo:o/r is:pr is:open",
+    );
+  });
+
+  it("往返一致性：parse → serialize 无注入时稳定", () => {
+    const raw = 'fix label:"ui fix" -label:wontfix author:me comments:>3';
+    expect(serializeSearch(tokenizeSearch(raw))).toBe(raw);
+  });
+});
+
+describe("否定 -qualifier 与缺失元数据 no:", () => {
+  it("parseSearchSyntax：-label:bug 进 negated，不污染 labels", () => {
+    const f = parseSearchSyntax("label:bug -label:wontfix");
+    expect(f.labels).toEqual(["bug"]);
+    expect(f.negated).toEqual([{ key: "label", value: "wontfix" }]);
+  });
+
+  it("parseSearchSyntax：no:label 进 missing", () => {
+    const f = parseSearchSyntax("no:label no:assignee");
+    expect(f.missing).toEqual(["label", "assignee"]);
+  });
+
+  it("buildSearchQuery：否定与 no: 原样输出", () => {
+    const q = buildSearchQuery("-label:wontfix no:assignee", { type: "issue", repo: "o/r" });
+    expect(q).toContain("-label:wontfix");
+    expect(q).toContain("no:assignee");
+  });
+
+  it("matchSearch：-label 排除语义", () => {
+    const base = { title: "x", labels: ["bug", "ui"], state: "OPEN" };
+    expect(matchSearch("-label:wontfix", base)).toBe(true);
+    expect(matchSearch("-label:bug", base)).toBe(false);
+  });
+
+  it("matchSearch：no:label 排除有标签项", () => {
+    expect(matchSearch("no:label", { title: "x", labels: [], state: "OPEN" })).toBe(true);
+    expect(matchSearch("no:label", { title: "x", labels: ["bug"], state: "OPEN" })).toBe(false);
   });
 });

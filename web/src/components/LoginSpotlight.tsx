@@ -24,7 +24,7 @@ import {
   type SpotlightTarget,
   type SpotlightOptions,
   resolveSpotlightTarget,
-} from "@/lib/login-spotlight";
+} from "@/lib/auth/login-spotlight";
 
 /** 默认参数（可被 SpotlightOptions 覆盖）
  * duration 1600 = 变暗 400ms + 收缩 200ms + 聚焦环淡出 1000ms */

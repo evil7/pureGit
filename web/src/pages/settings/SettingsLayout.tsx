@@ -17,7 +17,7 @@ import { LoginPrompt } from "@/components/LoginPrompt";
 import { AccountSwitcherCard } from "@/components/AccountSwitcherCard";
 import { useManageableEntities } from "@/hooks/useAdminOrgs";
 import { cn } from "@/lib/utils";
-import { PAGE_SHELL } from "@/lib/layout";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 import PageLayout from "@/components/PageLayout";
 
 /** GitHub 对照设置（用户定稿顺序：个人资料/凭据/仓库/组织/屏蔽 → 偏好设置最后） */

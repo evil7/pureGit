@@ -35,12 +35,12 @@ import {
   fetchIssueTemplates,
   type IssueTemplate,
   type RepoLabel,
-} from "@/lib/rest";
-import type { GitHubUser } from "@/lib/rest";
+} from "@/lib/restapi";
+import type { GitHubUser } from "@/lib/restapi";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { cn } from "@/lib/utils";
 import PageLayout from "@/components/PageLayout";
-import { PAGE_SHELL } from "@/lib/layout";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 import { LoginPrompt } from "@/components/LoginPrompt";
 
 export default function NewIssuePage() {

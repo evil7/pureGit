@@ -22,9 +22,9 @@ import type {
   RestResFullFile,
   OpenApiGroup,
   OpenApiEndpoint,
-} from "@/lib/debug-openapi";
-import { buildGroupFromTag, endpointToRequest } from "@/lib/debug-openapi";
-import { buildGqlSchemaFromIntrospection } from "@/lib/debug-graphql";
+} from "@/lib/debug/debug-openapi";
+import { buildGroupFromTag, endpointToRequest } from "@/lib/debug/debug-openapi";
+import { buildGqlSchemaFromIntrospection } from "@/lib/debug/debug-graphql";
 import type { GraphQLSchema } from "graphql";
 
 const REST_BASE = "/debug/rest";

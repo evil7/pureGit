@@ -53,10 +53,10 @@ import {
   type Repository,
   type ReceivedEvent,
 } from "@/lib/api";
-import { toastInfo } from "@/lib/toast";
+import { toastInfo } from "@/lib/ui/toast";
 import { cn } from "@/lib/utils";
-import { formatCount } from "@/lib/format";
-import { PAGE_SHELL } from "@/lib/layout";
+import { formatCount } from "@/lib/ui/format";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 import PageLayout from "@/components/PageLayout";
 import { useI18n, tStatic } from "@/i18n";
 import { SegmentedControl, type SegmentedOption } from "@/components/SegmentedControl";

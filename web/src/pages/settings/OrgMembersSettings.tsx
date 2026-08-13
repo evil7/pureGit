@@ -45,7 +45,7 @@ import {
   cancelOrgInvitation,
   apiErrorMessage,
 } from "@/lib/api";
-import type { OrgMemberWithRole, OrgInvitation } from "@/lib/rest";
+import type { OrgMemberWithRole, OrgInvitation } from "@/lib/restapi";
 
 export default function OrgMembersSettings() {
   const { org = "" } = useParams();
@@ -110,7 +110,7 @@ export default function OrgMembersSettings() {
     setInviteBusy(true);
     setError(null);
     try {
-      const u = await import("@/lib/rest").then((m) =>
+      const u = await import("@/lib/restapi").then((m) =>
         m.fetchUserWithId(inviteLogin.trim(), token),
       );
       await createOrgInvitation(org, token, { invitee_id: u.id });

@@ -16,8 +16,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/api-core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api-core")>();
+vi.mock("@/lib/api/api-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/api-core")>();
   return {
     ...actual,
     graphqlRequest: vi.fn(),
@@ -25,8 +25,8 @@ vi.mock("@/lib/api-core", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/rest", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rest")>();
+vi.mock("@/lib/restapi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/restapi")>();
   return {
     ...actual,
     fetchPullCommits: vi.fn(),
@@ -42,13 +42,13 @@ import {
   fetchPullCommitsSmart,
   fetchPullCheckRunsSmart,
   fetchCollaboratorsSmart,
-} from "@/lib/api-issue";
+} from "@/lib/api/api-review";
 import {
   fetchOrgMembersWithRolesSmart,
   fetchOrgTeamsSmart,
   fetchTeamMembersSmart,
-} from "@/lib/api-org";
-import { graphqlRequest } from "@/lib/api-core";
+} from "@/lib/api/api-org";
+import { graphqlRequest } from "@/lib/api/api-core";
 import {
   fetchPullCommits,
   fetchPullCheckRuns,
@@ -62,7 +62,7 @@ import {
   type OrgMemberWithRole,
   type OrgTeam,
   type OrgMember,
-} from "@/lib/rest";
+} from "@/lib/restapi";
 
 const mockGraphql = vi.mocked(graphqlRequest);
 const mockFetchPullCommits = vi.mocked(fetchPullCommits);

@@ -42,7 +42,7 @@ import {
   transferRepository,
   type Repository,
 } from "@/lib/api";
-import { useRepoData, useRepoUpdate } from "@/lib/repo-context";
+import { useRepoData, useRepoUpdate } from "@/lib/repo/repo-context";
 import { WriteGate } from "@/components/WriteGate";
 
 export default function RepoSettingsPage() {

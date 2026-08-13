@@ -33,8 +33,8 @@ import { Link } from "react-router-dom";
 import { Badge } from "@/components/ui/badge";
 import { LangColorBar } from "@/components/LangColorBar";
 import { useDateFormat } from "@/hooks/useDateFormat";
-import { formatCount } from "@/lib/format";
-import type { Release, Repository } from "@/lib/rest";
+import { formatCount } from "@/lib/ui/format";
+import type { Release, Repository } from "@/lib/restapi";
 
 /** 官方 TopicTag pill 样式（浅底蓝字圆角） */
 const TOPIC_TAG =

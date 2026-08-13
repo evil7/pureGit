@@ -21,7 +21,7 @@ import {
 import { cn } from "@/lib/utils";
 import { loadResFull } from "./schema-loader";
 import { METHOD_COLOR } from "./rest-meta";
-import type { OpenApiEndpoint, RestResFullFile } from "@/lib/debug-openapi";
+import type { OpenApiEndpoint, RestResFullFile } from "@/lib/debug/debug-openapi";
 
 /** 文档区段标题（参数/请求体/响应统一：无图标，可选 hint 后缀如 content-type/计数） */
 function DocSectionTitle({ label, hint }: { label: string; hint?: string }) {

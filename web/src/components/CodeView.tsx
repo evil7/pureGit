@@ -12,9 +12,9 @@
  */
 import { useEffect, useRef } from "react";
 import type { EditorView } from "@codemirror/view";
-import { createCmEditor } from "@/lib/codemirror";
-import { inferLang } from "@/lib/shiki";
-import { collectSymbols, type SymbolInfo } from "@/lib/symbols";
+import { createCmEditor } from "@/lib/code/codemirror";
+import { inferLang } from "@/lib/code/shiki";
+import { collectSymbols, type SymbolInfo } from "@/lib/code/symbols";
 import { useCodeTheme } from "@/hooks/useCodeTheme";
 import { useTheme } from "@/hooks/useTheme";
 import { cn } from "@/lib/utils";

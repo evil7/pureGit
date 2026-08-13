@@ -16,7 +16,7 @@ import { Button } from "@/components/ui/button";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { cn } from "@/lib/utils";
-import type { HeaderRow } from "@/lib/debug-api";
+import type { HeaderRow } from "@/lib/debug/debug-api";
 import type { HeaderPreset } from "./header-presets";
 import { HeaderValueCombobox } from "./HeaderValueCombobox";
 

@@ -28,7 +28,7 @@ import {
   apiErrorMessage,
   type UserOrgItem,
 } from "@/lib/api";
-import { PAGE_SHELL } from "@/lib/layout";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 import { LoginPrompt } from "@/components/LoginPrompt";
 
 export default function NewRepositoryPage() {

@@ -18,12 +18,12 @@
  * 修改注意事项：映射层改动（新增分支/type 解析）必须保持「必填排最上」与「收敛保真」基线。
  */
 import { describe, it, expect } from "vitest";
-import { openApiSchemaToStructured } from "@/lib/debug-rest-structured";
+import { openApiSchemaToStructured } from "@/lib/debug/debug-rest-structured";
 import {
   buildStructuredValue,
   jsonToStructuredRows,
   structuredRowToJson,
-} from "@/lib/debug-gql-structured";
+} from "@/lib/debug/debug-gql-structured";
 
 describe("openApiSchemaToStructured：object → input", () => {
   it("properties 递归展开 + required 必填排最上（保持 schema 顺序）", () => {

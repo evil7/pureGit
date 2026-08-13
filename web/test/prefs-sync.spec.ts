@@ -13,7 +13,7 @@
  * - 安全：prefs 仅 UI 偏好，绝不含 token/密钥
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
-import { collectLocalPrefs } from "@/lib/prefs-sync";
+import { collectLocalPrefs } from "@/lib/auth/prefs-sync";
 
 function makeStorage(init: Record<string, string> = {}): Storage {
   const store = new Map(Object.entries(init));

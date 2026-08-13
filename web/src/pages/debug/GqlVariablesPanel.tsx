@@ -43,13 +43,13 @@ import {
   validateVariables,
   type GqlVariableDef,
   type GqlVariableError,
-} from "@/lib/debug-gql-variables";
+} from "@/lib/debug/debug-gql-variables";
 import {
   inputTypeToStructured,
   jsonToStructuredRows,
   structuredRowToJson,
   type StructuredRow,
-} from "@/lib/debug-gql-structured";
+} from "@/lib/debug/debug-gql-structured";
 import { StructuredTable } from "./StructuredTable";
 import {
   getNamedType,

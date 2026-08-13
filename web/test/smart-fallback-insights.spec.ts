@@ -14,8 +14,8 @@
  */
 import { describe, it, expect, beforeEach, vi } from "vitest";
 
-vi.mock("@/lib/api-core", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/api-core")>();
+vi.mock("@/lib/api/api-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/api-core")>();
   return {
     ...actual,
     graphqlRequest: vi.fn(),
@@ -23,17 +23,17 @@ vi.mock("@/lib/api-core", async (importOriginal) => {
   };
 });
 
-vi.mock("@/lib/rest", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("@/lib/rest")>();
+vi.mock("@/lib/restapi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/restapi")>();
   return {
     ...actual,
     fetchCommits: vi.fn(),
   };
 });
 
-import { fetchTopCommittersSmart } from "@/lib/api-insights";
-import { graphqlRequest } from "@/lib/api-core";
-import { fetchCommits, type RepoCommit } from "@/lib/rest";
+import { fetchTopCommittersSmart } from "@/lib/api/api-insights";
+import { graphqlRequest } from "@/lib/api/api-core";
+import { fetchCommits, type RepoCommit } from "@/lib/restapi";
 
 const mockGraphql = vi.mocked(graphqlRequest);
 const mockFetchCommits = vi.mocked(fetchCommits);

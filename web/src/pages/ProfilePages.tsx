@@ -52,9 +52,9 @@ import {
   type ProfileData,
   type OrgMembersResult,
 } from "@/lib/api";
-import { PAGE_SHELL } from "@/lib/layout";
+import { PAGE_SHELL } from "@/lib/ui/layout";
 import PageLayout from "@/components/PageLayout";
-import { normalizeApiError, type ApiError } from "@/lib/rest";
+import { normalizeApiError, type ApiError } from "@/lib/restapi";
 import { cn } from "@/lib/utils";
 
 /** 用户/组织主页（官方统一路径 /{login}，自动检测 user/org） */

@@ -10,10 +10,10 @@ import { Tabs, TabsList, TabsTrigger, TabsContent } from "@/components/ui/tabs";
 import { RestTree } from "./RestTree";
 import { GqlTree } from "./GqlTree";
 import { GraphQLLogo } from "./GraphQLLogo";
-import type { DebugProtocol } from "@/lib/debug-api";
-import type { OpenApiEndpoint } from "@/lib/debug-openapi";
+import type { DebugProtocol } from "@/lib/debug/debug-api";
+import type { OpenApiEndpoint } from "@/lib/debug/debug-openapi";
 import type { GraphQLSchema } from "graphql";
-import type { GqlSchemaContext } from "@/lib/debug-graphql";
+import type { GqlSchemaContext } from "@/lib/debug/debug-graphql";
 
 interface LeftPanelProps {
   t: (k: string, vars?: Record<string, unknown>) => string;

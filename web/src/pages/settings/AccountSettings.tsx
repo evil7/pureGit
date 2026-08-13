@@ -40,7 +40,7 @@ import {
   countryFlag,
   countryName,
   type SessionMeta,
-} from "@/lib/session";
+} from "@/lib/auth/session";
 import {
   ApiError,
   fetchGpgKeys,
@@ -48,9 +48,9 @@ import {
   deleteGpgKey,
   type SSHKey,
   type GpgKey,
-} from "@/lib/rest";
+} from "@/lib/restapi";
 import { fetchSshKeysSmart, addSshKeySmart, deleteSshKeySmart } from "@/lib/api";
-import { describeScopes } from "@/lib/scopes";
+import { describeScopes } from "@/lib/auth/scopes";
 
 /** 依据权限模式推导请求的 GitHub scope 列表（与 worker buildGitHubScope 一致）
  * 以下 3 个仅本文件使用（fast refresh：组件文件不导出非组件） */
