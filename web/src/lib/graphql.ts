@@ -92,6 +92,32 @@ export const LATEST_COMMIT_QUERY = /* GraphQL */ `
   }
 `;
 
+/** 指定文件的最近提交（blob 文件头 commit 信息）。
+ * object(expression: "branch:path") 拿到 Commit → history(path, first:1) 过滤该文件路径，等价 REST listCommits(sha, path) 语义。 */
+export const FILE_COMMIT_QUERY = /* GraphQL */ `
+  query FileCommit($owner: String!, $name: String!, $expression: String!, $path: String!) {
+    repository(owner: $owner, name: $name) {
+      object(expression: $expression) {
+        ... on Commit {
+          history(path: $path, first: 1) {
+            nodes {
+              oid
+              message
+              committedDate
+              author {
+                avatarUrl
+                user {
+                  login
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** 仓库信息（按需字段，优于 REST 全量返回） */
 export const REPOSITORY_QUERY = /* GraphQL */ `
   query Repository($owner: String!, $name: String!) {

@@ -64,7 +64,6 @@ import {
 } from "@/components/ui/alert-dialog";
 import {
   fetchFileTree,
-  fetchFileCommit,
   fetchFileMeta,
   deleteFileContent,
   apiErrorMessage,
@@ -78,6 +77,7 @@ import {
   fetchReadmeSmart,
   fetchDirContentsSmart,
   fetchLatestCommitSmart,
+  fetchFileCommitSmart,
 } from "@/lib/api";
 import { parseTreePath } from "@/lib/repo-path";
 import { WORKER_BASE } from "@/lib/worker-base";
@@ -822,7 +822,7 @@ export function BlobPage() {
   const b = branch || repoData?.default_branch || "main";
   const path = rest;
   const [rawContent, setRawContent] = useState("");
-  const [commit, setCommit] = useState<Awaited<ReturnType<typeof fetchFileCommit>>>(null);
+  const [commit, setCommit] = useState<Awaited<ReturnType<typeof fetchFileCommitSmart>>>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // 文件头 Raw/Copy/下载：本地 raw 内容代理（不跳转 raw.githubusercontent.com）
@@ -967,7 +967,7 @@ export function BlobPage() {
   useEffect(() => {
     if (!token) return;
     let cancelled = false;
-    fetchFileCommit(owner, repo, path, b, token).then((c) => !cancelled && setCommit(c));
+    fetchFileCommitSmart(owner, repo, path, b, token).then((c) => !cancelled && setCommit(c));
     return () => {
       cancelled = true;
     };

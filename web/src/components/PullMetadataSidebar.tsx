@@ -39,9 +39,6 @@ import { useIsDark } from "@/hooks/useIsDark";
 import { useI18n } from "@/i18n";
 import { UserAvatar } from "@/components/UserAvatar";
 import {
-  fetchRepoAssignees,
-  fetchRepoLabels,
-  fetchRepoMilestones,
   updatePullAssignees,
   updatePullLabels,
   updatePullMilestone,
@@ -54,6 +51,9 @@ import {
   setPullLockedSmart,
   fetchPullProjectsSmart,
   fetchPullDevelopmentSmart,
+  fetchRepoLabelsSmart,
+  fetchRepoAssigneesSmart,
+  fetchRepoMilestonesSmart,
   type PullProjectItem,
   type PullDevelopment,
 } from "@/lib/api";
@@ -147,7 +147,7 @@ function AssigneesEditor({
     setError(null);
     setSelected(current.map((u) => u.login));
     if (candidates) return;
-    fetchRepoAssignees(owner, repo, token)
+    fetchRepoAssigneesSmart(owner, repo, token)
       .then(setCandidates)
       .catch(() => setCandidates([]));
   };
@@ -248,7 +248,7 @@ function LabelsEditor({
     setError(null);
     setSelected(current.map((l) => l.name));
     if (candidates) return;
-    fetchRepoLabels(owner, repo, token)
+    fetchRepoLabelsSmart(owner, repo, token)
       .then(setCandidates)
       .catch(() => setCandidates([]));
   };
@@ -347,7 +347,7 @@ function MilestoneEditor({
     setError(null);
     setSelected(current?.number ?? null);
     if (milestones) return;
-    fetchRepoMilestones(owner, repo, token)
+    fetchRepoMilestonesSmart(owner, repo, token)
       .then(setMilestones)
       .catch(() => setMilestones([]));
   };

@@ -10,6 +10,7 @@ import {
   REPOSITORY_QUERY,
   REPO_STATS_QUERY,
   LATEST_COMMIT_QUERY,
+  FILE_COMMIT_QUERY,
   REPO_WITH_RELEASES_QUERY,
   CREATE_REPOSITORY_MUTATION,
   UPDATE_REPOSITORY_MUTATION,
@@ -58,6 +59,7 @@ import {
   fetchRootFiles,
   fetchPublicRepoStats,
   fetchLatestCommit,
+  fetchFileCommit,
 } from "./rest";
 import { FILE_RAW_QUERY, FILE_EDIT_QUERY, TREE_ENTRIES_QUERY, repoRawBase } from "./repo-raw";
 import { fetchRawContentSmart } from "./raw-proxy";
@@ -148,6 +150,60 @@ export async function fetchLatestCommitSmart(
     }
   }
   return fetchLatestCommit(owner, name, branch, token);
+}
+
+/** 智能获取指定文件的最近提交（blob 文件头信息行）：GraphQL object(expression: "branch:path").history 首选 + REST 降级。 */
+export async function fetchFileCommitSmart(
+  owner: string,
+  name: string,
+  path: string,
+  branch = "HEAD",
+  token?: string | null,
+): Promise<Awaited<ReturnType<typeof fetchFileCommit>>> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          object: {
+            history: {
+              nodes: {
+                oid: string;
+                message: string;
+                committedDate: string;
+                author: { avatarUrl: string; user: { login: string } | null } | null;
+              }[];
+            };
+          } | null;
+        } | null;
+      }> = await graphqlRequest(
+        FILE_COMMIT_QUERY,
+        { owner, name, expression: `${branch}:${path}`, path },
+        token,
+      );
+      const c = resp.data?.repository?.object?.history?.nodes?.[0];
+      if (!hasGraphQLErrors(resp) && c) {
+        return {
+          sha: c.oid,
+          commit: { message: c.message, committer: { date: c.committedDate } },
+          author: c.author?.user
+            ? { login: c.author.user.login, avatar_url: c.author.avatarUrl }
+            : null,
+        };
+      }
+      return withRestFallback(
+        () => fetchFileCommit(owner, name, path, branch, token),
+        "fetchFileCommitSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchFileCommit(owner, name, path, branch, token),
+        "fetchFileCommitSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchFileCommit(owner, name, path, branch, token);
 }
 
 /**
