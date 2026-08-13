@@ -99,7 +99,8 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchCurrentUserSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchUserEmailsSmart` / `addUserEmailsSmart` 等 | ✅ | ✅ | — | — | ✅ |
 | `fetchUserOrgsSmart` / `fetchOrgMemberships` | ✅ | ✅ | — | — | ✅ |
-| `fetchMyReposSmart` | ✅ | ✅ | — | — | ✅ |
+| `fetchMyReposSmart`（游标分页：viewer.repositories(after) + pageInfo） | ✅ | ✅ | — | — | ✅ |
+| `fetchProfileReposSmart`（用户/组织主页仓库翻页游标续接：user/org.repositories(after)） | ✅ | ✅ | — | — | ✅ |
 | `fetchRepositorySmart`（含 id/star/watch/features） | ✅ | ✅ | — | — | ✅ |
 | `fetchRepositoryIdSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchUserProfileSmart` / `fetchOrgProfileSmart` / `fetchOrgDetailSmart` | ✅ | ✅ | — | — | ✅ |

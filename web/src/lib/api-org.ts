@@ -9,6 +9,8 @@ import { logWarn } from "./api-log";
 import {
   USER_PROFILE_QUERY,
   ORG_PROFILE_QUERY,
+  USER_REPOS_QUERY,
+  ORG_REPOS_QUERY,
   UPDATE_ORG_MUTATION,
   ORG_MEMBERS_QUERY,
   STARRED_REPOS_QUERY,
@@ -25,6 +27,7 @@ import {
   fetchOrgRepos,
 } from "./rest";
 import type { Repository, OrgMember, OrgDetail } from "./rest";
+import type { PagedRepos } from "./api-user";
 
 // ===== 用户/组织主页：GraphQL 首选 + REST 降级 =====
 
@@ -60,6 +63,10 @@ export interface ProfileData {
   /** 用户页：Star 仓库总数（GraphQL starredRepositories.totalCount 随主页查询一次拿到；REST 降级 null） */
   starCount: number | null;
   repos: Repository[];
+  /** 仓库列表续接游标（GraphQL pageInfo.endCursor；REST 降级 null）；翻页用 fetchProfileReposSmart */
+  reposEndCursor: string | null;
+  /** 仓库列表是否有下一页（GraphQL pageInfo.hasNextPage；REST 降级 false） */
+  reposHasNextPage: boolean;
   /** 置顶仓库（GraphQL pinnedItems；REST 降级时为空数组） */
   pinned: Repository[];
 }
@@ -107,7 +114,11 @@ interface GraphQLProfile {
   publicRepos?: { totalCount: number } | null;
   /** 组织成员数（仅 Organization 查询返回） */
   membersWithRole?: { totalCount: number } | null;
-  repositories: { totalCount?: number; nodes: GraphQLProfileRepo[] };
+  repositories: {
+    totalCount?: number;
+    nodes: GraphQLProfileRepo[];
+    pageInfo?: { endCursor: string | null; hasNextPage: boolean };
+  };
   pinnedItems?: { nodes: GraphQLProfileRepo[] };
 }
 
@@ -168,6 +179,8 @@ function toProfileData(g: GraphQLProfile, publicRepos: number): ProfileData {
     viewerCanAdminister: g.viewerCanAdminister ?? false,
     starCount: g.starredRepositories?.totalCount ?? null,
     repos: g.repositories.nodes.map((n) => toProfileRepo(n, g.login)),
+    reposEndCursor: g.repositories.pageInfo?.endCursor ?? null,
+    reposHasNextPage: g.repositories.pageInfo?.hasNextPage ?? false,
     pinned: (g.pinnedItems?.nodes ?? []).map((n) => toProfileRepo(n, g.login)),
   };
 }
@@ -221,6 +234,8 @@ export async function fetchProfileSmart(
               viewerCanAdminister: false,
               starCount: null,
               repos,
+              reposEndCursor: null,
+              reposHasNextPage: false,
               pinned: [],
             },
           };
@@ -251,6 +266,8 @@ export async function fetchProfileSmart(
             viewerCanAdminister: false,
             starCount,
             repos,
+            reposEndCursor: null,
+            reposHasNextPage: false,
             pinned: [],
           },
         };
@@ -298,6 +315,65 @@ export async function fetchProfileSmart(
     }
   }
   // 匿名强制 REST（GraphQL 恒 403，硬约束非降级）
+  return fromRest(undefined);
+}
+
+/**
+ * 用户/组织主页仓库分页续接（Repositories 翻页）：GraphQL user/org.repositories(after) 游标首选 + REST 降级。
+ * cursor 为上一页 endCursor；匿名 / GraphQL 失败 → 熔断降级 REST page 分页（无游标）。
+ */
+export async function fetchProfileReposSmart(
+  login: string,
+  kind: "user" | "org",
+  cursor: string,
+  token?: string | null,
+): Promise<PagedRepos> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>): Promise<PagedRepos> =>
+    withRestFallback(
+      async () => {
+        // REST page 分页无游标；cursor 存在时按 page=2 近似续接（REST 降级低频）
+        const repos =
+          kind === "org"
+            ? await fetchOrgRepos(login, 20, token, 2)
+            : await fetchUserRepos(login, 20, token, 2);
+        return { repos, endCursor: null, hasNextPage: false };
+      },
+      "fetchProfileReposSmart",
+      gqlResp,
+    );
+
+  if (token) {
+    try {
+      const query = kind === "org" ? ORG_REPOS_QUERY : USER_REPOS_QUERY;
+      const rootKey = kind === "org" ? "organization" : "user";
+      const resp: GraphQLResponse<{
+        user?: {
+          repositories: {
+            nodes: GraphQLProfileRepo[];
+            pageInfo: { endCursor: string | null; hasNextPage: boolean };
+          };
+        };
+        organization?: {
+          repositories: {
+            nodes: GraphQLProfileRepo[];
+            pageInfo: { endCursor: string | null; hasNextPage: boolean };
+          };
+        };
+      }> = await graphqlRequest(query, { login, after: cursor }, token);
+      const repos = resp.data?.[rootKey]?.repositories;
+      if (!hasGraphQLErrors(resp) && repos) {
+        return {
+          repos: repos.nodes.map((n) => toProfileRepo(n, login)),
+          endCursor: repos.pageInfo?.endCursor ?? null,
+          hasNextPage: repos.pageInfo?.hasNextPage ?? false,
+        };
+      }
+      return fromRest(resp);
+    } catch {
+      return fromRest(undefined);
+    }
+  }
+  // 匿名强制 REST
   return fromRest(undefined);
 }
 

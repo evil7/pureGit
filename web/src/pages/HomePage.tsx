@@ -53,7 +53,6 @@ import {
   type Repository,
   type ReceivedEvent,
 } from "@/lib/api";
-import { fetchMyRepos } from "@/lib/api";
 import { toastInfo } from "@/lib/toast";
 import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/format";
@@ -207,12 +206,14 @@ export default function HomePage() {
 
 // ===== 左栏：Top 仓库（用户要求：去掉切换卡片，仅保留 Top 仓库）=====
 // 真实加载更多——点「显示更多」原地展开 8→20→全部；单 API 拉满 100 条时
-// 追加 REST page=2 再展开（按最近更新排序 = 「最近操作过的项目」）
+// 追加游标续接再展开（按最近更新排序 = 「最近操作过的项目」）
 const TOP_REPO_STEPS = [8, 20];
 
 function SidebarContent() {
   const { token } = useAuth();
   const [repos, setRepos] = useState<Repository[] | null>(null);
+  const [endCursor, setEndCursor] = useState<string | null>(null);
+  const [hasNextPage, setHasNextPage] = useState(false);
   const [filter, setFilter] = useState("");
   const [visibleCount, setVisibleCount] = useState(8);
   const [loadingMore, setLoadingMore] = useState(false);
@@ -221,7 +222,12 @@ function SidebarContent() {
     if (!token) return;
     let cancelled = false;
     fetchMyReposSmart(token)
-      .then((r) => !cancelled && setRepos(r))
+      .then((r) => {
+        if (cancelled) return;
+        setRepos(r.repos);
+        setEndCursor(r.endCursor);
+        setHasNextPage(r.hasNextPage);
+      })
       .catch(() => undefined);
     return () => {
       cancelled = true;
@@ -235,21 +241,23 @@ function SidebarContent() {
     return list.slice(0, visibleCount);
   }, [repos, filter, visibleCount]);
 
-  /** 显示更多：先展开已加载（8→20→全部）；若已拉满 100 条则追加 REST page=2 后展开 */
+  /** 显示更多：先展开已加载（8→20→全部）；若还有下一页则 GraphQL 游标续接后展开 */
   const handleShowMore = async () => {
     if (!repos || !token) return;
-    // 已拉满单 API 上限且还有下一页 → 追加加载
-    if (repos.length === 100) {
+    // 还有下一页（GraphQL 游标）→ 续接加载
+    if (hasNextPage && endCursor) {
       setLoadingMore(true);
       try {
-        const next = await fetchMyRepos(token, 100, 2);
+        const next = await fetchMyReposSmart(token, endCursor);
         // 追加去重（游标偏移场景防御）
         const seen = new Set(repos.map((r) => r.full_name));
-        const merged = [...repos, ...next.filter((r) => !seen.has(r.full_name))];
+        const merged = [...repos, ...next.repos.filter((r) => !seen.has(r.full_name))];
         setRepos(merged);
+        setEndCursor(next.endCursor);
+        setHasNextPage(next.hasNextPage);
         setVisibleCount((v) => Math.min(v + TOP_REPO_STEPS[0], merged.length));
       } catch {
-        // 追加失败则退化为纯展开
+        // 续接失败则退化为纯展开
         setVisibleCount((v) => Math.min(v + TOP_REPO_STEPS[0], repos.length));
       } finally {
         setLoadingMore(false);

@@ -35,6 +35,13 @@ import type { GraphQLRepository } from "./api-repo";
 
 // ===== 智能封装：GraphQL 首选 + REST 降级 =====
 
+/** 游标分页仓库结果（GraphQL pageInfo 映射；REST 无游标 → endCursor=null/hasNextPage=false） */
+export interface PagedRepos {
+  repos: Repository[];
+  endCursor: string | null;
+  hasNextPage: boolean;
+}
+
 /** 账户设置用当前用户画像（GraphQL/REST 统一结构） */
 export interface ViewerProfile {
   login: string;
@@ -190,16 +197,38 @@ export async function fetchUserOrgsSmart(token: string): Promise<UserOrgItem[]> 
   }
 }
 
-/** 智能获取当前用户仓库（GraphQL viewer.repositories 首选 + REST /user/repos 降级） */
-export async function fetchMyReposSmart(token: string): Promise<Repository[]> {
-  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
-    withRestFallback(() => fetchMyRepos(token), "fetchMyReposSmart", gqlResp);
+/** 智能获取当前用户仓库（GraphQL viewer.repositories 游标分页首选 + REST /user/repos 降级）。
+ * cursor 传续接游标（after）；首屏不传。返回 { repos, endCursor, hasNextPage } 供「显示更多」续接。 */
+export async function fetchMyReposSmart(
+  token: string,
+  cursor?: string | null,
+): Promise<PagedRepos> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>): Promise<PagedRepos> =>
+    withRestFallback(
+      async () => {
+        // REST page 分页无游标；cursor 存在时按 page=2 近似续接（REST 降级低频）
+        const repos = await fetchMyRepos(token, 100, cursor ? 2 : 1);
+        return { repos, endCursor: null, hasNextPage: false };
+      },
+      "fetchMyReposSmart",
+      gqlResp,
+    );
   try {
     const resp: GraphQLResponse<{
-      viewer: { repositories: { nodes: GraphQLRepository[] } };
-    }> = await graphqlRequest(VIEWER_REPOS_QUERY, {}, token);
-    if (!hasGraphQLErrors(resp) && resp.data?.viewer?.repositories?.nodes) {
-      return resp.data.viewer.repositories.nodes.map((g) => toRepository(g, g.owner?.login ?? ""));
+      viewer: {
+        repositories: {
+          nodes: GraphQLRepository[];
+          pageInfo: { endCursor: string | null; hasNextPage: boolean };
+        };
+      };
+    }> = await graphqlRequest(VIEWER_REPOS_QUERY, { after: cursor ?? null }, token);
+    const repos = resp.data?.viewer?.repositories;
+    if (!hasGraphQLErrors(resp) && repos) {
+      return {
+        repos: repos.nodes.map((g) => toRepository(g, g.owner?.login ?? "")),
+        endCursor: repos.pageInfo?.endCursor ?? null,
+        hasNextPage: repos.pageInfo?.hasNextPage ?? false,
+      };
     }
     // GraphQL 失败 → 熔断降级 REST
     return fromRest(resp);

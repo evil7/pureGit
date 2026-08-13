@@ -44,8 +44,8 @@ export function CreateNewMenu() {
     setPickerOpen(true);
     if (token && repos === null) {
       fetchMyReposSmart(token)
-        .then((list) =>
-          setRepos(list.filter((r) => r.owner.login === user?.login || !r.private || canWrite)),
+        .then((r) =>
+          setRepos(r.repos.filter((x) => x.owner.login === user?.login || !x.private || canWrite)),
         )
         .catch(() => setRepos([]));
     }

@@ -18,7 +18,7 @@
  * 自查看含私有；repositories(visibility:PUBLIC) 恒为公开数，repositories.totalCount 为权限内总数。
  * Achievements/Highlights 无公开 API（官方仅 SSR HTML），按用户确认省略。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useParams, Link, Navigate } from "react-router-dom";
 import {
   Building2,
@@ -42,6 +42,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import {
   fetchProfileSmart,
+  fetchProfileReposSmart,
   fetchUserStarsSmart,
   fetchOrgMembersSmart,
   isFollowingSmart,
@@ -49,7 +50,6 @@ import {
   type ProfileData,
   type OrgMember,
 } from "@/lib/api";
-import { fetchUserRepos, fetchOrgRepos } from "@/lib/rest";
 import { PAGE_SHELL } from "@/lib/layout";
 import PageLayout from "@/components/PageLayout";
 import { normalizeApiError, type ApiError } from "@/lib/rest";
@@ -86,9 +86,11 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
   // Stars/People 懒加载（切换 tab 时拉取）
   const [stars, setStars] = useState<StarsData | null>(null);
   const [people, setPeople] = useState<OrgMember[] | null>(null);
-  // 页码分页：Repositories/Stars 各维护 page + 独立加载列表（page>1 走 REST）
+  // 页码分页：Repositories 用 GraphQL 游标链（page 1 = data.repos，page>1 = fetchProfileReposSmart 游标续接）
   const [repoPage, setRepoPage] = useState(1);
   const [pageRepos, setPageRepos] = useState<import("@/lib/api").Repository[] | null>(null);
+  // 游标链（cursors[p-1] = 第 p 页的 after 游标；[0]=null，[1]=data.reposEndCursor，链式补全）
+  const repoCursorsRef = useRef<(string | null)[]>([null]);
   const [starPage, setStarPage] = useState(1);
   const [pageStars, setPageStars] = useState<import("@/lib/api").Repository[] | null>(null);
   // 关注状态（用户页；GraphQL viewerIsFollowing 直取，REST 降级 isFollowingSmart 兜底）
@@ -161,6 +163,7 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
     setPeople(null);
     setRepoPage(1);
     setPageRepos(null);
+    repoCursorsRef.current = [null];
     setStarPage(1);
     setPageStars(null);
     fetchProfileSmart(login, token)
@@ -168,6 +171,8 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
         if (cancelled) return;
         setKind(res.kind);
         setData(res.data);
+        // 初始化游标链（第 1 页 after=null，第 2 页 after=第一页 endCursor）
+        repoCursorsRef.current = [null, res.data.reposEndCursor];
         // 进入页面即并行拉取全部 tab 数据（用户要求：tabs 数量同步展示）
         // 用户页：Star 列表；组织页：成员列表
         if (res.kind === "user") {
@@ -194,16 +199,36 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
     };
   }, [login, token, canWrite, me]);
 
-  // Repositories 页码 >1 时独立拉取（org 无 GraphQL smart → 直接 REST）
+  // Repositories 页码 >1 时 GraphQL 游标续接（匿名走 REST 降级）
   useEffect(() => {
     if (repoPage <= 1 || !kind || !data) return;
     let cancelled = false;
     setPageRepos(null);
-    const fetcher =
-      kind === "org"
-        ? fetchOrgRepos(login, 20, token, repoPage)
-        : fetchUserRepos(login, 20, token, repoPage);
-    fetcher.then((r) => !cancelled && setPageRepos(r)).catch(() => !cancelled && setPageRepos([]));
+    (async () => {
+      try {
+        // 链式补全游标到第 repoPage 页（游标分页跳页需顺序续接中间页）
+        const cursors = repoCursorsRef.current;
+        while (cursors.length <= repoPage - 1) {
+          const after = cursors[cursors.length - 1];
+          if (after == null) break; // 无更多页
+          const res = await fetchProfileReposSmart(login, kind, after, token);
+          cursors.push(res.endCursor);
+          if (!res.hasNextPage) break;
+        }
+        const after = cursors[repoPage - 1];
+        if (after == null) {
+          if (!cancelled) setPageRepos([]);
+          return;
+        }
+        const res = await fetchProfileReposSmart(login, kind, after, token);
+        if (!cancelled) {
+          setPageRepos(res.repos);
+          if (cursors.length <= repoPage) cursors[repoPage] = res.endCursor;
+        }
+      } catch {
+        if (!cancelled) setPageRepos([]);
+      }
+    })();
     return () => {
       cancelled = true;
     };

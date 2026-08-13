@@ -390,6 +390,10 @@ export const USER_PROFILE_QUERY = /* GraphQL */ `
           }
           updatedAt
         }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
       }
       pinnedItems(first: 6, types: REPOSITORY) {
         nodes {
@@ -469,6 +473,10 @@ export const ORG_PROFILE_QUERY = /* GraphQL */ `
           }
           updatedAt
         }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
       }
       pinnedItems(first: 6, types: REPOSITORY) {
         nodes {
@@ -496,6 +504,82 @@ export const ORG_PROFILE_QUERY = /* GraphQL */ `
             }
             updatedAt
           }
+        }
+      }
+    }
+  }
+`;
+
+/** 用户仓库分页续接（主页 Repositories 翻页；after 游标续接，REST page 分页的 GraphQL 等价） */
+export const USER_REPOS_QUERY = /* GraphQL */ `
+  query UserRepos($login: String!, $after: String) {
+    user(login: $login) {
+      repositories(first: 20, after: $after, orderBy: { field: PUSHED_AT, direction: DESC }) {
+        nodes {
+          databaseId
+          name
+          nameWithOwner
+          description
+          url
+          stargazerCount
+          forkCount
+          primaryLanguage {
+            name
+          }
+          isPrivate
+          isFork
+          parent {
+            nameWithOwner
+            defaultBranchRef {
+              name
+            }
+            owner {
+              login
+            }
+          }
+          updatedAt
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+      }
+    }
+  }
+`;
+
+/** 组织仓库分页续接（主页 Repositories 翻页；after 游标续接） */
+export const ORG_REPOS_QUERY = /* GraphQL */ `
+  query OrgRepos($login: String!, $after: String) {
+    organization(login: $login) {
+      repositories(first: 20, after: $after, orderBy: { field: PUSHED_AT, direction: DESC }) {
+        nodes {
+          databaseId
+          name
+          nameWithOwner
+          description
+          url
+          stargazerCount
+          forkCount
+          primaryLanguage {
+            name
+          }
+          isPrivate
+          isFork
+          parent {
+            nameWithOwner
+            defaultBranchRef {
+              name
+            }
+            owner {
+              login
+            }
+          }
+          updatedAt
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
         }
       }
     }
@@ -1391,9 +1475,9 @@ export const VIEWER_ORGS_QUERY = /* GraphQL */ `
 
 /** 当前用户仓库（需 token，按最近更新时间排序，含私有仓库） */
 export const VIEWER_REPOS_QUERY = /* GraphQL */ `
-  query ViewerRepos {
+  query ViewerRepos($after: String) {
     viewer {
-      repositories(first: 100, orderBy: { field: UPDATED_AT, direction: DESC }) {
+      repositories(first: 100, after: $after, orderBy: { field: UPDATED_AT, direction: DESC }) {
         nodes {
           databaseId
           name
@@ -1419,6 +1503,10 @@ export const VIEWER_REPOS_QUERY = /* GraphQL */ `
           }
           isPrivate
           diskUsage
+        }
+        pageInfo {
+          endCursor
+          hasNextPage
         }
       }
     }

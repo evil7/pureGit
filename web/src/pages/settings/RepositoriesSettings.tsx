@@ -41,7 +41,7 @@ export default function RepositoriesSettings() {
     if (!token) return;
     let cancelled = false;
     fetchMyReposSmart(token)
-      .then((list) => !cancelled && setRepos(list))
+      .then((r) => !cancelled && setRepos(r.repos))
       .catch((e: unknown) => !cancelled && setError(e instanceof Error ? e.message : String(e)));
     return () => {
       cancelled = true;

@@ -257,12 +257,19 @@ describe("fetchUserOrgsSmart（GraphQL 首选 + REST 降级）", () => {
   });
 });
 
-describe("fetchMyReposSmart（GraphQL 首选 toRepository 转换 + REST 降级）", () => {
-  it("GraphQL 成功 → toRepository 转换（full_name / language）", async () => {
+describe("fetchMyReposSmart（GraphQL 首选游标分页 + REST 降级）", () => {
+  it("GraphQL 成功 → toRepository 转换 + pageInfo 游标（full_name / language）", async () => {
     mockGraphql.mockResolvedValue({
-      data: { viewer: { repositories: { nodes: [gqlRepo] } } },
+      data: {
+        viewer: {
+          repositories: {
+            nodes: [gqlRepo],
+            pageInfo: { endCursor: "cur_1", hasNextPage: true },
+          },
+        },
+      },
     } as never);
-    const repos = await fetchMyReposSmart("gho_x");
+    const { repos, endCursor, hasNextPage } = await fetchMyReposSmart("gho_x");
     expect(mockFetchMyRepos).not.toHaveBeenCalled();
     expect(repos[0]).toMatchObject({
       id: 99,
@@ -270,14 +277,43 @@ describe("fetchMyReposSmart（GraphQL 首选 toRepository 转换 + REST 降级�
       language: "TypeScript",
       default_branch: "main",
     });
+    expect(endCursor).toBe("cur_1");
+    expect(hasNextPage).toBe(true);
   });
 
-  it("GraphQL errors / 异常 → 降级 REST", async () => {
+  it("GraphQL 成功无 pageInfo → endCursor null / hasNextPage false", async () => {
+    mockGraphql.mockResolvedValue({
+      data: { viewer: { repositories: { nodes: [gqlRepo] } } },
+    } as never);
+    const { repos, endCursor, hasNextPage } = await fetchMyReposSmart("gho_x");
+    expect(repos[0].id).toBe(99);
+    expect(endCursor).toBeNull();
+    expect(hasNextPage).toBe(false);
+  });
+
+  it("GraphQL errors / 异常 → 降级 REST（返回 repos + 无游标）", async () => {
     mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
-    expect((await fetchMyReposSmart("gho_x"))[0].id).toBe(1);
+    expect((await fetchMyReposSmart("gho_x")).repos[0].id).toBe(1);
     mockGraphql.mockRejectedValue(new Error("net"));
-    expect((await fetchMyReposSmart("gho_x"))[0].id).toBe(1);
+    expect((await fetchMyReposSmart("gho_x")).repos[0].id).toBe(1);
     expect(mockFetchMyRepos).toHaveBeenCalledTimes(2);
+  });
+
+  it("游标续接（cursor 传入）→ GraphQL 用 after 变量", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        viewer: {
+          repositories: {
+            nodes: [gqlRepo],
+            pageInfo: { endCursor: "cur_2", hasNextPage: false },
+          },
+        },
+      },
+    } as never);
+    const { endCursor, hasNextPage } = await fetchMyReposSmart("gho_x", "cur_1");
+    expect(mockGraphql).toHaveBeenCalledWith(expect.any(String), { after: "cur_1" }, "gho_x");
+    expect(endCursor).toBe("cur_2");
+    expect(hasNextPage).toBe(false);
   });
 });
 

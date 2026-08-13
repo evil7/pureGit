@@ -529,7 +529,7 @@ export function ReposNavPage() {
     setRepos(null);
     setError(null);
     fetchMyReposSmart(token)
-      .then((list) => !cancelled && setRepos(list))
+      .then((r) => !cancelled && setRepos(r.repos))
       .catch((e: unknown) => !cancelled && setError(normalizeApiError(e)));
     // 组织列表（识别「自己组织的仓库」可管理）
     fetchUserOrgsSmart(token)
