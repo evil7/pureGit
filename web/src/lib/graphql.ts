@@ -1460,6 +1460,172 @@ export const CREATE_REPOSITORY_MUTATION = /* GraphQL */ `
   }
 `;
 
+/** 更新仓库基本信息（mutation；仅 name/description/homepageUrl/has*Enabled 字段——
+ * private/visibility 与 default_branch 无 GraphQL 通道，由 updateRepositorySmart 的 hybrid 增补 REST 处理） */
+export const UPDATE_REPOSITORY_MUTATION = /* GraphQL */ `
+  mutation UpdateRepository(
+    $repositoryId: ID!
+    $name: String
+    $description: String
+    $homepageUrl: URI
+    $hasIssuesEnabled: Boolean
+    $hasDiscussionsEnabled: Boolean
+    $hasWikiEnabled: Boolean
+    $hasProjectsEnabled: Boolean
+  ) {
+    updateRepository(
+      input: {
+        repositoryId: $repositoryId
+        name: $name
+        description: $description
+        homepageUrl: $homepageUrl
+        hasIssuesEnabled: $hasIssuesEnabled
+        hasDiscussionsEnabled: $hasDiscussionsEnabled
+        hasWikiEnabled: $hasWikiEnabled
+        hasProjectsEnabled: $hasProjectsEnabled
+      }
+    ) {
+      repository {
+        databaseId
+        name
+        nameWithOwner
+        description
+        homepageUrl
+        url
+        owner {
+          login
+          avatarUrl
+        }
+        stargazerCount
+        forkCount
+        primaryLanguage {
+          name
+        }
+        updatedAt
+        defaultBranchRef {
+          name
+        }
+        isPrivate
+        isArchived
+        hasIssuesEnabled
+        hasDiscussionsEnabled
+        hasWikiEnabled
+        hasProjectsEnabled
+      }
+    }
+  }
+`;
+
+/** 归档仓库（mutation；仓库可见性/归档 GraphQL 无统一 PATCH，归档走独立 mutation） */
+export const ARCHIVE_REPOSITORY_MUTATION = /* GraphQL */ `
+  mutation ArchiveRepository($repositoryId: ID!) {
+    archiveRepository(input: { repositoryId: $repositoryId }) {
+      repository {
+        databaseId
+        name
+        nameWithOwner
+        description
+        homepageUrl
+        url
+        owner {
+          login
+          avatarUrl
+        }
+        stargazerCount
+        forkCount
+        primaryLanguage {
+          name
+        }
+        updatedAt
+        defaultBranchRef {
+          name
+        }
+        isPrivate
+        isArchived
+        hasIssuesEnabled
+        hasDiscussionsEnabled
+        hasWikiEnabled
+        hasProjectsEnabled
+      }
+    }
+  }
+`;
+
+/** 取消归档仓库（mutation） */
+export const UNARCHIVE_REPOSITORY_MUTATION = /* GraphQL */ `
+  mutation UnarchiveRepository($repositoryId: ID!) {
+    unarchiveRepository(input: { repositoryId: $repositoryId }) {
+      repository {
+        databaseId
+        name
+        nameWithOwner
+        description
+        homepageUrl
+        url
+        owner {
+          login
+          avatarUrl
+        }
+        stargazerCount
+        forkCount
+        primaryLanguage {
+          name
+        }
+        updatedAt
+        defaultBranchRef {
+          name
+        }
+        isPrivate
+        isArchived
+        hasIssuesEnabled
+        hasDiscussionsEnabled
+        hasWikiEnabled
+        hasProjectsEnabled
+      }
+    }
+  }
+`;
+
+/** 创建 PR（mutation；repositoryId 为 base 仓库 id，headRepositoryId 为跨仓库 head 仓库 id） */
+export const CREATE_PULL_REQUEST_MUTATION = /* GraphQL */ `
+  mutation CreatePullRequest(
+    $repositoryId: ID!
+    $baseRefName: String!
+    $headRefName: String!
+    $headRepositoryId: ID
+    $title: String!
+    $body: String
+  ) {
+    createPullRequest(
+      input: {
+        repositoryId: $repositoryId
+        baseRefName: $baseRefName
+        headRefName: $headRefName
+        headRepositoryId: $headRepositoryId
+        title: $title
+        body: $body
+      }
+    ) {
+      pullRequest {
+        number
+      }
+    }
+  }
+`;
+
+/** 创建 PR 跨仓库前置查询（base + head 两个仓库 node id；head 为 fork owner 同名仓库，
+ * 与 REST head "username:branch" 语义一致——fork 同 network 同名） */
+export const CREATE_PULL_REQUEST_IDS_QUERY = /* GraphQL */ `
+  query CreatePullRequestIds($owner: String!, $name: String!, $headOwner: String!) {
+    base: repository(owner: $owner, name: $name) {
+      id
+    }
+    head: repository(owner: $headOwner, name: $name) {
+      id
+    }
+  }
+`;
+
 /** 更新组织资料（mutation，需 token + admin:org；GraphQL 首选，REST PATCH /orgs/{org} 降级） */
 export const UPDATE_ORG_MUTATION = /* GraphQL */ `
   mutation UpdateOrg($input: UpdateOrganizationInput!) {

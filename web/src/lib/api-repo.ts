@@ -10,6 +10,11 @@ import {
   REPOSITORY_QUERY,
   REPO_WITH_RELEASES_QUERY,
   CREATE_REPOSITORY_MUTATION,
+  UPDATE_REPOSITORY_MUTATION,
+  ARCHIVE_REPOSITORY_MUTATION,
+  UNARCHIVE_REPOSITORY_MUTATION,
+  CREATE_PULL_REQUEST_MUTATION,
+  CREATE_PULL_REQUEST_IDS_QUERY,
   REPOSITORY_ID_QUERY,
   CREATE_ISSUE_MUTATION,
   ADD_STAR_MUTATION,
@@ -25,6 +30,7 @@ import {
 import {
   ApiError,
   createRepository,
+  updateRepository,
   fetchRepository,
   createIssue,
   createPullRequest,
@@ -562,15 +568,212 @@ export async function forkRepositorySmart(
   return forked.full_name;
 }
 
-/** 创建 PR（GraphQL createPullRequest 需多步取 id，直接用 REST POST /pulls） */
+/** 创建 PR（GraphQL createPullRequest 主通道 + REST 熔断）——
+ * 同仓库：REPOSITORY_ID_QUERY 前置查 base id → createPullRequest mutation；
+ * 跨仓库（head 为 "owner:branch"）：CREATE_PULL_REQUEST_IDS_QUERY 复合查询一次拿 base + head 双 id → mutation。 */
 export async function createPullRequestSmart(
   token: string,
   owner: string,
   repo: string,
   body: { title: string; body?: string; head: string; base: string },
 ): Promise<number> {
-  const pr = await createPullRequest(token, owner, repo, body);
-  return pr.number;
+  const restFallback = () => createPullRequest(token, owner, repo, body).then((p) => p.number);
+
+  if (token) {
+    // 解析 head：同仓库 "branch" / 跨仓库 "owner:branch"（fork PR，REST 同语义）
+    const colonIdx = body.head.indexOf(":");
+    const headOwner = colonIdx > 0 ? body.head.slice(0, colonIdx) : null;
+    const headBranch = colonIdx > 0 ? body.head.slice(colonIdx + 1) : body.head;
+
+    try {
+      // 跨仓库：复合查询一次拿 base + head 双 repository id
+      if (headOwner) {
+        const idsResp: GraphQLResponse<{
+          base: { id: string } | null;
+          head: { id: string } | null;
+        }> = await graphqlRequest(
+          CREATE_PULL_REQUEST_IDS_QUERY,
+          { owner, name: repo, headOwner },
+          token,
+        );
+        const baseId = idsResp.data?.base?.id;
+        const headRepoId = idsResp.data?.head?.id;
+        if (baseId && headRepoId && !hasGraphQLErrors(idsResp)) {
+          const mutResp: GraphQLResponse<{
+            createPullRequest: { pullRequest: { number: number } } | null;
+          }> = await graphqlRequest(
+            CREATE_PULL_REQUEST_MUTATION,
+            {
+              repositoryId: baseId,
+              headRepositoryId: headRepoId,
+              baseRefName: body.base,
+              headRefName: headBranch,
+              title: body.title,
+              body: body.body,
+            },
+            token,
+          );
+          if (!hasGraphQLErrors(mutResp) && mutResp.data?.createPullRequest) {
+            return mutResp.data.createPullRequest.pullRequest.number;
+          }
+          return withRestFallback(restFallback, "createPullRequestSmart", mutResp);
+        }
+        return withRestFallback(restFallback, "createPullRequestSmart", idsResp);
+      }
+
+      // 同仓库：只查 base repositoryId
+      const idResp: GraphQLResponse<{ repository: { id: string } | null }> = await graphqlRequest(
+        REPOSITORY_ID_QUERY,
+        { owner, name: repo },
+        token,
+      );
+      const baseId = idResp.data?.repository?.id;
+      if (baseId && !hasGraphQLErrors(idResp)) {
+        const mutResp: GraphQLResponse<{
+          createPullRequest: { pullRequest: { number: number } } | null;
+        }> = await graphqlRequest(
+          CREATE_PULL_REQUEST_MUTATION,
+          {
+            repositoryId: baseId,
+            baseRefName: body.base,
+            headRefName: body.head,
+            title: body.title,
+            body: body.body,
+          },
+          token,
+        );
+        if (!hasGraphQLErrors(mutResp) && mutResp.data?.createPullRequest) {
+          return mutResp.data.createPullRequest.pullRequest.number;
+        }
+        return withRestFallback(restFallback, "createPullRequestSmart", mutResp);
+      }
+      return withRestFallback(restFallback, "createPullRequestSmart", idResp);
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(restFallback, "createPullRequestSmart", undefined);
+    }
+  }
+  // 匿名强制 REST
+  return restFallback();
+}
+
+/** 更新仓库字段（复用 REST 层 fields 类型） */
+type UpdateRepositoryFields = Parameters<typeof updateRepository>[3];
+
+/**
+ * 智能更新仓库（hybrid：GraphQL 主通道 + REST 增补，熔断全 REST）。
+ * - GraphQL 覆盖：name/description/homepageUrl/has*Enabled（updateRepository mutation）+ archived（archive/unarchive mutation）。
+ * - REST 增补：private / default_branch（GraphQL 无 mutation 通道）。
+ * - 熔断（查 id 失败 / mutation 失败 / 网络错误）→ 整体降级 REST PATCH。
+ */
+export async function updateRepositorySmart(
+  owner: string,
+  repo: string,
+  token: string,
+  fields: UpdateRepositoryFields,
+): Promise<Repository> {
+  if (!token) {
+    // 匿名强制 REST
+    return updateRepository(owner, repo, token, fields);
+  }
+
+  // 字段分流：graph 可处理 vs rest-only 增补
+  const restOnly: UpdateRepositoryFields = {};
+  if (fields.private !== undefined) restOnly.private = fields.private;
+  if (fields.default_branch !== undefined) restOnly.default_branch = fields.default_branch;
+  const hasRestOnly = fields.private !== undefined || fields.default_branch !== undefined;
+
+  const graphVars: Record<string, unknown> = {};
+  if (fields.name !== undefined) graphVars.name = fields.name;
+  if (fields.description !== undefined) graphVars.description = fields.description;
+  if (fields.homepage !== undefined) graphVars.homepageUrl = fields.homepage;
+  if (fields.has_issues !== undefined) graphVars.hasIssuesEnabled = fields.has_issues;
+  if (fields.has_discussions !== undefined)
+    graphVars.hasDiscussionsEnabled = fields.has_discussions;
+  if (fields.has_wiki !== undefined) graphVars.hasWikiEnabled = fields.has_wiki;
+  if (fields.has_projects !== undefined) graphVars.hasProjectsEnabled = fields.has_projects;
+  const hasGraphFields = Object.keys(graphVars).length > 0;
+  const hasArchived = fields.archived !== undefined;
+
+  // 纯 rest-only（如 confirmVisibility 只传 private）→ 直接 REST
+  if (!hasGraphFields && !hasArchived) {
+    return updateRepository(owner, repo, token, fields);
+  }
+
+  try {
+    // 前置查 repositoryId
+    const idResp: GraphQLResponse<{ repository: { id: string } | null }> = await graphqlRequest(
+      REPOSITORY_ID_QUERY,
+      { owner, name: repo },
+      token,
+    );
+    const repositoryId = idResp.data?.repository?.id;
+    if (!repositoryId || hasGraphQLErrors(idResp)) {
+      return withRestFallback(
+        () => updateRepository(owner, repo, token, fields),
+        "updateRepositorySmart",
+        idResp,
+      );
+    }
+
+    let gqlNode: GraphQLRepository | null = null;
+    // graph 主请求：updateRepository mutation（name/description/homepage/has_*）
+    if (hasGraphFields) {
+      const mutResp: GraphQLResponse<{
+        updateRepository: { repository: GraphQLRepository } | null;
+      }> = await graphqlRequest(UPDATE_REPOSITORY_MUTATION, { repositoryId, ...graphVars }, token);
+      if (hasGraphQLErrors(mutResp)) {
+        return withRestFallback(
+          () => updateRepository(owner, repo, token, fields),
+          "updateRepositorySmart",
+          mutResp,
+        );
+      }
+      gqlNode = mutResp.data?.updateRepository?.repository ?? null;
+    }
+    // archived 独立 mutation
+    if (hasArchived) {
+      const archResp: GraphQLResponse<{
+        archiveRepository?: { repository: GraphQLRepository } | null;
+        unarchiveRepository?: { repository: GraphQLRepository } | null;
+      }> = await graphqlRequest(
+        fields.archived ? ARCHIVE_REPOSITORY_MUTATION : UNARCHIVE_REPOSITORY_MUTATION,
+        { repositoryId },
+        token,
+      );
+      if (hasGraphQLErrors(archResp)) {
+        return withRestFallback(
+          () => updateRepository(owner, repo, token, fields),
+          "updateRepositorySmart",
+          archResp,
+        );
+      }
+      gqlNode =
+        archResp.data?.archiveRepository?.repository ??
+        archResp.data?.unarchiveRepository?.repository ??
+        gqlNode;
+    }
+
+    // REST 增补：private / default_branch（GraphQL 无 mutation 通道）。
+    // 注意：若 graph 已改名（name 字段），REST 增补须用新名（改名后旧名 404）。
+    if (hasRestOnly) {
+      const effectiveRepo = fields.name || repo;
+      return updateRepository(owner, effectiveRepo, token, restOnly);
+    }
+
+    // 纯 graph 成功 → 从 graph 节点映射
+    if (gqlNode) return toRepository(gqlNode, owner);
+  } catch {
+    // 网络层错误 → 熔断全 REST
+    return withRestFallback(
+      () => updateRepository(owner, repo, token, fields),
+      "updateRepositorySmart",
+      undefined,
+    );
+  }
+
+  // 兜底（graph 节点缺失等异常）→ 全 REST
+  return updateRepository(owner, repo, token, fields);
 }
 
 // ===== 页面级合并优化（单次多节点嵌套请求替代多次请求） =====

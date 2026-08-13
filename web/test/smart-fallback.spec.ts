@@ -39,6 +39,8 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     fetchLatestRelease: vi.fn(),
     createRepository: vi.fn(),
     createIssue: vi.fn(),
+    updateRepository: vi.fn(),
+    createPullRequest: vi.fn(),
     fetchDirContents: vi.fn(),
     fetchReadme: vi.fn(),
     fetchRootFiles: vi.fn(),
@@ -54,6 +56,8 @@ import {
   fetchRepoHomeSmart,
   createRepositorySmart,
   createIssueSmart,
+  updateRepositorySmart,
+  createPullRequestSmart,
   fetchDirContentsSmart,
   fetchReadmeSmart,
   fetchRootFilesSmart,
@@ -66,6 +70,8 @@ import {
   fetchLatestRelease,
   createRepository,
   createIssue,
+  updateRepository,
+  createPullRequest,
   fetchDirContents,
   fetchReadme,
   fetchRootFiles,
@@ -79,6 +85,8 @@ const mockFetchOpenPullsCount = vi.mocked(fetchOpenPullsCount);
 const mockFetchLatestRelease = vi.mocked(fetchLatestRelease);
 const mockCreateRepository = vi.mocked(createRepository);
 const mockCreateIssue = vi.mocked(createIssue);
+const mockUpdateRepository = vi.mocked(updateRepository);
+const mockCreatePullRequest = vi.mocked(createPullRequest);
 const mockFetchDirContents = vi.mocked(fetchDirContents);
 const mockFetchReadme = vi.mocked(fetchReadme);
 const mockFetchRootFiles = vi.mocked(fetchRootFiles);
@@ -152,6 +160,8 @@ beforeEach(() => {
   mockFetchOpenPullsCount.mockResolvedValue(null);
   mockCreateRepository.mockResolvedValue(createdRepo);
   mockCreateIssue.mockResolvedValue({ number: 101 } as never);
+  mockUpdateRepository.mockResolvedValue(restRepo);
+  mockCreatePullRequest.mockResolvedValue({ number: 9 } as never);
   mockFetchLatestRelease.mockResolvedValue({ count: 0, latest: null });
 });
 
@@ -504,5 +514,196 @@ describe("fetchRootFilesSmart（根文件探测 GraphQL Tree.entries 主通道 +
     mockGraphql.mockRejectedValue(new TypeError("fetch failed"));
     await fetchRootFilesSmart("evil7", "puregit", "main", "gho_x");
     expect(mockFetchRootFiles).toHaveBeenCalled();
+  });
+});
+
+describe("updateRepositorySmart（hybrid：GraphQL 主通道 + REST 增补）", () => {
+  it("token 空 → 直 REST（GraphQL 不调用）", async () => {
+    const r = await updateRepositorySmart("evil7", "puregit", "", { description: "x" });
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockUpdateRepository).toHaveBeenCalledWith("evil7", "puregit", "", { description: "x" });
+    expect(r).toBe(restRepo);
+  });
+
+  it("纯 rest-only 字段（private）→ 直 REST（GraphQL 不调用）", async () => {
+    await updateRepositorySmart("evil7", "puregit", "gho_x", { private: true });
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockUpdateRepository).toHaveBeenCalledWith("evil7", "puregit", "gho_x", {
+      private: true,
+    });
+  });
+
+  it("GraphQL 字段（has_*）→ updateRepository mutation + 返回映射（REST 不调用）", async () => {
+    mockGraphql
+      .mockResolvedValueOnce({ data: { repository: { id: "R_123" } } } as never)
+      .mockResolvedValueOnce({
+        data: {
+          updateRepository: {
+            repository: {
+              databaseId: 123,
+              name: "puregit",
+              nameWithOwner: "evil7/puregit",
+              description: "desc",
+              homepageUrl: null,
+              url: "https://github.com/evil7/puregit",
+              owner: { login: "evil7", avatarUrl: null },
+              stargazerCount: 0,
+              forkCount: 0,
+              primaryLanguage: null,
+              updatedAt: "2026-08-01T00:00:00Z",
+              defaultBranchRef: { name: "main" },
+              isPrivate: false,
+              isArchived: false,
+              hasIssuesEnabled: false,
+              hasDiscussionsEnabled: false,
+              hasWikiEnabled: true,
+              hasProjectsEnabled: true,
+            },
+          },
+        },
+      } as never);
+    const r = await updateRepositorySmart("evil7", "puregit", "gho_x", { has_issues: false });
+    expect(mockGraphql).toHaveBeenCalledTimes(2);
+    expect(mockUpdateRepository).not.toHaveBeenCalled();
+    expect(r.has_issues).toBe(false);
+  });
+
+  it("archived → archiveRepository 独立 mutation（REST 不调用）", async () => {
+    mockGraphql
+      .mockResolvedValueOnce({ data: { repository: { id: "R_123" } } } as never)
+      .mockResolvedValueOnce({
+        data: {
+          archiveRepository: {
+            repository: {
+              databaseId: 123,
+              name: "puregit",
+              nameWithOwner: "evil7/puregit",
+              description: null,
+              homepageUrl: null,
+              url: "https://github.com/evil7/puregit",
+              owner: { login: "evil7", avatarUrl: null },
+              stargazerCount: 0,
+              forkCount: 0,
+              primaryLanguage: null,
+              updatedAt: "2026-08-01T00:00:00Z",
+              defaultBranchRef: { name: "main" },
+              isPrivate: false,
+              isArchived: true,
+              hasIssuesEnabled: true,
+              hasDiscussionsEnabled: false,
+              hasWikiEnabled: true,
+              hasProjectsEnabled: true,
+            },
+          },
+        },
+      } as never);
+    const r = await updateRepositorySmart("evil7", "puregit", "gho_x", { archived: true });
+    expect(mockUpdateRepository).not.toHaveBeenCalled();
+    expect(r.archived).toBe(true);
+  });
+
+  it("混合（graph 字段 + default_branch rest-only）→ graph mutation + REST 增补", async () => {
+    mockGraphql
+      .mockResolvedValueOnce({ data: { repository: { id: "R_123" } } } as never)
+      .mockResolvedValueOnce({
+        data: {
+          updateRepository: {
+            repository: {
+              databaseId: 123,
+              name: "puregit",
+              nameWithOwner: "evil7/puregit",
+              description: "x",
+              homepageUrl: null,
+              url: "https://github.com/evil7/puregit",
+              owner: { login: "evil7", avatarUrl: null },
+              stargazerCount: 0,
+              forkCount: 0,
+              primaryLanguage: null,
+              updatedAt: "2026-08-01T00:00:00Z",
+              defaultBranchRef: { name: "main" },
+              isPrivate: false,
+              isArchived: false,
+              hasIssuesEnabled: true,
+              hasDiscussionsEnabled: false,
+              hasWikiEnabled: true,
+              hasProjectsEnabled: true,
+            },
+          },
+        },
+      } as never);
+    await updateRepositorySmart("evil7", "puregit", "gho_x", {
+      description: "x",
+      default_branch: "develop",
+    });
+    expect(mockUpdateRepository).toHaveBeenCalledWith("evil7", "puregit", "gho_x", {
+      default_branch: "develop",
+    });
+  });
+
+  it("GraphQL 抛异常 → 熔断全 REST", async () => {
+    mockGraphql.mockRejectedValue(new TypeError("fetch failed"));
+    await updateRepositorySmart("evil7", "puregit", "gho_x", { has_wiki: true });
+    expect(mockUpdateRepository).toHaveBeenCalled();
+  });
+});
+
+describe("createPullRequestSmart（同仓库 GraphQL / 跨仓库复合查询）", () => {
+  it("token 空 → 直 REST（GraphQL 不调用）", async () => {
+    mockCreatePullRequest.mockResolvedValue({ number: 9 } as never);
+    const n = await createPullRequestSmart("", "evil7", "puregit", {
+      title: "t",
+      head: "feature",
+      base: "main",
+    });
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(n).toBe(9);
+  });
+
+  it("同仓库 → 查 base id + createPullRequest mutation（REST 不调用）", async () => {
+    mockGraphql
+      .mockResolvedValueOnce({ data: { repository: { id: "R_123" } } } as never)
+      .mockResolvedValueOnce({
+        data: { createPullRequest: { pullRequest: { number: 42 } } },
+      } as never);
+    const n = await createPullRequestSmart("gho_x", "evil7", "puregit", {
+      title: "t",
+      head: "feature",
+      base: "main",
+    });
+    expect(mockGraphql).toHaveBeenCalledTimes(2);
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+    expect(n).toBe(42);
+  });
+
+  it("跨仓库（head owner:branch）→ 复合查询双 id + mutation（REST 不调用）", async () => {
+    mockGraphql
+      .mockResolvedValueOnce({
+        data: { base: { id: "R_1" }, head: { id: "R_2" } },
+      } as never)
+      .mockResolvedValueOnce({
+        data: { createPullRequest: { pullRequest: { number: 7 } } },
+      } as never);
+    const n = await createPullRequestSmart("gho_x", "evil7", "puregit", {
+      title: "t",
+      head: "forkOwner:feature",
+      base: "main",
+    });
+    expect(mockGraphql).toHaveBeenCalledTimes(2);
+    expect(mockCreatePullRequest).not.toHaveBeenCalled();
+    expect(n).toBe(7);
+  });
+
+  it("同仓库 mutation errors → 熔断降级 REST", async () => {
+    mockGraphql
+      .mockResolvedValueOnce({ data: { repository: { id: "R_123" } } } as never)
+      .mockResolvedValueOnce({ errors: [{ message: "boom" }] } as never);
+    mockCreatePullRequest.mockResolvedValue({ number: 9 } as never);
+    const n = await createPullRequestSmart("gho_x", "evil7", "puregit", {
+      title: "t",
+      head: "feature",
+      base: "main",
+    });
+    expect(mockCreatePullRequest).toHaveBeenCalled();
+    expect(n).toBe(9);
   });
 });

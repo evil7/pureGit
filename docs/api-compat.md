@@ -22,7 +22,8 @@
 2. **三分类**：
    - **有 GraphQL 适配** → smart 化（登录 GraphQL 主通道 + `withRestFallback` 熔断降级；匿名短路 REST）；
    - **无 GraphQL 适配** → 保留 REST，登记 §4 不可抗力；
-   - **GraphQL-only**（REST 无端点）→ 固定 GraphQL（匿名自然降级到空/降级路径）。
+   - **GraphQL-only**（REST 无端点）→ 固定 GraphQL（匿名自然降级到空/降级路径）；
+   - **部分适配（hybrid）** → GraphQL 主通道处理有适配字段 + REST 增补无适配字段，熔断全 REST（如 `updateRepositorySmart`：name/description/homepage/has_* + archived 走 GraphQL，private/default_branch 无 mutation 走 REST 增补）。
 3. **对等关系由人主观判断**：工具只提供「有没有 GraphQL 等价」的事实，不强制「配不配」的结论；对等结论沉淀于本表（§2 / §4）。
 
 ### 0.3 实施顺序
@@ -39,7 +40,7 @@
 - **GraphQL 能力缺失 ≠ 无适配**：如 `git/get-tree` 有 `Tree.entries` 但**无 `recursive` 参数**（全量树 GraphQL 需 N+1 逐层下钻）——属「能力缺失」，仍保留 REST（§4.6）。
 - **匿名强制 REST 是硬约束非降级**：smart 函数 `if (!token) return fetchXxx(...)` 短路，绝不发起 GraphQL（不消耗配额、不产生 403 噪音）。
 - **熔断降级复用不废弃**：rest 层代码继续用于匿名直连 + 降级链（`withRestFallback` 包装）。
-- **「收益低/繁琐」已废止**：不再作为保留 REST 的理由（旧 4.2/4.9 的「收益低」表述已清洗为「有适配待迁移」技术债）。
+- **「收益低/繁琐」已废止**：不再作为保留 REST 的理由；技术债已全部清零（旧 4.2/4.9 的「收益低」表述已清洗并完成迁移）。
 
 ---
 
@@ -106,7 +107,8 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchIssuesSmart` / `fetchIssueDetailSmart` | ✅ | ✅ | — | — | ✅ |
 | `createIssueSmart` / `setIssueSubscriptionSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchPullsSmart` / `fetchPullDetailSmart` | ✅ | ✅ | — | — | ✅ |
-| `createPullRequestSmart`（有 createPullRequest mutation 但需多步取 id） | ⚠️ | ✅ | — | — | ⚠️（待迁移） |
+| `createPullRequestSmart`（同仓库 GraphQL mutation / 跨仓库复合查询双 id） | ✅ | ✅ 降级 | — | — | ✅ |
+| `updateRepositorySmart`（hybrid：name/description/homepage/has_* + archived 走 GraphQL，private/default_branch 增补 REST） | ✅ | ✅ 增补 | — | — | ✅ |
 | `fetchReleasesSmart` / `fetchReleaseDetailSmart` | ✅ | ✅ | — | — | ✅ |
 | `isStarredSmart` / `setStarredSmart` | ✅ | ✅ | — | — | ✅ |
 | `forkRepositorySmart`（fork 无 GraphQL mutation） | ✗ | ✅ | — | — | ✅（REST-only） |
@@ -159,8 +161,8 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchCompare`（compare 页/新 PR diff） | ⚠️ | ✅ | — | — | ❌ | 4.1 GraphQL Comparison.files 缺 patch；**`compareCommitsWithBasehead` 类型化方法，basehead 整串传参（跨仓库 `owner:repo:branch` 全冒号格式）** |
 | `mergeUpstream`（Sync fork → Update branch） | ✗ | ✅ | — | — | ❌ | GraphQL 无 merge-upstream；**`repos.mergeUpstream` 类型化方法** |
 | `forkRepositorySmart`（smart 入口统一，内部 REST-only） | ✗ | ✅ | — | — | ✅ | GraphQL 无 fork mutation（仅 forking 设置 mutation）；smart 入口存在但内部直连 REST |
-| `createPullRequestSmart`（smart 入口统一，内部 REST-only） | ⚠️ | ✅ | — | — | ⚠️ | createPullRequest mutation 需多步取 id（head/base repositoryId）——**待迁移** |
-| `updateRepository`（设置页任意字段 PATCH） | ⚠️ | ✅ | — | — | ⚠️ | 4.2 有 GraphQL 适配（updateRepository mutation），任意字段 PATCH 需逐字段声明——**待迁移** |
+| `createPullRequestSmart`（已迁 GraphQL 主通道，REST 版仅作降级底层） | ✅ | ✅ | — | — | ✅ | createPullRequest mutation：同仓库查 base id / 跨仓库复合查询双 id；失败熔断 REST |
+| `updateRepository`（REST 版，仅作 hybrid 的 private/default_branch 增补与熔断底层） | ⚠️ | ✅ | — | — | ✅ | 已由 updateRepositorySmart 接管（hybrid）；private/default_branch 无 GraphQL 通道 |
 | `fetchGpgKeys`/`addGpgKey`/`deleteGpgKey` | ⚠️ | ✅ | — | — | ❌ | 4.3 GraphQL gpgKey 仅 5 字段，REST 需 emails/subkeys/can_* |
 | `blockUser`/`unblockUser` | ⚠️ | ✅ | — | — | ❌ | 4.4 GraphQL 无 block mutation |
 | `fetchJobLogs`（Actions 日志） | ✗ | ✅ | — | — | ❌ | 4.5 text/plain 非 JSON；GraphQL 无 actions 通道 |
@@ -241,12 +243,12 @@ export async function fetchXxxSmart(
 
 ## 4. 不可抗力清单（GraphQL 无适配 → 保持 REST；审计时先查这里）
 
-> 本节仅收录 **GraphQL 无适配**（schema 无对应字段/端点/能力）的 REST 保留项；「有 GraphQL 适配但未迁移」的技术债见 §2.2 表内 ⚠️ 列标注，不属不可抗力。
+> 本节仅收录 **GraphQL 无适配**（schema 无对应字段/端点/能力）的 REST 保留项。有 GraphQL 适配的 API 已全部迁移（§2.1），无适配才在此登记。
 
 | # | API | 理由 |
 |---|---|---|
 | 4.1 | `fetchCompare` | GraphQL `Comparison.files` 只有 path/additions/deletions，**无 patch 内容**；DiffView 渲染需要 patch。 |
-| 4.2 | `updateRepository` | GraphQL 有 `updateRepository` mutation，但 `UpdateRepositoryInput` 任意字段 PATCH 语义需逐字段声明（与 REST PATCH 只传 diff 字段不同）——**有适配待迁移**（技术债，见 §2.2 ⚠️）。 |
+| 4.2 | `updateRepository` | GraphQL 有 `updateRepository` mutation（name/description/homepageUrl/has*Enabled）+ 独立 archiveRepository/unarchiveRepository；但 **private（可见性）与 default_branch 无 GraphQL mutation**——已迁 hybrid（updateRepositorySmart：可 GraphQL 字段走 mutation，private/default_branch 增补 REST，熔断全 REST）。 |
 | 4.3 | GPG keys | GraphQL `gpgKey` 仅 id/publicKey/email/createdAt/verified；页面需 key_id/emails/can_sign（REST 有）。 |
 | 4.4 | block / unblock | GraphQL **无 block mutation**（仅 unblock）；block 保留 REST。 |
 | 4.5 | Actions / Job 日志 | GraphQL **无 actions 查询通道**；`fetchJobLogs` 是 text/plain 流，非 JSON。 |

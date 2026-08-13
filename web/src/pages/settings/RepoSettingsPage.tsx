@@ -35,7 +35,7 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
-import { updateRepository, deleteRepositorySmart, apiErrorMessage } from "@/lib/api";
+import { updateRepositorySmart, deleteRepositorySmart, apiErrorMessage } from "@/lib/api";
 import {
   fetchRepoTopicsSmart,
   replaceRepoTopicsSmart,
@@ -150,7 +150,7 @@ export default function RepoSettingsPage() {
     setSaved(false);
     setError(null);
     try {
-      const updated = await updateRepository(owner, repoName, token, {
+      const updated = await updateRepositorySmart(owner, repoName, token, {
         name: renameName.trim() || undefined,
         description,
         homepage: homepage || undefined,
@@ -234,7 +234,7 @@ export default function RepoSettingsPage() {
         wiki: "has_wiki",
         projects: "has_projects",
       }[key] as "has_issues" | "has_discussions" | "has_wiki" | "has_projects";
-      await updateRepository(owner, repoName, token, { [field]: !prev });
+      await updateRepositorySmart(owner, repoName, token, { [field]: !prev });
       // 同步 context → RepoHeader tabs 立即反映（Issues/Discussions/Projects 显隐）
       updateRepo({ [field]: !prev } as Partial<Repository>);
     } catch (e) {
@@ -251,7 +251,7 @@ export default function RepoSettingsPage() {
     setArchiveBusy(true);
     setError(null);
     try {
-      const updated = await updateRepository(owner, repoName, token, {
+      const updated = await updateRepositorySmart(owner, repoName, token, {
         archived: true,
       });
       setArchived(Boolean(updated.archived));
@@ -272,7 +272,7 @@ export default function RepoSettingsPage() {
     setError(null);
     const next = !isPrivate;
     try {
-      const updated = await updateRepository(owner, repoName, token, {
+      const updated = await updateRepositorySmart(owner, repoName, token, {
         private: next,
       });
       setIsPrivate(Boolean(updated.private));

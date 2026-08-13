@@ -128,7 +128,7 @@ git config --global url.https://<worker域名>/.insteadOf https://github.com/
 >
 > **为什么登录强制 Graph（不限收益）**：GraphQL → REST 实际是**一对多**（一个 GraphQL 复合查询聚合的字段对应 2~5 个 REST 端点）。登录态 GraphQL 主通道已全量定型（73+ smart 函数，有 GraphQL 等价的 REST 调用点已清零）——「收益低 / 繁琐 / 复杂度高」**不再构成例外**，只有「GraphQL 无适配」才是保留 REST 的合法理由。
 >
-> 实施状态：**已完成**（全量 smart 迁移 + REST 熔断降级链；无适配清单固化于 `api-compat.md` §4；剩余「有适配待迁移」技术债标注于 §2.2）。
+> 实施状态：**已完成**（全量 smart 迁移 + REST 熔断降级链；无适配清单固化于 `api-compat.md` §4；技术债全部清零）。
 
 ### 策略
 
@@ -183,7 +183,8 @@ YYYY-MM-DD 12:23:34:130 [Info]  graphqlRequest | anonymous → REST          ←
 | 创建 issue | ✅ createIssue mutation | ✅ withRestFallback | ✅ 已接入（createIssueSmart） |
 | star/unstar | ✅ addStar/removeStar mutation | ✅ withRestFallback | ✅ 已接入（setStarredSmart） |
 | fork | ✗ 无 fork mutation | REST 直连 | REST-only（smart 入口统一，内部直连 REST） |
-| 创建 PR | ⚠️ createPullRequest 需多步取 id | REST 直连 | 待迁移（smart 入口统一，内部直连 REST） |
+| 创建 PR | ✅ createPullRequest mutation | ✅ withRestFallback | ✅ 已接入（createPullRequestSmart：同仓库查 base id / 跨仓库复合查询双 id） |
+| 更新仓库 | ✅ updateRepository + archiveRepository（hybrid） | ✅ REST 增补 + 熔断 | ✅ 已接入（updateRepositorySmart：private/default_branch 增补 REST） |
 | 仓库列表（趋势） | ⚠️ search 无趋势语义 | REST 直连 | REST（趋势本身为 hack 模拟） |
 | 文件内容 | ✅ blob（isTruncated 门控） | ✅ withRestFallback（REST→$raw） | ✅ 已接入（fetchFileContentSmart） |
 | 目录列举 / README | ✅ Tree.entries + blob | ✅ withRestFallback | ✅ 已接入（fetchDirContentsSmart/fetchReadmeSmart） |
