@@ -45,6 +45,8 @@ vi.mock("@/lib/rest", async (importOriginal) => {
     unsubscribeIssue: vi.fn(),
     fetchPulls: vi.fn(),
     fetchPullDetail: vi.fn(),
+    fetchIssueComments: vi.fn(),
+    fetchPullReviews: vi.fn(),
   };
 });
 
@@ -54,6 +56,7 @@ import {
   setIssueSubscriptionSmart,
   fetchPullsSmart,
   fetchPullDetailSmart,
+  fetchPullDetailFullSmart,
 } from "@/lib/api-issue";
 import { graphqlRequest } from "@/lib/api-core";
 import { searchIssuesSmart } from "@/lib/api-search";
@@ -64,6 +67,8 @@ import {
   unsubscribeIssue,
   fetchPulls,
   fetchPullDetail,
+  fetchIssueComments,
+  fetchPullReviews,
   type Issue,
   type PullRequest,
 } from "@/lib/rest";
@@ -76,6 +81,8 @@ const mockSubscribe = vi.mocked(subscribeIssue);
 const mockUnsubscribe = vi.mocked(unsubscribeIssue);
 const mockFetchPulls = vi.mocked(fetchPulls);
 const mockFetchPullDetail = vi.mocked(fetchPullDetail);
+const mockFetchIssueComments = vi.mocked(fetchIssueComments);
+const mockFetchPullReviews = vi.mocked(fetchPullReviews);
 
 /** GraphQL issue 节点夹具（GraphQLIssueNode 形状） */
 const gqlIssue = {
@@ -123,6 +130,49 @@ const gqlPull = {
   labels: { nodes: [{ name: "enhancement", color: "a2eeef" }] },
   assignees: null,
   milestone: null,
+};
+
+/** GraphQL PR 完整查询夹具（PULL_DETAIL_FULL_QUERY 形状：detail + comments.nodes + 评审摘要字段） */
+const gqlPullFull = {
+  ...gqlPull,
+  id: "PR_7",
+  reviewDecision: "APPROVED",
+  mergeable: "MERGEABLE",
+  comments: {
+    totalCount: 1,
+    nodes: [
+      {
+        id: "c1",
+        body: "nice",
+        createdAt: "2026-07-02T00:00:00Z",
+        updatedAt: "2026-07-02T00:00:00Z",
+        author: { login: "alice", avatarUrl: "https://avatars/a.png" },
+        url: "https://github.com/evil7/puregit/pull/7#issuecomment-1",
+      },
+    ],
+  },
+  reviews: {
+    nodes: [
+      {
+        id: "r1",
+        state: "APPROVED",
+        body: "LGTM",
+        submittedAt: "2026-07-04T00:00:00Z",
+        author: { login: "bob", avatarUrl: "https://avatars/b.png" },
+      },
+    ],
+  },
+  reviewRequests: {
+    nodes: [
+      {
+        requestedReviewer: {
+          __typename: "User",
+          login: "carol",
+          avatarUrl: "https://avatars/c.png",
+        },
+      },
+    ],
+  },
 };
 
 const restIssue: Issue = {
@@ -177,6 +227,8 @@ beforeEach(() => {
   mockUnsubscribe.mockResolvedValue(undefined);
   mockFetchPulls.mockResolvedValue([restPull]);
   mockFetchPullDetail.mockResolvedValue(restPull);
+  mockFetchIssueComments.mockResolvedValue([]);
+  mockFetchPullReviews.mockResolvedValue([]);
 });
 
 describe("fetchIssuesSmart（三级决策：REST 条件 / search / GraphQL 首选降级）", () => {
@@ -407,5 +459,57 @@ describe("fetchPullDetailSmart（GraphQL 首选 + 降级）", () => {
     mockGraphql.mockRejectedValue(new Error("net"));
     expect((await fetchPullDetailSmart("evil7", "puregit", 7, "gho_x")).id).toBe(2);
     expect(mockFetchPullDetail).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("fetchPullDetailFullSmart（detail+comments+reviewSummary 复合查询）", () => {
+  it("token 空 → REST 分步（pr + comments + reviewSummary 由 reviews 推断）", async () => {
+    const r = await fetchPullDetailFullSmart("evil7", "puregit", 7, undefined);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchPullDetail).toHaveBeenCalled();
+    expect(mockFetchIssueComments).toHaveBeenCalled();
+    expect(mockFetchPullReviews).toHaveBeenCalled();
+    expect(r.pr.id).toBe(2);
+    expect(r.reviewSummary?.pullRequestId).toBe("");
+    expect(r.reviewSummary?.reviewDecision).toBeNull();
+  });
+
+  it("GraphQL 成功 → 一次查询返回 pr + comments + reviewSummary（含评审字段）", async () => {
+    mockGraphql.mockResolvedValue({ data: { repository: { pullRequest: gqlPullFull } } } as never);
+    const r = await fetchPullDetailFullSmart("evil7", "puregit", 7, "gho_x");
+    expect(mockFetchPullDetail).not.toHaveBeenCalled();
+    expect(mockFetchIssueComments).not.toHaveBeenCalled();
+    expect(mockFetchPullReviews).not.toHaveBeenCalled();
+    // pr 转换（MERGED → closed）
+    expect(r.pr.number).toBe(7);
+    expect(r.pr.state).toBe("closed");
+    // comments 转换
+    expect(r.comments).toHaveLength(1);
+    expect(r.comments[0].body).toBe("nice");
+    // reviewSummary 转换（pullRequestId / reviewDecision / mergeable / reviews / reviewRequests）
+    expect(r.reviewSummary?.pullRequestId).toBe("PR_7");
+    expect(r.reviewSummary?.reviewDecision).toBe("APPROVED");
+    expect(r.reviewSummary?.mergeable).toBe("MERGEABLE");
+    expect(r.reviewSummary?.reviews).toHaveLength(1);
+    expect(r.reviewSummary?.reviews[0].state).toBe("APPROVED");
+    expect(r.reviewSummary?.reviewRequests).toHaveLength(1);
+    expect(r.reviewSummary?.reviewRequests[0].login).toBe("carol");
+  });
+
+  it("GraphQL errors → 熔断降级 REST 分步", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "boom" }] } as never);
+    const r = await fetchPullDetailFullSmart("evil7", "puregit", 7, "gho_x");
+    expect(mockFetchPullDetail).toHaveBeenCalled();
+    expect(mockFetchIssueComments).toHaveBeenCalled();
+    expect(mockFetchPullReviews).toHaveBeenCalled();
+    expect(r.pr.id).toBe(2);
+  });
+
+  it("GraphQL 抛异常 → 熔断降级 REST 分步", async () => {
+    mockGraphql.mockRejectedValue(new TypeError("fetch failed"));
+    const r = await fetchPullDetailFullSmart("evil7", "puregit", 7, "gho_x");
+    expect(mockFetchPullDetail).toHaveBeenCalled();
+    expect(mockFetchPullReviews).toHaveBeenCalled();
+    expect(r.pr.id).toBe(2);
   });
 });

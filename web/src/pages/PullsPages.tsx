@@ -47,8 +47,7 @@ import { useI18n, type I18nKey } from "@/i18n";
 import {
   fetchPullsSmart,
   setIssueSubscriptionSmart,
-  fetchPullDetailWithCommentsSmart,
-  fetchPullReviewSummarySmart,
+  fetchPullDetailFullSmart,
   fetchPullTimelineSmart,
   requestReviewersSmart,
   updatePullRequestStateSmart,
@@ -872,13 +871,10 @@ export function PullDetailPage() {
     setLoading(true);
     setError(null);
     Promise.all([
-      fetchPullDetailWithCommentsSmart(owner!, repo!, Number(number), token),
-      token
-        ? fetchPullReviewSummarySmart(owner!, repo!, Number(number), token)
-        : Promise.resolve(null),
+      fetchPullDetailFullSmart(owner!, repo!, Number(number), token),
       token ? fetchPullTimelineSmart(owner!, repo!, Number(number), token) : Promise.resolve(null),
     ])
-      .then(([{ pr: data, comments: cs }, summary, tl]) => {
+      .then(([{ pr: data, comments: cs, reviewSummary: summary }, tl]) => {
         if (!cancelled) {
           setPr(data);
           setComments(cs);

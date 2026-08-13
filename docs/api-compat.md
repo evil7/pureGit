@@ -87,6 +87,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | **页面级合并优化** | | | | | |
 | `fetchIssueDetailWithCommentsSmart`（Issue 详情+评论单请求） | ✅ | ✅ 分步降级 | — | — | ✅ |
 | `fetchPullDetailWithCommentsSmart`（PR 详情+评论单请求） | ✅ | ✅ 分步降级 | — | — | ✅ |
+| `fetchPullDetailFullSmart`（PR 详情完整复合：detail+comments+reviewSummary 一次查询，替代详情页 detail+comments 与 reviewSummary 两次请求；timeline 保持独立） | ✅ | ✅ 分步降级 | — | — | ✅ |
 | `fetchReleasesCountSmart`（GraphQL totalCount 替代 Link header） | ✅ | ✅ | — | — | ✅ |
 | `fetchLatestReleaseSmart`（About 侧栏 Releases 入口：GraphQL totalCount+nodes(first:1) 一次查询 / REST per_page=1 一次请求） | ✅ | ✅ | — | — | ✅（已被 fetchRepoHomeSmart 合并替代，保留独立入口） |
 | `fetchRepoHomeSmart`（仓库主页复合查询：REPO_WITH_RELEASES_QUERY 一次取仓库元数据 + languages + tab 计数 + releases 总数/最新，替代 Repository + LatestRelease 两次请求） | ✅ | ✅ 分步降级 | — | — | ✅ |

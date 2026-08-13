@@ -959,6 +959,113 @@ export const PULL_DETAIL_WITH_COMMENTS_QUERY = /* GraphQL */ `
   }
 `;
 
+/**
+ * PR 详情完整复合查询（detail + comments + reviewSummary 一次 GraphQL 请求）。
+ * 在 PULL_DETAIL_WITH_COMMENTS_QUERY 基础上并入评审摘要字段（id/reviewDecision/mergeable/reviews/reviewRequests），
+ * 替代 PullDetailPage 原先 fetchPullDetailWithCommentsSmart + fetchPullReviewSummarySmart 两次请求——
+ * 省一次网络往返 + 配额；timeline（timelineItems 巨大且失败语义独立）保持独立查询。
+ */
+export const PULL_DETAIL_FULL_QUERY = /* GraphQL */ `
+  query PullDetailFull($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      pullRequest(number: $number) {
+        id
+        number
+        title
+        state
+        url
+        createdAt
+        updatedAt
+        closedAt
+        body
+        viewerSubscription
+        mergedAt
+        isDraft
+        author {
+          login
+          avatarUrl
+        }
+        comments(first: 100, orderBy: { field: UPDATED_AT, direction: ASC }) {
+          totalCount
+          nodes {
+            id
+            body
+            createdAt
+            updatedAt
+            author {
+              login
+              avatarUrl
+            }
+            url
+          }
+        }
+        commits {
+          totalCount
+        }
+        additions
+        deletions
+        changedFiles
+        headRefName
+        headRefOid
+        baseRefName
+        baseRefOid
+        headRepositoryOwner {
+          login
+        }
+        baseRepository {
+          owner {
+            login
+          }
+        }
+        labels(first: 10) {
+          nodes {
+            name
+            color
+          }
+        }
+        assignees(first: 10) {
+          nodes {
+            login
+            avatarUrl
+          }
+        }
+        milestone {
+          title
+        }
+        # 评审摘要（Reviewers 栏 / 合并判定 / merge-rebase 操作 node id）
+        reviewDecision
+        mergeable
+        reviews(first: 20) {
+          nodes {
+            id
+            state
+            body
+            submittedAt
+            author {
+              login
+              avatarUrl
+            }
+          }
+        }
+        reviewRequests(first: 20) {
+          nodes {
+            requestedReviewer {
+              __typename
+              ... on User {
+                login
+                avatarUrl
+              }
+              ... on Team {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 // ===== Discussions（GraphQL only——REST 无 discussion 端点） =====
 
 /** 讨论列表：discussions + categories + pinned + codeOfConduct（Most helpful 用最近讨论的评论作者聚合） */
@@ -1763,7 +1870,7 @@ export const PULL_REVIEW_SUMMARY_QUERY = /* GraphQL */ `
         id
         reviewDecision
         mergeable
-        reviews(first: 20, orderBy: { field: SUBMITTED_AT, direction: DESC }) {
+        reviews(first: 20) {
           nodes {
             id
             state

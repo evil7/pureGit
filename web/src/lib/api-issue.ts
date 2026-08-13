@@ -23,6 +23,7 @@ import {
   LATEST_RELEASE_QUERY,
   ISSUE_DETAIL_WITH_COMMENTS_QUERY,
   PULL_DETAIL_WITH_COMMENTS_QUERY,
+  PULL_DETAIL_FULL_QUERY,
   ISSUE_COMMENTS_QUERY,
   ADD_COMMENT_MUTATION,
   PULL_REVIEW_COMMENTS_QUERY,
@@ -140,7 +141,8 @@ interface GraphQLPullNode {
   isDraft: boolean;
   author: { login: string; avatarUrl?: string } | null;
   comments: { totalCount: number };
-  reviews: { totalCount: number };
+  /** 评审：列表查询取 totalCount（评论数合计）/ 详情完整查询取 nodes（供 reviewSummary 评审列表） */
+  reviews: { totalCount?: number; nodes?: GraphQLReviewNode[] };
   reviewThreads: { totalCount: number };
   /** 关联的 issue 数（PR 关闭时引用的 closing references） */
   closingIssuesReferences: { totalCount: number };
@@ -157,6 +159,20 @@ interface GraphQLPullNode {
   labels?: { nodes: { name: string; color: string }[] };
   assignees?: { nodes: { login: string; avatarUrl?: string }[] } | null;
   milestone?: { title: string } | null;
+  /** PR 详情完整查询（PULL_DETAIL_FULL_QUERY）附加：评审摘要字段（Reviewers 栏 / 合并判定 / merge 操作 node id） */
+  id?: string;
+  reviewDecision?: string | null;
+  mergeable?: string | null;
+  reviewRequests?: {
+    nodes: {
+      requestedReviewer: {
+        __typename: string;
+        login?: string;
+        avatarUrl?: string;
+        name?: string;
+      } | null;
+    }[];
+  };
 }
 
 /** GraphQL PR 节点 → REST PullRequest（MERGED 映射为 closed + merged_at；id 用 databaseId 保证列表 key 唯一） */
@@ -1211,6 +1227,57 @@ export async function fetchPullDetailWithCommentsSmart(
   return { pr, comments };
 }
 
+/**
+ * PR 详情完整复合查询（detail + comments + reviewSummary 一次 GraphQL 请求）。
+ * 替代 PullDetailPage 原先 fetchPullDetailWithCommentsSmart + fetchPullReviewSummarySmart 两次请求——
+ * 省一次网络往返 + 配额；timeline 保持独立（timelineItems 巨大且失败语义独立）。
+ * 失败降级 REST 分步（复用 rest 层，日志 ↪ 标记）；reviewSummary 由 toReviewSummary 转换。
+ */
+export async function fetchPullDetailFullSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<{ pr: PullRequest; comments: IssueComment[]; reviewSummary: PullReviewSummary | null }> {
+  // REST 降级分步（reviewSummary 由 reviews 列表推断 reviewDecision）
+  const fromRest = async (): Promise<{
+    pr: PullRequest;
+    comments: IssueComment[];
+    reviewSummary: PullReviewSummary | null;
+  }> => {
+    const [pr, comments, reviewSummary] = await Promise.all([
+      fetchPullDetail(owner, repo, number, token),
+      fetchIssueComments(owner, repo, number, token ?? null),
+      reviewSummaryFromRest(owner, repo, number, token),
+    ]);
+    return { pr, comments, reviewSummary };
+  };
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          pullRequest: (GraphQLPullNode & { comments: { nodes: GraphQLCommentNode[] } }) | null;
+        } | null;
+      }> = await graphqlRequest(PULL_DETAIL_FULL_QUERY, { owner, name: repo, number }, token);
+      const g = resp.data?.repository?.pullRequest;
+      if (!hasGraphQLErrors(resp) && g) {
+        return {
+          pr: toPull(g),
+          comments: g.comments.nodes.map(toIssueComment),
+          reviewSummary: toReviewSummary(g),
+        };
+      }
+      // GraphQL 失败 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchPullDetailFullSmart", resp);
+    } catch {
+      // 网络层错误 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchPullDetailFullSmart", undefined);
+    }
+  }
+  // 匿名强制 REST 分步
+  return fromRest();
+}
+
 // ===== B1 评审工作流 smart 层：GraphQL 首选 + REST 降级 =====
 
 /** PR 评审摘要（reviewDecision + reviews + reviewRequests + mergeable + pullRequestId） */
@@ -1231,6 +1298,64 @@ interface GraphQLReviewNode {
   author: { login: string; avatarUrl: string } | null;
 }
 
+/** 评审摘要 GraphQL 节点（PULL_REVIEW_SUMMARY_QUERY 与 PULL_DETAIL_FULL_QUERY 共用字段） */
+interface GraphQLReviewSummaryNode {
+  id?: string;
+  reviewDecision?: string | null;
+  mergeable?: string | null;
+  reviews?: { nodes?: GraphQLReviewNode[] };
+  reviewRequests?: {
+    nodes: {
+      requestedReviewer: {
+        __typename: string;
+        login?: string;
+        avatarUrl?: string;
+        name?: string;
+      } | null;
+    }[];
+  };
+}
+
+/** GraphQL 评审摘要节点 → PullReviewSummary（pullRequestId 供 merge/review 操作；reviewRequests 过滤无 login 的 Team） */
+function toReviewSummary(g: GraphQLReviewSummaryNode): PullReviewSummary {
+  return {
+    pullRequestId: g.id ?? "",
+    reviewDecision: (g.reviewDecision as PullReviewSummary["reviewDecision"]) ?? null,
+    mergeable: (g.mergeable as PullReviewSummary["mergeable"]) ?? null,
+    reviews: (g.reviews?.nodes ?? []).map((r) => ({
+      id: -1,
+      user: r.author ? { login: r.author.login, avatar_url: r.author.avatarUrl } : null,
+      body: r.body ?? "",
+      state: r.state,
+      submitted_at: r.submittedAt ?? undefined,
+    })),
+    reviewRequests: (g.reviewRequests?.nodes ?? [])
+      .map((n) => n.requestedReviewer)
+      .filter((x): x is { __typename: string; login?: string; avatarUrl?: string } =>
+        Boolean(x?.login),
+      )
+      .map((x) => ({ login: x.login!, avatarUrl: x.avatarUrl ?? "" })),
+  };
+}
+
+/** REST 降级：reviews 列表 + reviewDecision 由最新非 COMMENTED 评审推断（REST 无 reviewDecision 字段） */
+async function reviewSummaryFromRest(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<PullReviewSummary> {
+  const reviews = await fetchPullReviews(owner, repo, number, token);
+  const latest = reviews.find((r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED");
+  return {
+    pullRequestId: "",
+    reviewDecision: latest ? (latest.state as PullReviewSummary["reviewDecision"]) : null,
+    mergeable: null,
+    reviews,
+    reviewRequests: [],
+  };
+}
+
 /** 智能获取 PR 评审摘要：GraphQL reviewDecision+reviews 首选，失败降级 REST（reviewDecision 由 reviews 推断）。 */
 export async function fetchPullReviewSummarySmart(
   owner: string,
@@ -1241,95 +1366,29 @@ export async function fetchPullReviewSummarySmart(
   if (token) {
     try {
       const resp: GraphQLResponse<{
-        repository: {
-          pullRequest: {
-            id: string;
-            reviewDecision: string | null;
-            mergeable: string | null;
-            reviews: { nodes: GraphQLReviewNode[] };
-            reviewRequests: {
-              nodes: {
-                requestedReviewer: {
-                  __typename: string;
-                  login?: string;
-                  avatarUrl?: string;
-                  name?: string;
-                } | null;
-              }[];
-            };
-          } | null;
-        } | null;
+        repository: { pullRequest: GraphQLReviewSummaryNode | null } | null;
       }> = await graphqlRequest(PULL_REVIEW_SUMMARY_QUERY, { owner, name: repo, number }, token);
       const g = resp.data?.repository?.pullRequest;
       if (!hasGraphQLErrors(resp) && g) {
-        return {
-          pullRequestId: g.id,
-          reviewDecision: (g.reviewDecision as PullReviewSummary["reviewDecision"]) ?? null,
-          mergeable: (g.mergeable as PullReviewSummary["mergeable"]) ?? null,
-          reviews: g.reviews.nodes.map((r) => ({
-            id: -1,
-            user: r.author ? { login: r.author.login, avatar_url: r.author.avatarUrl } : null,
-            body: r.body ?? "",
-            state: r.state,
-            submitted_at: r.submittedAt ?? undefined,
-          })),
-          reviewRequests: g.reviewRequests.nodes
-            .map((n) => n.requestedReviewer)
-            .filter((x): x is { __typename: string; login?: string; avatarUrl?: string } =>
-              Boolean(x?.login),
-            )
-            .map((x) => ({ login: x.login!, avatarUrl: x.avatarUrl ?? "" })),
-        };
+        return toReviewSummary(g);
       }
-      // GraphQL 失败 → 熔断降级 REST（reviews 列表 + reviewDecision 由最新非 COMMENTED 评审推断）
+      // GraphQL 失败 → 熔断降级 REST
       return withRestFallback(
-        async () => {
-          const reviews = await fetchPullReviews(owner, repo, number, token);
-          const latest = reviews.find(
-            (r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED",
-          );
-          return {
-            pullRequestId: "",
-            reviewDecision: latest ? (latest.state as PullReviewSummary["reviewDecision"]) : null,
-            mergeable: null,
-            reviews,
-            reviewRequests: [],
-          };
-        },
+        () => reviewSummaryFromRest(owner, repo, number, token),
         "fetchPullReviewSummarySmart",
         resp,
       );
     } catch {
       // 网络层错误 → 熔断降级 REST
       return withRestFallback(
-        async () => {
-          const reviews = await fetchPullReviews(owner, repo, number, token);
-          const latest = reviews.find(
-            (r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED",
-          );
-          return {
-            pullRequestId: "",
-            reviewDecision: latest ? (latest.state as PullReviewSummary["reviewDecision"]) : null,
-            mergeable: null,
-            reviews,
-            reviewRequests: [],
-          };
-        },
+        () => reviewSummaryFromRest(owner, repo, number, token),
         "fetchPullReviewSummarySmart",
         undefined,
       );
     }
   }
-  // 匿名强制 REST（reviewDecision 由最新非 COMMENTED 评审推断；REST 无 reviewDecision 字段）
-  const reviews = await fetchPullReviews(owner, repo, number, token);
-  const latest = reviews.find((r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED");
-  return {
-    pullRequestId: "",
-    reviewDecision: latest ? (latest.state as PullReviewSummary["reviewDecision"]) : null,
-    mergeable: null,
-    reviews,
-    reviewRequests: [],
-  };
+  // 匿名强制 REST
+  return reviewSummaryFromRest(owner, repo, number, token);
 }
 
 /** 智能提交评审（三态）：GraphQL submitPullRequestReview 首选，失败降级 REST create-review。 */
