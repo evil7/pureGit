@@ -2011,24 +2011,6 @@ export const ORG_MEMBERS_QUERY = /* GraphQL */ `
 
 // ===== 账户设置补充（SSH/GPG/关注/主题/订阅/删除仓库） =====
 
-/** 当前用户 SSH keys */
-export const VIEWER_SSH_KEYS_QUERY = /* GraphQL */ `
-  query ViewerSshKeys {
-    viewer {
-      sshKeys(first: 50) {
-        nodes {
-          id
-          key
-          title
-          createdAt
-          verified
-          readOnly
-        }
-      }
-    }
-  }
-`;
-
 /** 新增 SSH key（mutation） */
 export const CREATE_SSH_KEY_MUTATION = /* GraphQL */ `
   mutation CreateSshKey($title: String!, $key: String!) {

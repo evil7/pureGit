@@ -9,8 +9,7 @@
  *   映射（blog → websiteUrl、plan?.name ?? null、pronouns ?? null）
  * - fetchUserOrgsSmart：GraphQL viewer.organizations 首选；降级 REST → 映射（description 固定 null）
  * - fetchMyReposSmart：GraphQL viewer.repositories 首选 → toRepository 转换；降级 REST
- * - fetchSshKeysSmart：GraphQL viewer.sshKeys 首选 → SSHKey 映射（id 兜底 -1、created_at/read_only）；
- *   降级 REST
+ * - fetchSshKeysSmart：REST 唯一通道（GraphQL key 类型无 databaseId，删除需 REST 数字 id）
  * - fetchUserEmailsSmart：**无 GraphQL 通道**（GitHub GraphQL 无 User.emails 字段，实测 400）
  *   → 仅 REST /user/emails（纯透传 + 字段裁剪，不经 graphqlRequest）
  *
@@ -317,47 +316,11 @@ describe("fetchMyReposSmart（GraphQL 首选游标分页 + REST 降级）", () =
   });
 });
 
-describe("fetchSshKeysSmart（GraphQL 首选 + REST 降级）", () => {
-  it("GraphQL 成功 → SSHKey 映射（id 兜底 -1、created_at/read_only）", async () => {
-    mockGraphql.mockResolvedValue({
-      data: {
-        viewer: {
-          sshKeys: {
-            nodes: [
-              {
-                id: "abc",
-                key: "ssh-rsa AAA",
-                title: "laptop",
-                createdAt: "2026-01-01T00:00:00Z",
-                verified: true,
-                readOnly: false,
-              },
-            ],
-          },
-        },
-      },
-    } as never);
+describe("fetchSshKeysSmart（REST 唯一通道：GraphQL 无 databaseId，删除需数字 id）", () => {
+  it("始终走 REST fetchSSHKeys，返回真实数字 id（供 DELETE /user/keys/{id} 删除）", async () => {
     const keys = await fetchSshKeysSmart("gho_x");
-    expect(mockFetchSSHKeys).not.toHaveBeenCalled();
-    expect(keys).toEqual([
-      {
-        id: -1,
-        key: "ssh-rsa AAA",
-        url: "",
-        title: "laptop",
-        created_at: "2026-01-01T00:00:00Z",
-        verified: true,
-        read_only: false,
-        last_used: null,
-      },
-    ]);
-  });
-
-  it("GraphQL errors / 异常 → 降级 REST", async () => {
-    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
-    expect((await fetchSshKeysSmart("gho_x"))[0].id).toBe(1);
-    mockGraphql.mockRejectedValue(new Error("net"));
-    expect((await fetchSshKeysSmart("gho_x"))[0].id).toBe(1);
-    expect(mockFetchSSHKeys).toHaveBeenCalledTimes(2);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchSSHKeys).toHaveBeenCalledWith("gho_x");
+    expect(keys[0].id).toBe(1);
   });
 });

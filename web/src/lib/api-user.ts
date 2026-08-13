@@ -10,7 +10,6 @@ import {
   VIEWER_ORGS_QUERY,
   VIEWER_REPOS_QUERY,
   UPDATE_USER_MUTATION,
-  VIEWER_SSH_KEYS_QUERY,
   CREATE_SSH_KEY_MUTATION,
   IS_FOLLOWING_QUERY,
   USER_ID_QUERY,
@@ -315,41 +314,9 @@ export async function updateUserProfileSmart(
 }
 
 export async function fetchSshKeysSmart(token: string): Promise<SSHKey[]> {
-  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
-    withRestFallback(() => fetchSSHKeys(token), "fetchSshKeysSmart", gqlResp);
-  try {
-    const resp: GraphQLResponse<{
-      viewer: {
-        sshKeys: {
-          nodes: {
-            id: string;
-            key: string;
-            title: string;
-            createdAt: string;
-            verified: boolean;
-            readOnly: boolean;
-          }[];
-        };
-      };
-    }> = await graphqlRequest(VIEWER_SSH_KEYS_QUERY, {}, token);
-    if (!hasGraphQLErrors(resp) && resp.data?.viewer) {
-      return resp.data.viewer.sshKeys.nodes.map((k) => ({
-        id: -1,
-        key: k.key,
-        url: "",
-        title: k.title,
-        created_at: k.createdAt,
-        verified: k.verified,
-        read_only: k.readOnly,
-        last_used: null,
-      }));
-    }
-    // GraphQL 失败 → 熔断降级 REST
-    return fromRest(resp);
-  } catch {
-    // 网络层错误 → 熔断降级 REST
-    return fromRest(undefined);
-  }
+  // SSH key 删除依赖 REST 数字 id（DELETE /user/keys/{id}）；GraphQL key 类型（PublicKey）无
+  // databaseId 字段、node id 不可靠解码为数字 id → 列表强制 REST（「GraphQL 无适配」特例，见 api-compat.md）。
+  return fetchSSHKeys(token);
 }
 
 /** 智能新增 SSH key：GraphQL createSshKey 首选，失败降级 REST。 */
@@ -390,22 +357,8 @@ export async function addSshKeySmart(token: string, title: string, key: string):
   }
 }
 
-/** 智能删除 SSH key：GraphQL deleteSshKey 首选（需 node id），失败降级 REST。 */
+/** 删除 SSH key：REST DELETE /user/keys/{id}（GraphQL deleteSshKey 需 node id，列表 REST 无 node id → REST 标准通道）。 */
 export async function deleteSshKeySmart(token: string, keyId: number): Promise<void> {
-  try {
-    // 列表拿 node id（REST id 与 GraphQL id 不同 → 查列表映射）
-    const listResp: GraphQLResponse<{
-      viewer: { sshKeys: { nodes: { id: string; title: string }[] } };
-    }> = await graphqlRequest(VIEWER_SSH_KEYS_QUERY, {}, token);
-    const list = listResp.data?.viewer?.sshKeys?.nodes;
-    if (list && !hasGraphQLErrors(listResp) && list.length > 0) {
-      // REST 列表顺序与 GraphQL 一致（按创建时间）；keyId 是 REST 数字 id，无法直接映射
-      // → GraphQL 删除按 title 匹配不可靠；直接降级 REST（REST DELETE 是标准通道）
-    }
-  } catch {
-    // 降级 REST
-  }
-  // REST DELETE 为标准通道（GraphQL 需 node id 且 keyId 无法可靠映射 → 直接 REST）
   await deleteSSHKey(token, keyId);
 }
 

@@ -39,9 +39,12 @@ import {
   type OrgTeam,
 } from "@/lib/api";
 import type { OrgMember } from "@/lib/rest";
+import { useAuth } from "@/hooks/useAuth";
+import { PermissionGate } from "@/components/WriteGate";
 
 export function OrgTeamsSection({ org, token }: { org: string; token: string }) {
   const { t } = useI18n();
+  const { canWrite } = useAuth();
   const [teams, setTeams] = useState<OrgTeam[] | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
@@ -207,20 +210,24 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
             )}
           </h2>
         </div>
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={() => {
-            setShowCreate((v) => !v);
-            if (showCreate) {
-              setNewName("");
-              setNewDesc("");
-            }
-          }}
-        >
-          <Plus className="size-4" />
-          {t("common.add")}
-        </Button>
+        {canWrite && (
+          <PermissionGate permission="org">
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => {
+                setShowCreate((v) => !v);
+                if (showCreate) {
+                  setNewName("");
+                  setNewDesc("");
+                }
+              }}
+            >
+              <Plus className="size-4" />
+              {t("common.add")}
+            </Button>
+          </PermissionGate>
+        )}
       </div>
 
       {error && <InlineError message={error} size="sm" />}
@@ -299,50 +306,58 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
                     <p className="truncate text-xs text-muted-foreground">{team.description}</p>
                   )}
                 </button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  title={t("orgTeams.edit")}
-                  onClick={() => {
-                    setEditing(team);
-                    setEditName(team.name);
-                    setEditDesc(team.description ?? "");
-                  }}
-                >
-                  <PencilLine className="size-3.5" />
-                </Button>
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="text-muted-foreground hover:text-destructive"
-                  title={t("orgTeams.delete")}
-                  onClick={() => setDeleteTarget(team)}
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
+                {canWrite && (
+                  <PermissionGate permission="org">
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      title={t("orgTeams.edit")}
+                      onClick={() => {
+                        setEditing(team);
+                        setEditName(team.name);
+                        setEditDesc(team.description ?? "");
+                      }}
+                    >
+                      <PencilLine className="size-3.5" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon-sm"
+                      className="text-muted-foreground hover:text-destructive"
+                      title={t("orgTeams.delete")}
+                      onClick={() => setDeleteTarget(team)}
+                    >
+                      <Trash2 className="size-3.5" />
+                    </Button>
+                  </PermissionGate>
+                )}
               </div>
 
               {/* 展开：成员管理 */}
               {expanded === team.slug && (
                 <div className="flex flex-col gap-3 bg-muted/30 px-4 py-3">
-                  <div className="flex items-center gap-2">
-                    <Input
-                      value={addUser}
-                      onChange={(e) => setAddUser(e.target.value)}
-                      placeholder={t("orgTeams.addMemberPlaceholder")}
-                      className="h-7 max-w-64 text-sm"
-                      onKeyDown={(e) => e.key === "Enter" && void doAddMember(team.slug)}
-                    />
-                    <Button
-                      size="sm"
-                      className="h-7"
-                      disabled={memberBusy || !addUser.trim()}
-                      onClick={() => void doAddMember(team.slug)}
-                    >
-                      <UserPlus className="size-3.5" />
-                      {t("orgTeams.addMember")}
-                    </Button>
-                  </div>
+                  {canWrite && (
+                    <PermissionGate permission="org">
+                      <div className="flex items-center gap-2">
+                        <Input
+                          value={addUser}
+                          onChange={(e) => setAddUser(e.target.value)}
+                          placeholder={t("orgTeams.addMemberPlaceholder")}
+                          className="h-7 max-w-64 text-sm"
+                          onKeyDown={(e) => e.key === "Enter" && void doAddMember(team.slug)}
+                        />
+                        <Button
+                          size="sm"
+                          className="h-7"
+                          disabled={memberBusy || !addUser.trim()}
+                          onClick={() => void doAddMember(team.slug)}
+                        >
+                          <UserPlus className="size-3.5" />
+                          {t("orgTeams.addMember")}
+                        </Button>
+                      </div>
+                    </PermissionGate>
+                  )}
                   <div className="flex flex-col divide-y rounded-md border bg-background">
                     {members[team.slug] === undefined ? (
                       <div className="flex flex-col gap-2 p-3">
@@ -362,16 +377,20 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
                             <AvatarFallback>{m.login.slice(0, 2).toUpperCase()}</AvatarFallback>
                           </Avatar>
                           <span className="min-w-0 flex-1 truncate text-sm">@{m.login}</span>
-                          <Button
-                            variant="ghost"
-                            size="icon-sm"
-                            className="text-muted-foreground hover:text-destructive"
-                            title={t("orgTeams.removeMember")}
-                            disabled={memberBusy}
-                            onClick={() => void doRemoveMember(team.slug, m.login)}
-                          >
-                            <X className="size-3.5" />
-                          </Button>
+                          {canWrite && (
+                            <PermissionGate permission="org">
+                              <Button
+                                variant="ghost"
+                                size="icon-sm"
+                                className="text-muted-foreground hover:text-destructive"
+                                title={t("orgTeams.removeMember")}
+                                disabled={memberBusy}
+                                onClick={() => void doRemoveMember(team.slug, m.login)}
+                              >
+                                <X className="size-3.5" />
+                              </Button>
+                            </PermissionGate>
+                          )}
                         </div>
                       ))
                     )}
