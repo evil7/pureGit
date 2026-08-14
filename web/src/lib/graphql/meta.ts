@@ -21,6 +21,51 @@ export const REPO_BRANCHES_QUERY = /* GraphQL */ `
   }
 `;
 
+/** 仓库分支分页查询（分支管理页 /branches 用，每页 10 个 + ahead/behind）。
+ * - refs(first: 10, after: $after) 游标分页（对齐官方「每页约 10 个、翻页递进加载」，避免一次拉 100 分支压垮 API）
+ * - 每分支内联 Ref.compare(headRef: $defaultBranch) 一次拿相对默认分支的 ahead/behind（REST 无批量端点，需逐分支 compare）
+ * ⚠️ compare 语义：base=当前分支、head=默认分支 → Comparison.aheadBy=默认分支领先当前分支（=当前分支「落后」），
+ *   behindBy=默认分支落后当前分支（=当前分支「领先」）。映射时交换两字段，见 fetchBranchesDetailSmart。 */
+export const REPO_BRANCHES_PAGE_QUERY = /* GraphQL */ `
+  query RepoBranchesPage($owner: String!, $name: String!, $defaultBranch: String!, $after: String) {
+    repository(owner: $owner, name: $name) {
+      refs(
+        refPrefix: "refs/heads/"
+        first: 10
+        after: $after
+        orderBy: { field: ALPHABETICAL, direction: ASC }
+      ) {
+        pageInfo {
+          endCursor
+          hasNextPage
+        }
+        nodes {
+          name
+          target {
+            ... on Commit {
+              oid
+              committedDate
+              message
+              author {
+                name
+                avatarUrl
+                user {
+                  login
+                }
+              }
+            }
+          }
+          compare(headRef: $defaultBranch) {
+            aheadBy
+            behindBy
+            status
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** 最近推送分支（refs + 每分支最后提交时间；前端按 committedDate 排序取非默认分支）
  * 注：GraphQL RefOrderField 仅 ALPHABETICAL/TAG_COMMIT_DATE（无 PUSHED_DATE），
  * 故取前 100 分支的 committedDate 在前端排序——对 99.9% 仓库足够，超大仓库（千级分支）可能截断但可接受。 */

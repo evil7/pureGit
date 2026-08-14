@@ -123,7 +123,7 @@ export default function Nav() {
                   <AvatarFallback>{user.login.slice(0, 2).toUpperCase()}</AvatarFallback>
                 </Avatar>
               </DropdownMenuTrigger>
-              <DropdownMenuContent align="end" className="w-48">
+              <DropdownMenuContent align="end">
                 <DropdownMenuItem disabled className="cursor-default font-medium text-foreground">
                   @{user.login}
                 </DropdownMenuItem>

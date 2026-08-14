@@ -103,9 +103,10 @@ export async function fetchBranches(
   repo: string,
   perPage = 30,
   token?: string | null,
+  page = 1,
 ): Promise<{ name: string; commit: { sha: string } }[]> {
   return typedRequest<{ name: string; commit: { sha: string } }[]>(token, (octokit) =>
-    octokit.rest.repos.listBranches({ owner, repo, per_page: perPage }),
+    octokit.rest.repos.listBranches({ owner, repo, per_page: perPage, page }),
   );
 }
 
@@ -785,6 +786,89 @@ export async function createBranch(
       ref: `refs/heads/${newBranch}`,
       sha: ref.object.sha,
     }),
+  );
+}
+
+// ===== 文件上传（官方 /upload 页：git data API 四步提交，支持二进制 + 多文件一次 commit）=====
+
+/** 待上传文件（path = 相对仓库根的目标路径；content = 原始 base64，不含 data URL 前缀） */
+export interface UploadFileInput {
+  path: string;
+  content: string;
+}
+
+/** 取分支 head commit 的 sha（git data 上传流程第一步） */
+async function getBranchHeadSha(
+  owner: string,
+  repo: string,
+  branch: string,
+  token: string,
+): Promise<string> {
+  const ref = await typedRequest<{ object: { sha: string } }>(token, (octokit) =>
+    octokit.rest.git.getRef({ owner, repo, ref: `heads/${branch}` }),
+  );
+  return ref.object.sha;
+}
+
+/** 取某 commit 的根 tree sha（git data 上传流程第二步，作为 createTree 的 base_tree） */
+async function getCommitTreeSha(
+  owner: string,
+  repo: string,
+  commitSha: string,
+  token: string,
+): Promise<string> {
+  const commit = await typedRequest<{ tree: { sha: string } }>(token, (octokit) =>
+    octokit.rest.git.getCommit({ owner, repo, commit_sha: commitSha }),
+  );
+  return commit.tree.sha;
+}
+
+/**
+ * 批量上传文件到指定分支（官方 Upload files 页真实 API）。
+ * 走 git data 四步：① 取分支 head commit + 其 tree sha → ② 每文件 createBlob（二进制安全）
+ * → ③ createTree（base_tree 挂到当前 tree）→ ④ createCommit → ⑤ updateRef 推进分支。
+ * 区别于 updateFileContent（PUT contents，仅 <1MB 文本）：本函数支持二进制与多文件一次 commit。
+ */
+export async function uploadFiles(
+  owner: string,
+  repo: string,
+  branch: string,
+  files: UploadFileInput[],
+  message: string,
+  token: string,
+): Promise<void> {
+  // ① 分支 head commit sha + 其根 tree sha（base_tree）
+  const headSha = await getBranchHeadSha(owner, repo, branch, token);
+  const baseTreeSha = await getCommitTreeSha(owner, repo, headSha, token);
+
+  // ② 每文件先建 blob（base64 → git blob sha）
+  const treeItems: { path: string; mode: "100644"; type: "blob"; sha: string }[] = [];
+  for (const f of files) {
+    const blob = await typedRequest<{ sha: string }>(token, (octokit) =>
+      octokit.rest.git.createBlob({ owner, repo, content: f.content, encoding: "base64" }),
+    );
+    treeItems.push({ path: f.path, mode: "100644", type: "blob", sha: blob.sha });
+  }
+
+  // ③ 在 base_tree 上挂新 blob → 新 tree
+  const tree = await typedRequest<{ sha: string }>(token, (octokit) =>
+    octokit.rest.git.createTree({ owner, repo, base_tree: baseTreeSha, tree: treeItems }),
+  );
+
+  // ④ 基于新 tree + 父提交建 commit
+  const commit = await typedRequest<{ sha: string }>(token, (octokit) =>
+    octokit.rest.git.createCommit({
+      owner,
+      repo,
+      message,
+      tree: tree.sha,
+      parents: [headSha],
+    }),
+  );
+
+  // ⑤ 推进分支 ref 到新 commit
+  await typedRequest<void>(token, (octokit) =>
+    octokit.rest.git.updateRef({ owner, repo, ref: `heads/${branch}`, sha: commit.sha }),
   );
 }
 

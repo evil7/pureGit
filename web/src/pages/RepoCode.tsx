@@ -6,22 +6,26 @@
  * 三个页面（CodeIndex/TreePage/BlobPage）已拆到 pages/ 根目录独立文件，从本文件导入共享组件。
  */
 import { useEffect, useMemo, useRef, useState, type ReactNode } from "react";
-import { Link, useLocation, useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import {
   Check,
   ChevronDown,
   Clock,
   Code2,
   Copy,
+  CornerDownRight,
   File,
+  FilePlus,
   Folder,
   GitBranch,
   GitCommitHorizontal,
   PanelLeftClose,
   Plus,
   Search,
+  Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Card, CardContent } from "@/components/ui/card";
 import { InlineError } from "@/components/InlineError";
 import { Input } from "@/components/ui/input";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -34,14 +38,26 @@ import {
   DropdownMenuLabel,
   DropdownMenuSeparator,
 } from "@/components/ui/dropdown-menu";
-import { fetchFileTree, apiErrorMessage, type GitTree, type DirEntry } from "@/lib/restapi";
-import { fetchBranchesSmart, fetchLatestCommitSmart } from "@/lib/api";
-import { parseTreePath } from "@/lib/repo/repo-path";
+import {
+  fetchFileTree,
+  apiErrorMessage,
+  type GitTree,
+  type DirEntry,
+  type ReadmeInfo,
+} from "@/lib/restapi";
+import {
+  fetchBranchesSmart,
+  fetchLatestCommitSmart,
+  fetchDirWithReadmeSmart,
+  fetchRepoHeaderSmart,
+  type RepoHeaderData,
+} from "@/lib/api";
 import { useAuth } from "@/hooks/useAuth";
+import { useBranchPath } from "@/hooks/useBranchPath";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import { tStatic } from "@/i18n";
-import { useRepoData } from "@/lib/repo/repo-context";
 import { FileTree } from "@/components/FileTree";
+import { MarkdownView } from "@/components/MarkdownView";
 import { useRepoTree, type TreeNode } from "@/lib/repo/file-tree";
 import { WriteGate } from "@/components/WriteGate";
 import { ForkGate } from "@/components/ForkGate";
@@ -52,15 +68,19 @@ import { TreeCollapseCtx } from "@/lib/repo/tree-collapse";
 
 /** 分支切换器（官方 ref-selector 同款：FileTreeSidebar 展开态 + blob/tree 折叠态 sticky 头共用）
  * active：折叠态 sticky 头的实例在展开态被 hidden 隐藏但**常驻挂载**（不重挂载→不重复请求），
- * active=false 时不拉取；首次 active=true 拉取一次后 loadedRef 置位，后续折叠/展开切换不再重拉（数据保留在 state）。 */
+ * active=false 时不拉取；首次 active=true 拉取一次后 loadedRef 置位，后续折叠/展开切换不再重拉（数据保留在 state）。
+ * mode：tree 页切分支跳 tree/、blob 页跳 blob/（保留当前文件/目录路径与官方一致）。 */
 export function BranchPicker({
   branch,
   currentPath,
   active = true,
+  mode = "blob",
 }: {
   branch: string;
   currentPath: string;
   active?: boolean;
+  /** 切换分支后跳转的浏览类型：tree（目录页）/ blob（文件页） */
+  mode?: "tree" | "blob";
 }) {
   const { owner = "", repo = "" } = useParams();
   const { token } = useAuth();
@@ -98,8 +118,8 @@ export function BranchPicker({
             className="font-mono text-xs"
             onClick={() => {
               if (b !== branch) {
-                // 保留当前文件路径，与官方一致
-                window.location.href = `/${owner}/${repo}/blob/${b}/${currentPath}`;
+                // 保留当前文件/目录路径，与官方一致（tree 页跳 tree、blob 页跳 blob）
+                window.location.href = `/${owner}/${repo}/${mode}/${b}/${currentPath}`;
               }
             }}
           >
@@ -109,6 +129,13 @@ export function BranchPicker({
         {branches.length === 0 && (
           <DropdownMenuItem disabled>{tStatic("common.noBranches")}</DropdownMenuItem>
         )}
+        <DropdownMenuSeparator />
+        {/* 查看全部分支（官方分支选择器底部入口 → /branches 管理页） */}
+        <DropdownMenuItem asChild>
+          <Link to={`/${owner}/${repo}/branches`} className="text-xs">
+            {tStatic("branches.viewAll")}
+          </Link>
+        </DropdownMenuItem>
       </DropdownMenuContent>
     </DropdownMenu>
   );
@@ -212,6 +239,13 @@ export function RepoActionBar({
           {branches.length === 0 && (
             <DropdownMenuItem disabled>{tStatic("common.noBranches")}</DropdownMenuItem>
           )}
+          <DropdownMenuSeparator />
+          {/* 查看全部分支（官方分支选择器底部入口 → /branches 管理页） */}
+          <DropdownMenuItem asChild>
+            <Link to={`/${owner}/${repo}/branches`} className="text-xs">
+              {tStatic("branches.viewAll")}
+            </Link>
+          </DropdownMenuItem>
         </DropdownMenuContent>
       </DropdownMenu>
 
@@ -234,19 +268,13 @@ export function RepoActionBar({
         />
       </div>
 
-      {/* 右侧按钮组：新增文件（跳转 /new 整页）+ Code 克隆（ml-auto 整体推到行尾） */}
+      {/* 右侧按钮组：Add file 下拉（新建文件/上传文件）+ Code 克隆（ml-auto 整体推到行尾） */}
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {token && (
           <WriteGate>
             {/* ForkGate：无写权限仓库点击新增文件 → fork 引导（官方语义：编辑他人仓库前必须 fork） */}
             <ForkGate>
-              <Tip label="新增文件">
-                <Button variant="ghost" size="icon" asChild>
-                  <Link to={`/${owner}/${repo}/new/${branch}`}>
-                    <Plus className="size-4" />
-                  </Link>
-                </Button>
-              </Tip>
+              <AddFileDropdown branch={branch} />
             </ForkGate>
           </WriteGate>
         )}
@@ -335,6 +363,36 @@ export function RepoActionBar({
         </DropdownMenu>
       </div>
     </div>
+  );
+}
+
+/** Add file 下拉（官方 Code 区操作栏：Create new file / Upload files；分支根与目录页共用） */
+export function AddFileDropdown({ branch, path = "" }: { branch: string; path?: string }) {
+  const { owner = "", repo = "" } = useParams();
+  const dirPrefix = path ? `/${path}` : "";
+  return (
+    <DropdownMenu>
+      <DropdownMenuTrigger asChild>
+        <Button variant="outline" size="icon" aria-label={tStatic("addFile.label")}>
+          <Plus className="size-4" />
+        </Button>
+      </DropdownMenuTrigger>
+      {/* shadcn 默认宽度（跟随 trigger + min-w-32 兑底）；内容短，无需固定 w-56 */}
+      <DropdownMenuContent align="end">
+        <DropdownMenuItem asChild>
+          <Link to={`/${owner}/${repo}/new/${branch}${dirPrefix}`}>
+            <FilePlus className="size-4" />
+            {tStatic("addFile.create")}
+          </Link>
+        </DropdownMenuItem>
+        <DropdownMenuItem asChild>
+          <Link to={`/${owner}/${repo}/upload/${branch}${dirPrefix}`}>
+            <Upload className="size-4" />
+            {tStatic("addFile.upload")}
+          </Link>
+        </DropdownMenuItem>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
 
@@ -455,6 +513,82 @@ export function FileList({
   );
 }
 
+/**
+ * 仓库「根目录」视图（分支根 = repo 根目录，等价 /:owner/:repo 但指定 branch）。
+ * 操作栏（分支切换/Go to file/新增文件/Code 克隆）+ 根文件列表 + 根 README。
+ * CodeIndex（默认分支根）与 TreePage（tree/{branch} 分支根，path 为空）共用——
+ * 切换分支后应回到「换了个 branch 的 repo 根目录」体验，而非目录页（sticky 头 + 面包屑）。
+ */
+export function RepoRootView({ branch }: { branch: string }) {
+  const { owner = "", repo = "" } = useParams();
+  const { token } = useAuth();
+  const [readme, setReadme] = useState<ReadmeInfo | null>(null);
+  const [entries, setEntries] = useState<DirEntry[] | null>(null);
+  // 分支列表 + 最新提交（一次复合查询，下发 RepoActionBar / FileList）
+  const [repoHeader, setRepoHeader] = useState<RepoHeaderData | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 目录条目 + README 一次 Tree.entries 复合查询（原 fetchDirContentsSmart + fetchReadmeSmart 双查）
+    fetchDirWithReadmeSmart(owner, repo, "", branch, token)
+      .then(({ entries: es, readme: r }) => {
+        if (cancelled) return;
+        setReadme(r);
+        setEntries(es);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setReadme(null);
+        setEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [owner, repo, branch, token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 分支列表 + 最新提交一次复合查询（原 RepoActionBar fetchBranchesSmart + LatestCommitLine fetchLatestCommitSmart 双查）
+    fetchRepoHeaderSmart(owner, repo, branch, token)
+      .then((h) => !cancelled && setRepoHeader(h))
+      .catch(() => !cancelled && setRepoHeader({ branches: [], latestCommit: null }));
+    return () => {
+      cancelled = true;
+    };
+  }, [owner, repo, branch, token]);
+
+  return (
+    <div>
+      <RepoActionBar branch={branch} branches={repoHeader?.branches ?? []} />
+      {entries === null ? (
+        <Skeleton className="h-64 w-full" />
+      ) : (
+        <FileList
+          entries={entries}
+          branch={branch}
+          path=""
+          latestCommit={repoHeader?.latestCommit ?? null}
+        />
+      )}
+
+      {readme && (
+        <div className="mt-6">
+          <div className="mb-2 flex items-center gap-1.5 text-sm text-muted-foreground">
+            <CornerDownRight className="size-4" />
+            README.md
+          </div>
+          <Card>
+            {/*：边距对齐单文件 README（p-8，官方 markdown-body padding） */}
+            <CardContent className="p-8">
+              <MarkdownView rawBase={readme.rawBase}>{readme.content}</MarkdownView>
+            </CardContent>
+          </Card>
+        </div>
+      )}
+    </div>
+  );
+}
+
 // ===== blob 页/文件编辑页左侧栏（官方：Files 标题 + branch 切换 + Go to file 框 + 文件树；无 Code 按钮）=====
 // 共享组件：BlobPage 与 FileEditorPage（new/edit 两栏布局）共用
 
@@ -523,11 +657,10 @@ function goToBlob(owner: string, repo: string, branch: string, path: string) {
 // ===== blob 页共享布局（官方：左文件树卡片 + 右内容，无 Code 按钮、无全宽面包屑）=====
 
 export default function RepoCode({ children }: { children: ReactNode }) {
-  const { owner = "", repo = "", branch: urlBranch = "" } = useParams();
+  const { owner = "", repo = "" } = useParams();
   const { token } = useAuth();
-  const repoData = useRepoData();
-  const branch = urlBranch || repoData?.default_branch || "main";
-  const { pathname } = useLocation();
+  // blob 路由已改 splat：按分支列表最长前缀匹配解析 branch/path（分支名可含 `/`）
+  const { branch, path } = useBranchPath();
 
   const [tree, setTree] = useState<GitTree | null>(null);
   const [loading, setLoading] = useState(true);
@@ -535,7 +668,6 @@ export default function RepoCode({ children }: { children: ReactNode }) {
   // 文件树折叠（官方 Collapse file tree：折叠后仅 Expand + 分支 + Go to file 一行，内容全宽）
   const [treeCollapsed, setTreeCollapsed] = useState(false);
   const treeRoot = useRepoTree(tree);
-  const path = parseTreePath(pathname);
 
   useEffect(() => {
     let cancelled = false;

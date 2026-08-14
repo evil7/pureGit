@@ -154,7 +154,7 @@ export function StarForkButtons({
             <span className="text-muted-foreground">{formatCount(subscribers ?? 0)}</span>
           </Button>
         </DropdownMenuTrigger>
-        <DropdownMenuContent align="start" className="w-40">
+        <DropdownMenuContent align="start">
           <DropdownMenuItem
             onClick={() => void setWatch("unwatch")}
             disabled={busy !== null}

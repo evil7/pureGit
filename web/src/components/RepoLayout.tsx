@@ -25,8 +25,8 @@ import { PAGE_SHELL } from "@/lib/ui/layout";
 import PageLayout from "@/components/PageLayout";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** 未登录可匿名浏览的 Code 相关路径段（根/tree/blob/new/edit；其余 tab 需登录） */
-const CODE_PATH_SEGMENTS = ["", "tree", "blob", "new", "edit"];
+/** 未登录可匿名浏览的 Code 相关路径段（根/tree/blob/new/edit/upload/branches；其余 tab 需登录） */
+const CODE_PATH_SEGMENTS = ["", "tree", "blob", "new", "edit", "upload", "branches"];
 
 /** 仓库内容区：key 随路径变化触发动画；未登录且非 Code 段 → 登录墙（URL 驱动，登录后回落） */
 function RepoContent() {
@@ -83,6 +83,10 @@ export default function RepoLayout() {
   const isSecurityPage = /\/security(\/|$)/.test(pathname);
   const isPulsePage = /\/pulse(\/|$)/.test(pathname);
   const isReleasesPage = /\/releases(\/|$)/.test(pathname);
+  // 分支管理页（官方全宽单列，无 About 右栏）
+  const isBranchesPage = /\/branches(\/|$)/.test(pathname);
+  // 文件上传页（官方全宽单列，无 About 右栏，同 blob/new/edit）
+  const isUploadPage = /\/upload(\/|$)/.test(pathname);
   // 未登录 + 非 Code 段（登录墙页）→ About 侧栏隐藏，避免白发匿名请求
   const isCodePath = (() => {
     const base = `/${owner}/${repo}`;
@@ -103,6 +107,8 @@ export default function RepoLayout() {
     isSecurityPage ||
     isPulsePage ||
     isReleasesPage ||
+    isBranchesPage ||
+    isUploadPage ||
     (!token && !isCodePath);
   const [data, setData] = useState<Repository | null>(null);
   const [languages, setLanguages] = useState<Record<string, number>>({});

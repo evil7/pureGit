@@ -14,6 +14,7 @@ import {
   REPO_TOPICS_QUERY,
   REPO_PROJECTS_V2_QUERY,
   RECENT_BRANCHES_QUERY,
+  REPO_BRANCHES_PAGE_QUERY,
   UPDATE_REPOSITORY_TOPICS_MUTATION,
 } from "../graphql";
 import {
@@ -25,6 +26,7 @@ import {
   fetchSecurityAdvisories,
   fetchSecurityAdvisory,
   fetchSecurityMd,
+  fetchBranches,
 } from "../restapi";
 import type { RepoSubscription, SecurityAdvisory, ReadmeInfo } from "../restapi";
 
@@ -240,6 +242,154 @@ export async function fetchRecentBranchesSmart(
     logWarn("fetchRecentBranchesSmart", `最近分支查询失败（静默空）: ${String(e)}`);
     return [];
   }
+}
+
+/** 分支详情（分支管理页 /branches 展示：名称 + 是否默认 + 最后提交信息/作者/时间 + 相对默认分支 ahead/behind） */
+export interface BranchDetail {
+  name: string;
+  isDefault: boolean;
+  sha: string;
+  committedDate: string | null;
+  message: string | null;
+  authorLogin: string | null;
+  authorName: string | null;
+  authorAvatarUrl: string | null;
+  /** 领先默认分支的提交数（null = REST 降级/匿名无此数据） */
+  aheadBy: number | null;
+  /** 落后默认分支的提交数 */
+  behindBy: number | null;
+}
+
+/** 分支分页结果（游标续接；REST 降级/匿名时 endCursor=null、restPage 递增驱动下一页） */
+export interface PagedBranches {
+  branches: BranchDetail[];
+  endCursor: string | null;
+  hasNextPage: boolean;
+  /** REST 降级/匿名时的下一页页码（GraphQL 成功为 null）；组件据此 loadMore 递进 */
+  restPage: number | null;
+}
+
+/** 每页分支数（对齐官方「每页约 10 个、翻页递进加载」，防一次拉全量压垮 API） */
+const BRANCHES_PAGE_SIZE = 10;
+
+/** REST 分支 → BranchDetail（REST 仅 name+sha，无提交详情/无 ahead/behind → 置空；页面降级渲染） */
+function toBranchFromRest(
+  bs: { name: string; commit: { sha: string } }[],
+  defaultBranch: string,
+): BranchDetail[] {
+  return bs.map((b) => ({
+    name: b.name,
+    isDefault: b.name === defaultBranch,
+    sha: b.commit.sha,
+    committedDate: null,
+    message: null,
+    authorLogin: null,
+    authorName: null,
+    authorAvatarUrl: null,
+    aheadBy: null,
+    behindBy: null,
+  }));
+}
+
+/**
+ * 智能获取仓库分支分页（含提交信息 + 相对默认分支 ahead/behind）：
+ * GraphQL REPO_BRANCHES_PAGE_QUERY 首选（每页 10 + 内联 Ref.compare 一次拿 ahead/behind），
+ * 失败/匿名 → 熔断降级 REST fetchBranches（仅 name+sha，无 ahead/behind，按 page 递进）。
+ * cursor = GraphQL 续接游标；restPage = REST 降级/匿名页码（首屏 1）。返回统一 PagedBranches。
+ */
+export async function fetchBranchesDetailSmart(
+  owner: string,
+  repo: string,
+  defaultBranch: string,
+  cursor: string | null,
+  restPage: number,
+  token?: string | null,
+): Promise<PagedBranches> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>): Promise<PagedBranches> =>
+    withRestFallback(
+      async () => {
+        const bs = await fetchBranches(owner, repo, BRANCHES_PAGE_SIZE, token, restPage);
+        return {
+          branches: toBranchFromRest(bs, defaultBranch),
+          endCursor: null,
+          // REST 无游标：按「批次是否拉满」判断是否还有下一页
+          hasNextPage: bs.length >= BRANCHES_PAGE_SIZE,
+          restPage: restPage + 1,
+        };
+      },
+      "fetchBranchesDetailSmart",
+      gqlResp,
+    );
+
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          refs: {
+            pageInfo: { endCursor: string | null; hasNextPage: boolean };
+            nodes: Array<{
+              name: string;
+              target: {
+                oid: string;
+                committedDate: string | null;
+                message: string | null;
+                author: {
+                  name: string | null;
+                  avatarUrl: string | null;
+                  user: { login: string } | null;
+                } | null;
+              } | null;
+              compare: { aheadBy: number; behindBy: number } | null;
+            }>;
+          } | null;
+        } | null;
+      }> = await graphqlRequest(
+        REPO_BRANCHES_PAGE_QUERY,
+        { owner, name: repo, defaultBranch, after: cursor ?? null },
+        token,
+      );
+      const refs = resp.data?.repository?.refs;
+      if (!hasGraphQLErrors(resp) && refs) {
+        return {
+          branches: (refs.nodes ?? [])
+            .map((n) => {
+              const name = n.name.replace(/^refs\/heads\//, "");
+              const t = n.target;
+              return {
+                name,
+                isDefault: name === defaultBranch,
+                sha: t?.oid ?? "",
+                committedDate: t?.committedDate ?? null,
+                message: t?.message ?? null,
+                authorLogin: t?.author?.user?.login ?? null,
+                authorName: t?.author?.name ?? null,
+                authorAvatarUrl: t?.author?.avatarUrl ?? null,
+                // Ref.compare(headRef: defaultBranch) 语义：base=当前分支、head=默认分支 →
+                // aheadBy=默认领先当前（=当前「落后」）、behindBy=默认落后当前（=当前「领先」），故交换映射
+                aheadBy: n.compare ? n.compare.behindBy : null,
+                behindBy: n.compare ? n.compare.aheadBy : null,
+              };
+            })
+            .filter((b) => b.name),
+          endCursor: refs.pageInfo?.endCursor ?? null,
+          hasNextPage: refs.pageInfo?.hasNextPage ?? false,
+          restPage: null,
+        };
+      }
+      return fromRest(resp);
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return fromRest(undefined);
+    }
+  }
+  // 匿名强制 REST（GraphQL 匿名恒 403，硬约束非降级）
+  const bs = await fetchBranches(owner, repo, BRANCHES_PAGE_SIZE, token, restPage);
+  return {
+    branches: toBranchFromRest(bs, defaultBranch),
+    endCursor: null,
+    hasNextPage: bs.length >= BRANCHES_PAGE_SIZE,
+    restPage: restPage + 1,
+  };
 }
 
 /** 智能删除仓库：GraphQL deleteRepository 首选（需 repositoryId），失败降级 REST。 */

@@ -1,63 +1,18 @@
 /**
  * Code 首页（/:owner/:repo，自 RepoCode.tsx 拆出）
  *
- * GitHub 风格：归档横幅 + fork 信息条 + 最近推送提示条 + 操作栏（分支/Go to file/Code 克隆）
- * + 根文件列表 + README（全宽）。共享组件（RepoActionBar/FileList）自 RepoCode 导入。
+ * GitHub 风格：归档横幅 + fork 信息条 + 最近推送提示条 + 根目录视图（操作栏 + 根文件列表 + README）。
+ * 根目录渲染（操作栏/文件列表/README）复用 RepoCode 导出的 RepoRootView，与 TreePage 分支根一致。
  */
-import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
-import { CornerDownRight } from "lucide-react";
-import { Card, CardContent } from "@/components/ui/card";
-import { Skeleton } from "@/components/ui/skeleton";
-import { useAuth } from "@/hooks/useAuth";
 import { useRepoData } from "@/lib/repo/repo-context";
-import { fetchDirWithReadmeSmart, fetchRepoHeaderSmart, type RepoHeaderData } from "@/lib/api";
-import type { ReadmeInfo, DirEntry } from "@/lib/restapi";
 import { ArchivedBanner } from "@/components/ArchivedBanner";
 import { ForkInfoBar } from "@/components/ForkInfoBar";
 import { RecentPushesBanner } from "@/components/RecentPushesBanner";
-import { MarkdownView } from "@/components/MarkdownView";
-import { RepoActionBar, FileList } from "./RepoCode";
+import { RepoRootView } from "./RepoCode";
 
 export default function CodeIndex() {
-  const { owner = "", repo = "" } = useParams();
-  const { token } = useAuth();
   const repoData = useRepoData();
   const branch = repoData?.default_branch ?? "main";
-  const [readme, setReadme] = useState<ReadmeInfo | null>(null);
-  const [entries, setEntries] = useState<DirEntry[] | null>(null);
-  // 分支列表 + 最新提交（一次复合查询，下发 RepoActionBar / FileList）
-  const [repoHeader, setRepoHeader] = useState<RepoHeaderData | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    // 目录条目 + README 一次 Tree.entries 复合查询（原 fetchDirContentsSmart + fetchReadmeSmart 双查）
-    fetchDirWithReadmeSmart(owner, repo, "", branch, token)
-      .then(({ entries: es, readme: r }) => {
-        if (cancelled) return;
-        setReadme(r);
-        setEntries(es);
-      })
-      .catch(() => {
-        if (cancelled) return;
-        setReadme(null);
-        setEntries([]);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [owner, repo, branch, token]);
-
-  useEffect(() => {
-    let cancelled = false;
-    // 分支列表 + 最新提交一次复合查询（原 RepoActionBar fetchBranchesSmart + LatestCommitLine fetchLatestCommitSmart 双查）
-    fetchRepoHeaderSmart(owner, repo, branch, token)
-      .then((h) => !cancelled && setRepoHeader(h))
-      .catch(() => !cancelled && setRepoHeader({ branches: [], latestCommit: null }));
-    return () => {
-      cancelled = true;
-    };
-  }, [owner, repo, branch, token]);
 
   return (
     <div>
@@ -67,32 +22,8 @@ export default function CodeIndex() {
       <ForkInfoBar />
       {/* 最近推送分支提示条（官方 Recently touched branches；仅登录 + 14 天内非默认分支） */}
       <RecentPushesBanner />
-      <RepoActionBar branch={branch} branches={repoHeader?.branches ?? []} />
-      {entries === null ? (
-        <Skeleton className="h-64 w-full" />
-      ) : (
-        <FileList
-          entries={entries}
-          branch={branch}
-          path=""
-          latestCommit={repoHeader?.latestCommit ?? null}
-        />
-      )}
-
-      {readme && (
-        <div className="mt-6">
-          <div className="mb-2 flex items-center gap-1.5 text-sm text-muted-foreground">
-            <CornerDownRight className="size-4" />
-            README.md
-          </div>
-          <Card>
-            {/*：边距对齐单文件 README（p-8，官方 markdown-body padding） */}
-            <CardContent className="p-8">
-              <MarkdownView rawBase={readme.rawBase}>{readme.content}</MarkdownView>
-            </CardContent>
-          </Card>
-        </div>
-      )}
+      {/* 根目录视图：操作栏（分支/Go to file/Code）+ 根文件列表 + README */}
+      <RepoRootView branch={branch} />
     </div>
   );
 }

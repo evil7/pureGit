@@ -53,6 +53,9 @@ export function RecentPushesBanner() {
   if (!token || !branch) return null;
   // 仅本人管理的仓库显示快捷操作横幅（非本人仓库不应出现「Compare & pull request」快捷入口）
   if (!repoData || !user || repoData.owner.login !== user.login) return null;
+  // fork 仓库：分支继承自上游（committedDate 是上游提交时间，非本人「最近推送」），
+  // 官方不显示该横幅（仅显示「同步 Fork」信息条），故 fork 直接不渲染
+  if (repoData.fork) return null;
 
   // fmt 的 absolute 格式（`2026年8月9日 22:53`）去掉 ` HH:mm` 时间尾 → 仅日期（对齐 ArchivedBanner）
   const fmtDate = (iso: string): string => fmt(iso).replace(/\s\d{2}:\d{2}$/, "");

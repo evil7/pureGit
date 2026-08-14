@@ -80,7 +80,8 @@ export function CreateNewMenu() {
               <Plus className="size-4" />
             </Button>
           </DropdownMenuTrigger>
-          <DropdownMenuContent align="end" className="w-56">
+          {/* min-w-40 兜底：默认 128px 会让「新建 Pull Request / New pull request」换行 */}
+          <DropdownMenuContent align="end" className="min-w-40">
             <DropdownMenuLabel>{t("create.label")}</DropdownMenuLabel>
             <DropdownMenuItem onClick={() => navigate("/new")}>
               <Plus className="size-4" />

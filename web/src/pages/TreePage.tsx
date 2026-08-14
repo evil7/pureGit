@@ -6,13 +6,13 @@
  */
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronRight, CornerDownRight, PanelRightOpen, Plus } from "lucide-react";
+import { ChevronRight, CornerDownRight, PanelRightOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Tip } from "@/components/Tip";
 import { InlineError } from "@/components/InlineError";
 import { useAuth } from "@/hooks/useAuth";
-import { useRepoData } from "@/lib/repo/repo-context";
+import { useBranchPath } from "@/hooks/useBranchPath";
 import { tStatic } from "@/i18n";
 import { fetchDirWithReadmeSmart, apiErrorMessage } from "@/lib/api";
 import type { ReadmeInfo, DirEntry } from "@/lib/restapi";
@@ -21,14 +21,13 @@ import { WriteGate } from "@/components/WriteGate";
 import { ForkGate } from "@/components/ForkGate";
 import { useTreeCollapse } from "@/lib/repo/tree-collapse";
 import { cn } from "@/lib/utils";
-import { BranchPicker, GoToFileInput, FileList } from "./RepoCode";
+import { BranchPicker, GoToFileInput, FileList, RepoRootView, AddFileDropdown } from "./RepoCode";
 
 export default function TreePage() {
-  const { owner = "", repo = "", branch = "", "*": rest = "" } = useParams();
+  const { owner = "", repo = "" } = useParams();
   const { token } = useAuth();
-  const repoData = useRepoData();
-  const b = branch || repoData?.default_branch || "main";
-  const path = rest;
+  // tree 路由已改 splat：按分支列表最长前缀匹配解析 branch/path（分支名可含 `/`）
+  const { branch: b, path } = useBranchPath();
   const { collapsed: treeCollapsed, setCollapsed: setTreeCollapsed } = useTreeCollapse();
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
   // 子目录 README（官方：进入目录若含 README 渲染在列表下方）
@@ -37,6 +36,8 @@ export default function TreePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
 
   useEffect(() => {
+    // 分支根（path 空）走 RepoRootView（等价 repo 根目录），不在此拉目录数据
+    if (!path) return;
     let cancelled = false;
     setEntries(null);
     setReadme(null);
@@ -67,6 +68,12 @@ export default function TreePage() {
     };
   }, [owner, repo, path, b, token]);
 
+  // 分支根（path 空）→ 等价「换了个 branch 的 repo 根目录」：操作栏（分支切换/Go to file/Code）
+  // + 根文件列表 + README（对齐官方 tree/{branch} 与 /:owner/:repo 同渲染，而非目录页）
+  if (!path) {
+    return <RepoRootView branch={b} />;
+  }
+
   return (
     <div>
       {/* Sticky 单行头（官方 tree 页 #StickyHeader 同款）：折叠态 = [展开树][分支][面包屑] | [Go to file][新增文件]；
@@ -87,7 +94,7 @@ export default function TreePage() {
             </Button>
           </Tip>
           <div className={cn(!treeCollapsed && "hidden")}>
-            <BranchPicker branch={b} currentPath={path} active={treeCollapsed} />
+            <BranchPicker branch={b} currentPath={path} active={treeCollapsed} mode="tree" />
           </div>
           <div className="min-w-0">
             <Breadcrumb branch={b} path={path} />
@@ -97,12 +104,7 @@ export default function TreePage() {
             {token && (
               <WriteGate className="shrink-0">
                 <ForkGate>
-                  <Button variant="outline" className="gap-1.5" asChild>
-                    <Link to={`/${owner}/${repo}/new/${b}${path ? `/${path}` : ""}`}>
-                      <Plus className="size-3.5" />
-                      新增文件
-                    </Link>
-                  </Button>
+                  <AddFileDropdown branch={b} path={path} />
                 </ForkGate>
               </WriteGate>
             )}

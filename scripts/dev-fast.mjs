@@ -148,7 +148,9 @@ function run(label, args) {
 function shutdown() {
   if (shuttingDown) return;
   shuttingDown = true;
-  for (const { child } of children.values()) {
+  // children Map 的 value 即 child 对象本身（run() 里 children.set(label, child)），
+  // 直接迭代 value 即可；此前误解构 { child } → undefined.child.killed 抛 TypeError
+  for (const child of children.values()) {
     if (!child.killed) child.kill("SIGTERM");
   }
   // 给子进程一点收尾时间后强制退出

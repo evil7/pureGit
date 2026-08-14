@@ -13,7 +13,7 @@
  * - 分支名假设不含 `/`（GitHub 分支名可含 `/`，此时分支段被当路径——记录为已知行为边界）
  */
 import { describe, it, expect } from "vitest";
-import { parseTreePath } from "@/lib/repo/repo-path";
+import { parseTreePath, resolveBranchPath } from "@/lib/repo/repo-path";
 
 describe("parseTreePath（tree/blob 路径提取）", () => {
   it("tree 分支根 → 空串", () => {
@@ -47,5 +47,57 @@ describe("parseTreePath（tree/blob 路径提取）", () => {
   it("tree/blob 之外的其他 /tree 前缀（如路径本身含 tree 目录）按路由语义解析", () => {
     // /owner/repo/tree/main/tree/ → 路径含名为 tree 的目录
     expect(parseTreePath("/owner/repo/tree/main/tree")).toBe("tree");
+  });
+});
+
+describe("resolveBranchPath（分支名可含 /，按分支列表最长前缀匹配）", () => {
+  const BRANCHES = ["main", "dev", "fix/webfuzz-chunked-request-body-echo", "feature/foo"];
+
+  it("空 splat → 空 branch/path（由调用方回退 default_branch）", () => {
+    expect(resolveBranchPath("", BRANCHES)).toEqual({ branch: "", path: "" });
+  });
+
+  it("单段分支根 → branch 命中、path 空", () => {
+    expect(resolveBranchPath("main", BRANCHES)).toEqual({ branch: "main", path: "" });
+  });
+
+  it("单段分支 + 多段路径 → path 完整保留", () => {
+    expect(resolveBranchPath("main/src/components/Button.tsx", BRANCHES)).toEqual({
+      branch: "main",
+      path: "src/components/Button.tsx",
+    });
+  });
+
+  it("斜杠分支（整段即分支名）→ branch 完整命中、path 空", () => {
+    expect(resolveBranchPath("fix/webfuzz-chunked-request-body-echo", BRANCHES)).toEqual({
+      branch: "fix/webfuzz-chunked-request-body-echo",
+      path: "",
+    });
+  });
+
+  it("斜杠分支 + 路径 → 最长前缀匹配分支、余下为 path", () => {
+    expect(resolveBranchPath("fix/webfuzz-chunked-request-body-echo/README.md", BRANCHES)).toEqual({
+      branch: "fix/webfuzz-chunked-request-body-echo",
+      path: "README.md",
+    });
+  });
+
+  it("同名前缀分支取最长（fix 与 fix/xxx 并存时）", () => {
+    const bs = ["fix", "fix/webfuzz-chunked-request-body-echo"];
+    expect(resolveBranchPath("fix/webfuzz-chunked-request-body-echo/x", bs)).toEqual({
+      branch: "fix/webfuzz-chunked-request-body-echo",
+      path: "x",
+    });
+  });
+
+  it("未命中分支列表 → 退化为首段 = branch（旧行为兜底）", () => {
+    expect(resolveBranchPath("unknown-branch/a/b", BRANCHES)).toEqual({
+      branch: "unknown-branch",
+      path: "a/b",
+    });
+  });
+
+  it("空分支列表 → 退化为首段 = branch", () => {
+    expect(resolveBranchPath("main/a/b", [])).toEqual({ branch: "main", path: "a/b" });
   });
 });

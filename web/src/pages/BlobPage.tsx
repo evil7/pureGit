@@ -38,8 +38,8 @@ import {
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
+import { useBranchPath } from "@/hooks/useBranchPath";
 import { useDateFormat } from "@/hooks/useDateFormat";
-import { useRepoData } from "@/lib/repo/repo-context";
 import { tStatic } from "@/i18n";
 import { fetchFileWithCommitSmart, apiErrorMessage, type FileCommitInfo } from "@/lib/api";
 import { fetchFileMeta, deleteFileContent } from "@/lib/restapi";
@@ -59,14 +59,13 @@ import { SIDEBAR_STICKY_SCROLL_HEAD } from "@/lib/ui/layout";
 import { BranchPicker, GoToFileInput } from "./RepoCode";
 
 export default function BlobPage() {
-  const { owner = "", repo = "", branch = "", "*": rest = "" } = useParams();
+  const { owner = "", repo = "" } = useParams();
   const { token } = useAuth();
   const { fmt } = useDateFormat();
   const navigate = useNavigate();
   const { collapsed: treeCollapsed, setCollapsed: setTreeCollapsed } = useTreeCollapse();
-  const repoData = useRepoData();
-  const b = branch || repoData?.default_branch || "main";
-  const path = rest;
+  // blob 路由已改 splat：按分支列表最长前缀匹配解析 branch/path（分支名可含 `/`）
+  const { branch: b, path } = useBranchPath();
   const [rawContent, setRawContent] = useState("");
   const [commit, setCommit] = useState<FileCommitInfo>(null);
   const [error, setError] = useState<string | null>(null);
@@ -424,7 +423,7 @@ export default function BlobPage() {
             </Button>
           </Tip>
           <div className={cn(!treeCollapsed && "hidden")}>
-            <BranchPicker branch={b} currentPath={path} active={treeCollapsed} />
+            <BranchPicker branch={b} currentPath={path} active={treeCollapsed} mode="blob" />
           </div>
           {/* 面包屑（官方 Breadcrumb：repo 链接 / 文件名） */}
           <Link
