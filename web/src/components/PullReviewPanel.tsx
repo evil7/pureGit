@@ -8,7 +8,7 @@
  * 数据源 smart 双通道（GraphQL 首选 + REST 降级），详见 api-compat.md。
  */
 import { useEffect, useState } from "react";
-import { Check, ChevronDown, GitMerge, GitPullRequest, MessageSquare, Plus, X } from "lucide-react";
+import { Check, ChevronDown, GitMerge, GitPullRequest, MessageSquare, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent } from "@/components/ui/card";
@@ -43,8 +43,10 @@ import {
 import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/useAuth";
+import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { UserAvatar } from "@/components/UserAvatar";
+import { SidebarHeading, EditActionButton } from "@/components/SidebarSection";
 import {
   apiErrorMessage,
   type PullReview,
@@ -224,13 +226,14 @@ export function ReviewersSidebar({
   loading: boolean;
   onRequestReviewers?: (logins: string[]) => Promise<void>;
 }) {
-  const { token } = useAuth();
+  const { token, canWrite } = useAuth();
+  const { canWrite: canWriteRepo } = useRepoPermission();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   if (loading) {
     return (
       <section>
-        <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">审计者</h3>
+        <SidebarHeading title="审计者" />
         <Skeleton className="h-8 w-full" />
       </section>
     );
@@ -261,7 +264,18 @@ export function ReviewersSidebar({
 
   return (
     <section>
-      <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">审计者</h3>
+      <SidebarHeading
+        title="审计者"
+        action={
+          token && canWrite && canWriteRepo && onRequestReviewers ? (
+            <EditActionButton
+              label="审计者"
+              ariaLabel="邀请审计"
+              onClick={() => setDialogOpen(true)}
+            />
+          ) : undefined
+        }
+      />
       {everyone.length === 0 ? (
         <p className="text-muted-foreground">暂无审计者</p>
       ) : (
@@ -278,17 +292,6 @@ export function ReviewersSidebar({
             );
           })}
         </ul>
-      )}
-      {token && onRequestReviewers && (
-        <Button
-          variant="ghost"
-          size="sm"
-          className="mt-1.5 h-7 px-2 text-xs"
-          onClick={() => setDialogOpen(true)}
-        >
-          <Plus className="size-3.5" />
-          邀请审计
-        </Button>
       )}
       {/* 邀请审计弹窗（协作者 + Copilot；已请求/已评审不可重复添加；过滤作者本人） */}
       <RequestAuditorsDialog
@@ -559,7 +562,7 @@ export function ReviewChangesDialog({
       }}
     >
       <DialogTrigger asChild>
-        <Button variant="outline" size="sm" onClick={openDialog}>
+        <Button variant="outline" onClick={openDialog}>
           <MessageSquare className="size-3.5" />
           评审
         </Button>
@@ -582,7 +585,6 @@ export function ReviewChangesDialog({
                 key={o.value}
                 type="button"
                 variant={event === o.value ? "default" : "outline"}
-                size="sm"
                 className="gap-1"
                 onClick={() => setEvent(o.value)}
               >
@@ -699,7 +701,6 @@ export function MergePanel({
                   key={m.value}
                   type="button"
                   variant={method === m.value ? "default" : "outline"}
-                  size="sm"
                   onClick={() => setMethod(m.value)}
                 >
                   {m.label}
@@ -708,7 +709,7 @@ export function MergePanel({
             </div>
             <AlertDialog open={open} onOpenChange={setOpen}>
               <AlertDialogTrigger asChild>
-                <Button size="sm" onClick={openMerge} disabled={busy}>
+                <Button onClick={openMerge} disabled={busy}>
                   <GitMerge className="size-3.5" />
                   {busy ? "合并中…" : "合并"}
                 </Button>

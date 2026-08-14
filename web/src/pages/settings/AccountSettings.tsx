@@ -359,8 +359,7 @@ export default function AccountSettings() {
           </span>
           <Button
             variant="outline"
-            size="sm"
-            className="ml-auto h-7 border-amber-600/40 text-amber-800 hover:bg-amber-100 dark:border-amber-400/40 dark:text-amber-200 dark:hover:bg-amber-900/50"
+            className="ml-auto border-amber-600/40 text-amber-800 hover:bg-amber-100 dark:border-amber-400/40 dark:text-amber-200 dark:hover:bg-amber-900/50"
             onClick={() => login({ mode })}
           >
             {t("scopeWarning.reauthorize")}
@@ -385,7 +384,6 @@ export default function AccountSettings() {
           {/* 全部登出：删除当前用户全部 KV 会话（所有设备退出） */}
           <Button
             variant="outline"
-            size="sm"
             disabled={logoutAllBusy || sessions === null}
             onClick={() => setLogoutAllOpen(true)}
           >
@@ -431,7 +429,6 @@ export default function AccountSettings() {
                   {!s.isCurrent && (
                     <Button
                       variant="outline"
-                      size="sm"
                       disabled={logoutBusy}
                       onClick={() => setLogoutTarget(s)}
                     >
@@ -471,7 +468,6 @@ export default function AccountSettings() {
             <PermissionGate permission="editAccount">
               <Button
                 variant="outline"
-                size="sm"
                 disabled={busy}
                 onClick={() => {
                   setShowAddKey((v) => !v);
@@ -524,7 +520,7 @@ export default function AccountSettings() {
                   {canWrite && (
                     <Button
                       variant="ghost"
-                      size="icon-sm"
+                      size="icon"
                       className="text-muted-foreground hover:text-destructive"
                       title={t("accountSettings.removeTitle")}
                       disabled={busy}
@@ -614,7 +610,6 @@ export default function AccountSettings() {
             <PermissionGate permission="editAccount">
               <Button
                 variant="outline"
-                size="sm"
                 disabled={gpgBusy}
                 onClick={() => {
                   setShowAddGpg((v) => !v);
@@ -661,7 +656,7 @@ export default function AccountSettings() {
                   {canWrite && (
                     <Button
                       variant="ghost"
-                      size="icon-sm"
+                      size="icon"
                       className="text-muted-foreground hover:text-destructive"
                       title={t("accountSettings.removeTitle")}
                       disabled={gpgBusy}

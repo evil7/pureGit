@@ -526,7 +526,7 @@ function ProfileSidebar({
 
       {/* 编辑按钮（官方 js-profile-editable-edit-button：本人/组织可管理，全宽 outline） */}
       {canEdit && (
-        <Button asChild variant="outline" size="sm" className="w-full">
+        <Button asChild variant="outline" className="w-full">
           <Link
             to={kind === "user" ? "/settings/profile" : `/organizations/${login}/settings/profile`}
           >
@@ -539,7 +539,6 @@ function ProfileSidebar({
       {canFollow && (
         <Button
           variant={following ? "default" : "outline"}
-          size="sm"
           className="w-full gap-1.5"
           disabled={followBusy || following === null}
           onClick={onToggleFollow}

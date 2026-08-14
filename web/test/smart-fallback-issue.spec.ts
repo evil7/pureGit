@@ -56,6 +56,11 @@ vi.mock("@/lib/restapi", async (importOriginal) => {
     updatePullRequestState: vi.fn(),
     fetchMyIssues: vi.fn(),
     fetchMyPulls: vi.fn(),
+    fetchRepoLabels: vi.fn(),
+    fetchRepoMilestones: vi.fn(),
+    fetchRepoAssignees: vi.fn(),
+    fetchRepoLabelCount: vi.fn(),
+    fetchRepoMilestoneCount: vi.fn(),
   };
 });
 
@@ -67,6 +72,7 @@ import {
   fetchPullDetailSmart,
   fetchMyIssuesSmart,
   fetchMyPullsSmart,
+  fetchRepoFilterDataSmart,
 } from "@/lib/api/api-issue";
 import {
   fetchPullDetailFullSmart,
@@ -89,8 +95,15 @@ import {
   updatePullRequestState,
   fetchMyIssues,
   fetchMyPulls,
+  fetchRepoLabels,
+  fetchRepoMilestones,
+  fetchRepoAssignees,
+  fetchRepoLabelCount,
+  fetchRepoMilestoneCount,
   type Issue,
   type PullRequest,
+  type RepoLabel,
+  type RepoMilestone,
 } from "@/lib/restapi";
 
 const mockGraphql = vi.mocked(graphqlRequest);
@@ -108,6 +121,11 @@ const mockUpdateIssueState = vi.mocked(updateIssueState);
 const mockUpdatePullRequestState = vi.mocked(updatePullRequestState);
 const mockFetchMyIssues = vi.mocked(fetchMyIssues);
 const mockFetchMyPulls = vi.mocked(fetchMyPulls);
+const mockFetchRepoLabels = vi.mocked(fetchRepoLabels);
+const mockFetchRepoMilestones = vi.mocked(fetchRepoMilestones);
+const mockFetchRepoAssignees = vi.mocked(fetchRepoAssignees);
+const mockFetchRepoLabelCount = vi.mocked(fetchRepoLabelCount);
+const mockFetchRepoMilestoneCount = vi.mocked(fetchRepoMilestoneCount);
 
 /** GraphQL issue 节点夹具（GraphQLIssueNode 形状） */
 const gqlIssue = {
@@ -242,6 +260,9 @@ const restPull: PullRequest = {
   draft: false,
 };
 
+const restLabel: RepoLabel = { id: 1, name: "bug", color: "d73a4a", description: null };
+const restMilestone: RepoMilestone = { number: 1, title: "v1", state: "open", description: null };
+
 beforeEach(() => {
   vi.clearAllMocks();
   mockGraphql.mockResolvedValue({ data: {} } as never);
@@ -259,6 +280,11 @@ beforeEach(() => {
   mockUpdatePullRequestState.mockResolvedValue(restPull);
   mockFetchMyIssues.mockResolvedValue([restIssue]);
   mockFetchMyPulls.mockResolvedValue([restIssue]);
+  mockFetchRepoLabels.mockResolvedValue([restLabel]);
+  mockFetchRepoMilestones.mockResolvedValue([restMilestone]);
+  mockFetchRepoAssignees.mockResolvedValue([{ login: "bob" }]);
+  mockFetchRepoLabelCount.mockResolvedValue(3);
+  mockFetchRepoMilestoneCount.mockResolvedValue(4);
 });
 
 describe("fetchIssuesSmart（三级决策：REST 条件 / search / GraphQL 首选降级）", () => {
@@ -835,5 +861,57 @@ describe("fetchMyPullsSmart（用户级「我的 PR」：search is:pr 首选 + R
     mockGraphql.mockRejectedValue(new Error("net"));
     await fetchMyPullsSmart("gho_x");
     expect(mockFetchMyPulls).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("fetchRepoFilterDataSmart（labels/milestones/assignees 复合查询 + 计数）", () => {
+  it("token 为空 → REST 分步（计数 Link header 失败回退列表长度）", async () => {
+    mockFetchRepoLabelCount.mockResolvedValue(null);
+    mockFetchRepoMilestoneCount.mockResolvedValue(null);
+    const fd = await fetchRepoFilterDataSmart("evil7", "puregit", null);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchRepoLabels).toHaveBeenCalledWith("evil7", "puregit", null);
+    expect(fd.labelsCount).toBe(1); // 计数 null → 回退 labels.length
+    expect(fd.milestonesCount).toBe(1);
+    expect(fd.labels[0].name).toBe("bug");
+    expect(fd.assignees[0].login).toBe("bob");
+  });
+
+  it("GraphQL 成功 → 一次查询返回 labels/milestones/assignees + totalCount（REST 不调用）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          labels: {
+            totalCount: 5,
+            nodes: [{ name: "bug", color: "d73a4a", description: null }],
+          },
+          milestones: {
+            totalCount: 6,
+            nodes: [{ number: 2, title: "v2", state: "OPEN", description: null }],
+          },
+          assignableUsers: { nodes: [{ login: "bob", avatarUrl: "https://avatars/b.png" }] },
+        },
+      },
+    } as never);
+    const fd = await fetchRepoFilterDataSmart("evil7", "puregit", "gho_x");
+    expect(mockGraphql).toHaveBeenCalledWith(
+      expect.any(String),
+      { owner: "evil7", name: "puregit" },
+      "gho_x",
+    );
+    expect(mockFetchRepoLabels).not.toHaveBeenCalled();
+    expect(fd.labelsCount).toBe(5);
+    expect(fd.milestonesCount).toBe(6);
+    expect(fd.labels[0].name).toBe("bug");
+    expect(fd.milestones[0].state).toBe("open"); // OPEN → 小写归一化
+    expect(fd.assignees[0].avatar_url).toBe("https://avatars/b.png");
+  });
+
+  it("GraphQL errors / 异常 → 熔断降级 REST 分步", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
+    await fetchRepoFilterDataSmart("evil7", "puregit", "gho_x");
+    mockGraphql.mockRejectedValue(new Error("net"));
+    await fetchRepoFilterDataSmart("evil7", "puregit", "gho_x");
+    expect(mockFetchRepoLabels).toHaveBeenCalledTimes(2);
   });
 });

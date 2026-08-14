@@ -228,7 +228,7 @@ export default function IssuesPage() {
               )}
             </Link>
           </div>
-          <Button size="sm" asChild>
+          <Button asChild>
             <Link to={`/${owner}/${repo}/issues/new`}>
               <Plus className="size-4" />
               New issue
@@ -252,7 +252,7 @@ export default function IssuesPage() {
               updateParams({ q: next || null, page: null });
             }}
           >
-            <SelectTrigger className="h-8 w-auto min-w-24 text-xs">
+            <SelectTrigger className="w-auto min-w-24">
               <SelectValue placeholder={t("issues.author")} />
             </SelectTrigger>
             <SelectContent>
@@ -275,7 +275,7 @@ export default function IssuesPage() {
               updateParams({ q: next || null, page: null });
             }}
           >
-            <SelectTrigger className="h-8 w-auto min-w-24 text-xs">
+            <SelectTrigger className="w-auto min-w-24">
               <SlidersHorizontal className="size-3.5" />
               <SelectValue placeholder={t("issues.sort")} />
             </SelectTrigger>

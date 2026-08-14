@@ -37,8 +37,44 @@ export const LATEST_COMMIT_QUERY = /* GraphQL */ `
   }
 `;
 
+/**
+ * 仓库代码首页复合查询——分支列表 + 最新提交（一次 GraphQL 两个字段）。
+ * refs（REPO_BRANCHES_QUERY 语义）+ object(expression)（LATEST_COMMIT_QUERY 语义），
+ * 替代 RepoActionBar 的 fetchBranchesSmart + LatestCommitLine 的 fetchLatestCommitSmart 两次请求。
+ */
+export const REPO_HEADER_QUERY = /* GraphQL */ `
+  query RepoHeader($owner: String!, $name: String!, $expression: String!) {
+    repository(owner: $owner, name: $name) {
+      refs(refPrefix: "refs/heads/", first: 100, orderBy: { field: ALPHABETICAL, direction: ASC }) {
+        nodes {
+          name
+          target {
+            oid
+          }
+        }
+      }
+      object(expression: $expression) {
+        ... on Commit {
+          oid
+          message
+          committedDate
+          author {
+            avatarUrl
+            user {
+              login
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** 指定文件的最近提交（blob 文件头 commit 信息）。
- * object(expression: "branch:path") 拿到 Commit → history(path, first:1) 过滤该文件路径，等价 REST listCommits(sha, path) 语义。 */
+ * object(expression: $expression) 传 **branch（HEAD）** 返回 Commit → history(path, first:1)
+ * 过滤该文件路径，等价 REST listCommits(sha, path) 语义。
+ * ⚠️ expression 必须传 branch（非 `branch:path`）——`branch:path` 返回 Blob 而非 Commit，
+ * `... on Commit` 不命中会导致静默降级 REST（2026-08-14 修正）。 */
 export const FILE_COMMIT_QUERY = /* GraphQL */ `
   query FileCommit($owner: String!, $name: String!, $expression: String!, $path: String!) {
     repository(owner: $owner, name: $name) {
@@ -84,6 +120,7 @@ export const REPOSITORY_QUERY = /* GraphQL */ `
       }
       viewerSubscription
       viewerHasStarred
+      viewerPermission
       primaryLanguage {
         name
       }
@@ -159,6 +196,7 @@ export const REPO_WITH_RELEASES_QUERY = /* GraphQL */ `
       }
       viewerSubscription
       viewerHasStarred
+      viewerPermission
       primaryLanguage {
         name
       }

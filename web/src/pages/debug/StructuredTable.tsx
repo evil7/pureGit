@@ -164,12 +164,7 @@ function RowEditor({ row, onChange, t, depth }: StructuredTableProps) {
           );
         })}
         <div>
-          <Button
-            size="xs"
-            variant="outline"
-            className="h-6 gap-0.5 px-2 text-[11px]"
-            onClick={addItem}
-          >
+          <Button variant="outline" className="gap-0.5 px-2" onClick={addItem}>
             <Plus className="size-3" />
             添加
           </Button>

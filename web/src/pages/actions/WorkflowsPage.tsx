@@ -134,7 +134,6 @@ function WorkflowDispatch({
       <WriteGate>
         <Button
           variant="outline"
-          size="sm"
           onClick={() => {
             setRef("");
             setOpen(true);

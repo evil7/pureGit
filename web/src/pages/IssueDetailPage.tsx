@@ -24,6 +24,7 @@ import {
   AlertDialogTrigger,
 } from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
+import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { useI18n, tStatic } from "@/i18n";
 import {
   setIssueSubscriptionSmart,
@@ -56,7 +57,8 @@ export function IssueDetailPage() {
     repo: string;
     number: string;
   }>();
-  const { token, canWrite } = useAuth();
+  const { token, canWrite, user } = useAuth();
+  const { canCollaborate } = useRepoPermission();
   const { t } = useI18n();
   const { fmt } = useDateFormat();
   const [issue, setIssue] = useState<Issue | null>(null);
@@ -252,7 +254,7 @@ export function IssueDetailPage() {
     >
       {/* 主列 */}
       <div className="space-y-3">
-        <Button variant="ghost" size="sm" asChild>
+        <Button variant="ghost" asChild>
           <Link to={`/${owner}/${repo}/issues`}>
             <ArrowLeft className="size-4" />
             返回列表
@@ -343,13 +345,13 @@ export function IssueDetailPage() {
           </CardContent>
         </Card>
 
-        {/* 关闭 / 重新打开（需 write 权限） */}
-        {canWrite && (
+        {/* 关闭 / 重新打开（需仓库协作权限 TRIAGE+ 或 issue 作者本人） */}
+        {canWrite && (canCollaborate || user?.login === issue.user.login) && (
           <div className="mt-4 flex justify-end">
             {issue.state === "open" ? (
               <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
                 <AlertDialogTrigger asChild>
-                  <Button variant="outline" size="sm" disabled={closing}>
+                  <Button variant="outline" disabled={closing}>
                     <XCircle className="size-3.5" />
                     {t("issueDetail.close")}
                   </Button>
@@ -370,12 +372,7 @@ export function IssueDetailPage() {
                 </AlertDialogContent>
               </AlertDialog>
             ) : (
-              <Button
-                variant="outline"
-                size="sm"
-                disabled={closing}
-                onClick={() => updateState("open")}
-              >
+              <Button variant="outline" disabled={closing} onClick={() => updateState("open")}>
                 <CheckCircle2 className="size-3.5" />
                 {t("issueDetail.reopen")}
               </Button>

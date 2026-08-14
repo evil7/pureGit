@@ -70,13 +70,7 @@ export function InlineStarButton({
 
   return (
     <>
-      <Button
-        variant="ghost"
-        size="sm"
-        className="h-7 gap-1 px-2 text-xs"
-        onClick={() => void toggle()}
-        disabled={busy}
-      >
+      <Button variant="ghost" className="gap-1 px-2" onClick={() => void toggle()} disabled={busy}>
         {busy ? (
           <Loader2 className="size-3.5 animate-spin" />
         ) : (

@@ -27,6 +27,7 @@ import {
   REPO_LABELS_QUERY,
   REPO_ASSIGNEES_QUERY,
   REPO_MILESTONES_QUERY,
+  REPO_FILTER_DATA_QUERY,
   SEARCH_ISSUES_QUERY,
   SEARCH_PULLS_QUERY,
 } from "../graphql";
@@ -35,6 +36,8 @@ import {
   fetchRepoLabels,
   fetchRepoAssignees,
   fetchRepoMilestones,
+  fetchRepoLabelCount,
+  fetchRepoMilestoneCount,
   fetchIssueComments,
   addIssueComment,
   fetchPullReviewComments,
@@ -1409,6 +1412,94 @@ export async function fetchRepoAssigneesSmart(
   }
   // 匿名强制 REST
   return fetchRepoAssignees(owner, repo, token);
+}
+
+/** 仓库过滤下拉复合数据（labels/milestones/assignees + 前两者计数） */
+export interface RepoFilterData {
+  labels: RepoLabel[];
+  labelsCount: number;
+  milestones: RepoMilestone[];
+  milestonesCount: number;
+  assignees: GitHubUser[];
+}
+
+/**
+ * 智能获取仓库过滤下拉复合数据（Pulls/Issues 列表页 + 新建 Issue 页共用）。
+ * 一次 GraphQL 同时拿 labels / milestones / assignableUsers + 前两者 totalCount，
+ * 替代原先 fetchRepoLabelsSmart + fetchRepoMilestonesSmart + fetchRepoAssigneesSmart +
+ * fetchRepoLabelCount + fetchRepoMilestoneCount 五次请求（labels/milestones 计数由 GraphQL
+ * totalCount 直接覆盖，不再走 REST per_page=1 读 Link header 计数）。
+ * 失败 → withRestFallback 降级 REST 分步（复用 rest 层；计数 Link header 失败回退列表长度）。
+ */
+export async function fetchRepoFilterDataSmart(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<RepoFilterData> {
+  // REST 降级分步
+  const fromRest = async (): Promise<RepoFilterData> => {
+    const [labels, milestones, assignees, labelsCount, milestonesCount] = await Promise.all([
+      fetchRepoLabels(owner, repo, token),
+      fetchRepoMilestones(owner, repo, token),
+      fetchRepoAssignees(owner, repo, token),
+      fetchRepoLabelCount(owner, repo, token),
+      fetchRepoMilestoneCount(owner, repo, token),
+    ]);
+    return {
+      labels,
+      labelsCount: labelsCount ?? labels.length,
+      milestones,
+      milestonesCount: milestonesCount ?? milestones.length,
+      assignees,
+    };
+  };
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          labels: {
+            totalCount: number;
+            nodes: { name: string; color: string; description?: string | null }[];
+          };
+          milestones: {
+            totalCount: number;
+            nodes: { number: number; title: string; state: string; description?: string | null }[];
+          };
+          assignableUsers: { nodes: { login: string; avatarUrl: string }[] };
+        } | null;
+      }> = await graphqlRequest(REPO_FILTER_DATA_QUERY, { owner, name: repo }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        const r = resp.data.repository;
+        return {
+          labels: r.labels.nodes.map((l) => ({
+            id: -1,
+            name: l.name,
+            color: l.color,
+            description: l.description ?? null,
+          })),
+          labelsCount: r.labels.totalCount,
+          milestones: r.milestones.nodes.map((m) => ({
+            number: m.number,
+            title: m.title,
+            state: m.state.toLowerCase(),
+            description: m.description ?? null,
+          })),
+          milestonesCount: r.milestones.totalCount,
+          assignees: r.assignableUsers.nodes.map((u) => ({
+            login: u.login,
+            avatar_url: u.avatarUrl,
+          })),
+        };
+      }
+      // GraphQL 失败 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchRepoFilterDataSmart", resp);
+    } catch {
+      // 网络层错误 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchRepoFilterDataSmart", undefined);
+    }
+  }
+  // 匿名强制 REST 分步
+  return fromRest();
 }
 
 /** 智能获取当前用户 SSH keys：GraphQL viewer.sshKeys 首选，失败降级 REST。 */

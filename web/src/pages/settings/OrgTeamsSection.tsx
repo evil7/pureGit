@@ -214,7 +214,6 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
           <PermissionGate permission="org">
             <Button
               variant="outline"
-              size="sm"
               onClick={() => {
                 setShowCreate((v) => !v);
                 if (showCreate) {
@@ -310,7 +309,7 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
                   <PermissionGate permission="org">
                     <Button
                       variant="ghost"
-                      size="icon-sm"
+                      size="icon"
                       title={t("orgTeams.edit")}
                       onClick={() => {
                         setEditing(team);
@@ -322,7 +321,7 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
                     </Button>
                     <Button
                       variant="ghost"
-                      size="icon-sm"
+                      size="icon"
                       className="text-muted-foreground hover:text-destructive"
                       title={t("orgTeams.delete")}
                       onClick={() => setDeleteTarget(team)}
@@ -343,12 +342,10 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
                           value={addUser}
                           onChange={(e) => setAddUser(e.target.value)}
                           placeholder={t("orgTeams.addMemberPlaceholder")}
-                          className="h-7 max-w-64 text-sm"
+                          className="max-w-64 text-sm"
                           onKeyDown={(e) => e.key === "Enter" && void doAddMember(team.slug)}
                         />
                         <Button
-                          size="sm"
-                          className="h-7"
                           disabled={memberBusy || !addUser.trim()}
                           onClick={() => void doAddMember(team.slug)}
                         >
@@ -381,7 +378,7 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
                             <PermissionGate permission="org">
                               <Button
                                 variant="ghost"
-                                size="icon-sm"
+                                size="icon"
                                 className="text-muted-foreground hover:text-destructive"
                                 title={t("orgTeams.removeMember")}
                                 disabled={memberBusy}

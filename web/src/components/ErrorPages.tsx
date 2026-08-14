@@ -128,7 +128,7 @@ export function RateLimitPage({ err }: { err?: ApiError }) {
             {t("login.prompt.toTopRight")}
           </p>
         ) : (
-          <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+          <Button variant="outline" onClick={() => window.location.reload()}>
             <RefreshCw className="size-3.5" />
             {t("error.rateLimit.retry")}
           </Button>
@@ -168,14 +168,12 @@ export function ErrorPage({ err }: { err?: ApiError }) {
         )}
       </div>
       <div className="flex flex-wrap items-center justify-center gap-2">
-        <Button variant="outline" size="sm" onClick={() => window.location.reload()}>
+        <Button variant="outline" onClick={() => window.location.reload()}>
           <RefreshCw className="size-3.5" />
           {t("error.page.retry")}
         </Button>
         <Link to="/">
-          <Button variant="ghost" size="sm">
-            {t("error.404.backHome")}
-          </Button>
+          <Button variant="ghost">{t("error.404.backHome")}</Button>
         </Link>
       </div>
       {/* 可展开原始 JSON（GitHub 错误响应体；无原始体时隐藏） */}

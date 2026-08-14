@@ -134,12 +134,7 @@ export default function BlockedUsersSettings() {
                 <UserAvatar src={u.avatar_url} alt={u.login} className="size-6" />
                 <span className="min-w-0 flex-1 truncate text-sm font-medium">{u.login}</span>
                 <PermissionGate permission="write" className="w-fit">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    disabled={busy}
-                    onClick={() => void doUnblock(u)}
-                  >
+                  <Button variant="outline" disabled={busy} onClick={() => void doUnblock(u)}>
                     <UserX className="size-3.5" />
                     {t("blockedUsers.unblock")}
                   </Button>

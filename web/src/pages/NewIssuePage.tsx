@@ -29,7 +29,7 @@ import {
 } from "@/components/ui/select";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
-import { createIssueSmart, fetchRepoAssigneesSmart, fetchRepoLabelsSmart } from "@/lib/api";
+import { createIssueSmart, fetchRepoFilterDataSmart } from "@/lib/api";
 import {
   apiErrorMessage,
   fetchIssueTemplates,
@@ -89,14 +89,15 @@ export default function NewIssuePage() {
         cancelled = true;
       };
     }
-    // 表单视图：labels/assignees 预选数据 + 模板预填
+    // 表单视图：labels/assignees 预选数据（复合查询一次 GraphQL）+ 模板预填
     let cancelled = false;
     if (token) {
-      fetchRepoLabelsSmart(owner, repo, token)
-        .then((ls) => !cancelled && setLabels(ls))
-        .catch(() => {});
-      fetchRepoAssigneesSmart(owner, repo, token)
-        .then((as) => !cancelled && setAssignees(as))
+      fetchRepoFilterDataSmart(owner, repo, token)
+        .then((fd) => {
+          if (cancelled) return;
+          setLabels(fd.labels);
+          setAssignees(fd.assignees);
+        })
         .catch(() => {});
     }
     if (templateName) {
@@ -183,7 +184,7 @@ export default function NewIssuePage() {
     return (
       <div className={PAGE_SHELL}>
         <div className="mx-auto max-w-3xl">
-          <Button variant="ghost" size="sm" asChild className="mb-3">
+          <Button variant="ghost" asChild className="mb-3">
             <Link to={`/${owner}/${repo}/issues`}>
               <ArrowLeft className="size-4" />
               返回 Issues
@@ -221,7 +222,7 @@ export default function NewIssuePage() {
                 </Link>
               ))}
               <div className="pt-3">
-                <Button variant="ghost" size="sm" asChild>
+                <Button variant="ghost" asChild>
                   <Link to={`/${owner}/${repo}/issues/new`}>跳过模板，创建空白 issue</Link>
                 </Button>
               </div>
@@ -285,7 +286,7 @@ export default function NewIssuePage() {
               <section>
                 <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">指派给</h3>
                 <Select value={selectedAssignee} onValueChange={setSelectedAssignee}>
-                  <SelectTrigger className="h-8 w-full text-xs">
+                  <SelectTrigger className="w-full">
                     <SelectValue placeholder="选择指派对象" />
                   </SelectTrigger>
                   <SelectContent>
@@ -311,7 +312,7 @@ export default function NewIssuePage() {
       >
         {/* 主列：标题 + 正文 + 操作按钮 */}
         <div className="space-y-3">
-          <Button variant="ghost" size="sm" asChild className="mb-3">
+          <Button variant="ghost" asChild className="mb-3">
             <Link to={`/${owner}/${repo}/issues`}>
               <ArrowLeft className="size-4" />
               返回 Issues
@@ -376,10 +377,10 @@ export default function NewIssuePage() {
                 创建后继续
               </label>
               <div className="ml-auto flex items-center gap-2">
-                <Button type="button" variant="ghost" size="sm" asChild>
+                <Button type="button" variant="ghost" asChild>
                   <Link to={`/${owner}/${repo}/issues`}>取消</Link>
                 </Button>
-                <Button type="submit" size="sm" disabled={submitting || !title.trim()}>
+                <Button type="submit" disabled={submitting || !title.trim()}>
                   <Send className="size-3.5" />
                   {submitting ? "提交中…" : "创建 Issue"}
                   <kbd className="ml-1.5 hidden rounded bg-primary-foreground/20 px-1 text-[10px] font-normal sm:inline">

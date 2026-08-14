@@ -34,18 +34,14 @@ import { PullTimeline } from "@/components/PullTimeline";
 import { MarkdownView } from "@/components/MarkdownView";
 import { UserAvatar } from "@/components/UserAvatar";
 import { DiffView } from "@/components/DiffView";
-import {
-  ReviewersSidebar,
-  ReviewChangesDialog,
-  MergePanel,
-  ReviewStateBadge,
-} from "@/components/PullReviewPanel";
+import { ReviewChangesDialog, MergePanel, ReviewStateBadge } from "@/components/PullReviewPanel";
 import { COPILOT_AVATAR, copilotDisplayName, isCopilotLogin } from "@/lib/repo/copilot";
 import { STATE_BADGE_SOLID } from "@/lib/ui/state-colors";
 import { PullMetadataSidebar } from "@/components/PullMetadataSidebar";
 import { repoRawBase } from "@/lib/repo/repo-raw";
 import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
+import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import PageLayout from "@/components/PageLayout";
 import { toastError, toastSuccess } from "@/lib/ui/toast";
@@ -129,7 +125,8 @@ export default function PullDetailPage() {
     repo: string;
     number: string;
   }>();
-  const { token, user } = useAuth();
+  const { token, user, canWrite } = useAuth();
+  const { canWrite: canWriteRepo } = useRepoPermission();
   const { fmt } = useDateFormat();
   const [pr, setPr] = useState<PullRequest | null>(null);
   const [comments, setComments] = useState<IssueComment[] | null>(null);
@@ -325,12 +322,12 @@ export default function PullDetailPage() {
   // 整页级致命错误（PR 不存在/限流/5xx）→ 路由 errorElement 全局错误页
   if (error || !pr) throw error ?? new ApiError(404);
 
-  // 操作区可见性：仅「本人管理的仓库（base owner = 登录用户）或本人参与的 PR（作者 = 自己）」
-  // 显示 Merge / Review changes / 关闭 操作框——非本人项目不出现操作框（2026-08-14 用户要求；
-  // 官方：无 base 仓库写权限即无 merge/review 入口，作者可关闭自己的 PR）
-  const isOwnRepo = owner?.toLowerCase() === user?.login?.toLowerCase();
+  // 操作区可见性：仅「有本仓库写权限（WRITE+）或本人参与的 PR（作者 = 自己）」
+  // 显示 Merge / Review changes / 关闭 操作框——非本人项目无操作框（2026-08-14 用户要求；
+  // 官方：无 base 仓库写权限即无 merge/review 入口，作者可关闭自己的 PR）。
+  // 令牌写 scope（canWrite）与仓库级写权限（canWriteRepo）双门槛叠加。
   const isMyPr = pr.user.login?.toLowerCase() === user?.login?.toLowerCase();
-  const showOps = Boolean(token) && (isOwnRepo || isMyPr);
+  const showOps = Boolean(token) && canWrite && (canWriteRepo || isMyPr);
 
   // 参与者 = 作者 + 指派人 + 评论者 + 评审作者（去重，官方同源聚合——Copilot 评审也计入）
   const participants = Array.from(
@@ -356,7 +353,7 @@ export default function PullDetailPage() {
       {/* ① 完整头部：不 sticky，正常文档流（官方 PageHeader 语义；滚出视口后精简头接管） */}
       <div ref={fullHeaderRef} className="space-y-3">
         <div className="pt-2">
-          <Button variant="ghost" size="sm" asChild className="-ml-2">
+          <Button variant="ghost" asChild className="-ml-2">
             <Link to={`/${owner}/${repo}/pulls`}>
               <ArrowLeft className="size-4" />
               返回列表
@@ -450,7 +447,6 @@ export default function PullDetailPage() {
                   />
                   <Button
                     variant="outline"
-                    size="sm"
                     onClick={async () => {
                       if (!token) return;
                       try {
@@ -533,57 +529,48 @@ export default function PullDetailPage() {
         gap="sm"
         right={{
           node: (
-            <aside className="space-y-5 text-sm">
-              {/* 审计者（官方 Reviewers metadata 第一位；+邀请审计 弹窗） */}
-              <ReviewersSidebar
-                owner={owner!}
-                repo={repo!}
-                authorLogin={pr.user.login}
-                summary={reviewSummary ?? null}
-                loading={reviewSummary === undefined}
-                onRequestReviewers={async (logins) => {
-                  if (!token) return;
-                  await requestReviewersSmart(
-                    owner!,
-                    repo!,
-                    Number(number),
-                    logins,
-                    token,
-                    reviewSummary?.pullRequestId,
-                  );
-                  setReviewSummary(
-                    (prev) =>
-                      prev && {
-                        ...prev,
-                        reviewRequests: [
-                          ...prev.reviewRequests,
-                          ...logins.map((l) => ({ login: l, avatarUrl: "" })),
-                        ],
-                      },
-                  );
-                }}
-              />
-
-              {/* Assignees / Labels / Projects / Milestone / Development / participants / 底部订阅+锁定（官方 metadata 第二位起） */}
-              <PullMetadataSidebar
-                owner={owner!}
-                repo={repo!}
-                number={Number(number)}
-                assignees={pr.assignees ?? []}
-                labels={pr.labels ?? []}
-                milestone={pr.milestone ?? null}
-                locked={pr.locked ?? false}
-                pullRequestId={reviewSummary?.pullRequestId}
-                participants={participants}
-                subscribed={subscribed}
-                subscribing={subscribing}
-                onToggleSubscribe={toggleSubscribe}
-                onAssigneesChange={(users) => setPr((p) => (p ? { ...p, assignees: users } : p))}
-                onLabelsChange={(labels) => setPr((p) => (p ? { ...p, labels } : p))}
-                onMilestoneChange={(m) => setPr((p) => (p ? { ...p, milestone: m } : p))}
-                onLockedChange={(locked) => setPr((p) => (p ? { ...p, locked } : p))}
-              />
-            </aside>
+            <PullMetadataSidebar
+              owner={owner!}
+              repo={repo!}
+              number={Number(number)}
+              authorLogin={pr.user.login}
+              reviewSummary={reviewSummary ?? null}
+              reviewSummaryLoading={reviewSummary === undefined}
+              onRequestReviewers={async (logins) => {
+                if (!token) return;
+                await requestReviewersSmart(
+                  owner!,
+                  repo!,
+                  Number(number),
+                  logins,
+                  token,
+                  reviewSummary?.pullRequestId,
+                );
+                setReviewSummary(
+                  (prev) =>
+                    prev && {
+                      ...prev,
+                      reviewRequests: [
+                        ...prev.reviewRequests,
+                        ...logins.map((l) => ({ login: l, avatarUrl: "" })),
+                      ],
+                    },
+                );
+              }}
+              assignees={pr.assignees ?? []}
+              labels={pr.labels ?? []}
+              milestone={pr.milestone ?? null}
+              locked={pr.locked ?? false}
+              pullRequestId={reviewSummary?.pullRequestId}
+              participants={participants}
+              subscribed={subscribed}
+              subscribing={subscribing}
+              onToggleSubscribe={toggleSubscribe}
+              onAssigneesChange={(users) => setPr((p) => (p ? { ...p, assignees: users } : p))}
+              onLabelsChange={(labels) => setPr((p) => (p ? { ...p, labels } : p))}
+              onMilestoneChange={(m) => setPr((p) => (p ? { ...p, milestone: m } : p))}
+              onLockedChange={(locked) => setPr((p) => (p ? { ...p, locked } : p))}
+            />
           ),
           width: 280,
           sticky: "nav",
@@ -781,12 +768,7 @@ export default function PullDetailPage() {
                   />
                   {files.hasMore && (
                     <div className="flex justify-center pt-1">
-                      <Button
-                        variant="outline"
-                        size="sm"
-                        onClick={loadMoreFiles}
-                        disabled={filesLoadingMore}
-                      >
+                      <Button variant="outline" onClick={loadMoreFiles} disabled={filesLoadingMore}>
                         {filesLoadingMore ? "加载中…" : "加载更多文件"}
                       </Button>
                     </div>

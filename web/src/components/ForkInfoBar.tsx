@@ -119,7 +119,7 @@ export function ForkInfoBar() {
         {/* Contribute ▾（官方：Open pull request / Create issue） */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="outline">
+            <Button variant="outline">
               <GitPullRequest className="size-4" />
               {t("forkInfo.contribute")}
               <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -154,7 +154,7 @@ export function ForkInfoBar() {
         {/* Sync fork ▾（官方：Update branch） */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm" variant="outline" disabled={!canWrite}>
+            <Button variant="outline" disabled={!canWrite}>
               <RefreshCw className="size-4" />
               {t("forkInfo.syncFork")}
               <ChevronDown className="size-3.5 text-muted-foreground" />

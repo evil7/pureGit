@@ -32,6 +32,7 @@ import { RadioGroup, RadioGroupItem } from "@/components/ui/radio-group";
 import { CodeEditor } from "@/components/CodeEditor";
 import { InlineError } from "@/components/InlineError";
 import { useAuth } from "@/hooks/useAuth";
+import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { FileTreeSidebar } from "@/pages/RepoCode";
 import { useRepoTree, type TreeNode } from "@/lib/repo/file-tree";
 import {
@@ -50,6 +51,7 @@ import { cn } from "@/lib/utils";
 export function FileEditorPage() {
   const { owner = "", repo = "", branch = "", "*": rest = "" } = useParams();
   const { token, user } = useAuth();
+  const { canWrite: canWriteRepo } = useRepoPermission();
   const navigate = useNavigate();
   const location = useLocation();
   const path = rest; // 编辑：文件路径；新建：可选前缀
@@ -275,9 +277,9 @@ export function FileEditorPage() {
     setFileName((prevName) => `${dirs[dirs.length - 1]}/${prevName}`);
   };
 
-  // 仓库归属判断：非本人管理的仓库（owner ≠ 登录用户）不能直接编辑/新建/删除文件，
+  // 仓库归属判断：无仓库写权限（WRITE+ 以下）不能直接编辑/新建/删除文件，
   // 右栏渲染 fork 引导卡（官方语义：先 fork 到本人副本再修改，改动经 PR 提交回原仓库）
-  const isOwnRepo = !token || owner?.toLowerCase() === user?.login?.toLowerCase();
+  const isOwnRepo = !token || canWriteRepo;
 
   return (
     <div className={PAGE_SHELL}>
@@ -331,7 +333,7 @@ export function FileEditorPage() {
                     onChange={(e) => handleFileNameChange(e.target.value)}
                     onKeyDown={handleFileNameKeyDown}
                     placeholder="Name your file…"
-                    className="h-7 w-40 rounded-md border px-2 font-mono text-sm"
+                    className="w-40 rounded-md border px-2 font-mono text-sm"
                     autoFocus={isNew}
                     aria-label="File name"
                   />
@@ -345,11 +347,10 @@ export function FileEditorPage() {
                 </div>
                 {/* 右：Cancel changes + Commit changes…（官方右上角） */}
                 <div className="flex flex-wrap items-center gap-2">
-                  <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+                  <Button variant="ghost" onClick={() => navigate(-1)}>
                     Cancel changes
                   </Button>
                   <Button
-                    size="sm"
                     disabled={!token || !fullPath.trim()}
                     onClick={() => {
                       setError(null);
@@ -435,7 +436,7 @@ export function FileEditorPage() {
                       <Input
                         value={newBranch}
                         onChange={(e) => setNewBranch(e.target.value)}
-                        className="h-7 w-52 font-mono text-xs"
+                        className="w-52 font-mono"
                         aria-label="New branch name"
                       />
                     </div>

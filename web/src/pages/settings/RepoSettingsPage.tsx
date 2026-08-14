@@ -48,7 +48,7 @@ import { WriteGate } from "@/components/WriteGate";
 export default function RepoSettingsPage() {
   // URL 参数：/:owner/:repo/settings（RepoLayout 提供 owner/repo）
   const { owner = "", repo: repoName = "" } = useParams();
-  const { token, canWrite, user } = useAuth();
+  const { token, canWrite } = useAuth();
   const { t } = useI18n();
   const navigate = useNavigate();
   // RepoLayout 的 fetchRepositorySmart（GraphQL 首选）已把仓库数据放 context，
@@ -56,9 +56,10 @@ export default function RepoSettingsPage() {
   const repoData = useRepoData();
   const updateRepo = useRepoUpdate();
 
-  // 路由级权限：仅仓库所有者可访问设置（与 RepoHeader 的 Settings tab 显示条件一致）。
-  // 即使直接输入 URL 也拦截，防止非 owner 看到设置表单（写操作本就 403，但页面不该呈现）
-  const isOwner = Boolean(token && repoData && user && repoData.owner.login === user.login);
+  // 路由级权限：仅仓库管理员（ADMIN）可访问设置（与 RepoHeader 的 Settings tab 显示条件一致）。
+  // 即使直接输入 URL 也拦截，防止非 admin 看到设置表单（写操作本就 403，但页面不该呈现）。
+  // 组织仓库由组织 admin 成员持有 ADMIN 权限（viewer_permission 已反映）。
+  const isOwner = repoData?.viewer_permission === "ADMIN";
 
   const [repo, setRepo] = useState<{
     name: string;
@@ -450,7 +451,6 @@ export default function RepoSettingsPage() {
               <WriteGate>
                 <Button
                   variant="outline"
-                  size="sm"
                   className="border-destructive/50 text-destructive hover:border-destructive hover:bg-destructive hover:text-white"
                   onClick={() => {
                     setVisStep(1);
@@ -474,7 +474,6 @@ export default function RepoSettingsPage() {
               <WriteGate>
                 <Button
                   variant="outline"
-                  size="sm"
                   className="border-destructive/50 text-destructive hover:border-destructive hover:bg-destructive hover:text-white"
                   onClick={() => setTransferOpen(true)}
                   disabled={!canWrite}
@@ -495,7 +494,6 @@ export default function RepoSettingsPage() {
               <WriteGate>
                 <Button
                   variant="outline"
-                  size="sm"
                   className="border-destructive/50 text-destructive hover:border-destructive hover:bg-destructive hover:text-white"
                   onClick={() => {
                     setArchiveConfirm("");
@@ -519,7 +517,6 @@ export default function RepoSettingsPage() {
               <WriteGate>
                 <Button
                   variant="outline"
-                  size="sm"
                   className="border-destructive/50 text-destructive hover:border-destructive hover:bg-destructive hover:text-white"
                   onClick={() => {
                     setDelStep(1);

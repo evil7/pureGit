@@ -373,7 +373,7 @@ export default function DiscussionsPage() {
                 value={sort}
                 onValueChange={(v) => updateParams({ sort: v === "latest" ? null : v })}
               >
-                <SelectTrigger className="h-8 w-44 text-xs">
+                <SelectTrigger className="w-44">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -388,7 +388,7 @@ export default function DiscussionsPage() {
                 value={state}
                 onValueChange={(v) => updateParams({ state: v === "OPEN" ? null : v })}
               >
-                <SelectTrigger className="h-8 w-32 text-xs">
+                <SelectTrigger className="w-32">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
@@ -401,7 +401,7 @@ export default function DiscussionsPage() {
               <span className="text-xs text-muted-foreground">
                 {data.totalCount} {t("discussions.count")}
               </span>
-              <Button size="sm" className="h-8" asChild>
+              <Button className="h-8" asChild>
                 <Link to={`/${owner}/${repo}/discussions/new/choose`}>
                   <Plus className="size-4" />
                   {t("discussions.new")}
@@ -438,12 +438,7 @@ export default function DiscussionsPage() {
               </ul>
               {hasNextPage && (
                 <div className="text-center">
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => void loadMore()}
-                    disabled={loadingMore}
-                  >
+                  <Button variant="outline" onClick={() => void loadMore()} disabled={loadingMore}>
                     {loadingMore ? t("common.loading") : t("home.showMore")}
                   </Button>
                 </div>
@@ -794,7 +789,7 @@ export function DiscussionDetailPage() {
               <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">
                 {t("discussions.upvotes")}
               </h3>
-              <Button variant="outline" size="sm" className="w-full gap-1.5">
+              <Button variant="outline" className="w-full gap-1.5">
                 <ArrowUp className="size-3.5" />
                 {discussion.upvoteCount}
               </Button>

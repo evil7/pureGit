@@ -41,7 +41,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import { useRepoData } from "@/lib/repo/repo-context";
 import { tStatic } from "@/i18n";
-import { fetchFileContentSmart, fetchFileCommitSmart, apiErrorMessage } from "@/lib/api";
+import { fetchFileWithCommitSmart, apiErrorMessage, type FileCommitInfo } from "@/lib/api";
 import { fetchFileMeta, deleteFileContent } from "@/lib/restapi";
 import { WORKER_BASE } from "@/lib/auth/worker-base";
 import { CodeView } from "@/components/CodeView";
@@ -68,7 +68,7 @@ export default function BlobPage() {
   const b = branch || repoData?.default_branch || "main";
   const path = rest;
   const [rawContent, setRawContent] = useState("");
-  const [commit, setCommit] = useState<Awaited<ReturnType<typeof fetchFileCommitSmart>>>(null);
+  const [commit, setCommit] = useState<FileCommitInfo>(null);
   const [error, setError] = useState<string | null>(null);
   const [copied, setCopied] = useState(false);
   // 文件头 Raw/Copy/下载：本地 raw 内容代理（不跳转 raw.githubusercontent.com）
@@ -184,17 +184,17 @@ export default function BlobPage() {
     }
   };
 
-  // 加载原始内容（仅依赖路径；代码主题切换不重新 fetch）
+  // 加载内容 + 文件头提交（一次 GraphQL 复合查询；匿名时 commit 为 null 自然跳过）
   useEffect(() => {
     let cancelled = false;
     setRawContent("");
+    setCommit(null);
     setError(null);
-    //：改 smart 层（登录 GraphQL blob 首选，绕开 contents API 无 CORS 头问题；
-    // 匿名走 REST——限流 403 错误响应无 CORS 头会被浏览器拦截，catch 里 apiErrorMessage 区分提示）
-    fetchFileContentSmart(owner, repo, path, token, b)
-      .then((content) => {
+    fetchFileWithCommitSmart(owner, repo, path, token, b)
+      .then(({ content, commit: c }) => {
         if (cancelled) return;
         setRawContent(content);
+        setCommit(c);
       })
       .catch((e) => {
         if (cancelled) return;
@@ -207,17 +207,6 @@ export default function BlobPage() {
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [owner, repo, path, token, b]);
-
-  // 文件头：该文件最近一次提交（作者 + branch + commit message + hash）
-  //：匿名时跳过（省 REST 配额——匿名 60/h 极紧张，commit 头非关键信息）
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    fetchFileCommitSmart(owner, repo, path, b, token).then((c) => !cancelled && setCommit(c));
-    return () => {
-      cancelled = true;
-    };
-  }, [owner, repo, path, b, token]);
 
   const fileName = path.split("/").pop() ?? path;
   const copyPath = async () => {
@@ -303,7 +292,6 @@ export default function BlobPage() {
           value={view}
           onValueChange={setView}
           variant="box"
-          size="xs"
         />
       )}
       <span className="font-mono">
@@ -312,19 +300,14 @@ export default function BlobPage() {
       <div className="ml-auto flex flex-wrap items-center gap-1.5">
         {/* Raw 按钮组（官方 ButtonGroup：Raw 文字 + Copy + 下载 图标，圆角合并） */}
         <div className="flex items-stretch overflow-hidden rounded-md border">
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 rounded-none px-2.5 text-xs"
-            onClick={() => void openRaw()}
-          >
+          <Button variant="ghost" className="rounded-none px-2.5" onClick={() => void openRaw()}>
             Raw
           </Button>
           <Tip label={copiedRaw ? "已复制" : "复制原始内容"}>
             <Button
               variant="ghost"
-              size="icon-sm"
-              className="h-7 rounded-none"
+              size="icon"
+              className="rounded-none"
               onClick={() => void copyRaw()}
             >
               {copiedRaw ? (
@@ -337,8 +320,8 @@ export default function BlobPage() {
           <Tip label="下载原始文件">
             <Button
               variant="ghost"
-              size="icon-sm"
-              className="h-7 rounded-none"
+              size="icon"
+              className="rounded-none"
               onClick={() => void downloadRaw()}
             >
               <Download className="size-3.5" />
@@ -349,13 +332,13 @@ export default function BlobPage() {
             ForkGate：非本人仓库点击编辑/删除 → fork 引导（官方语义：他人仓库先 fork 再改） */}
         {token && (
           <WriteGate className="flex items-center gap-1.5">
-            <ForkGate owner={owner} className="flex items-center gap-1.5">
+            <ForkGate className="flex items-center gap-1.5">
               <div className="flex items-stretch overflow-hidden rounded-md border">
                 <Tip label="编辑此文件">
                   <Button
                     variant="ghost"
-                    size="icon-sm"
-                    className="h-7 rounded-none"
+                    size="icon"
+                    className="rounded-none"
                     asChild
                     aria-label="编辑此文件"
                   >
@@ -371,8 +354,8 @@ export default function BlobPage() {
                 <Tip label="删除文件">
                   <Button
                     variant="ghost"
-                    size="icon-sm"
-                    className="h-7 rounded-none text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    size="icon"
+                    className="rounded-none text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => setDelOpen(true)}
                     aria-label="删除文件"
                   >
@@ -387,8 +370,7 @@ export default function BlobPage() {
         {isMarkdown && view === "preview" && (
           <Button
             variant="ghost"
-            size="icon-sm"
-            className="h-7"
+            size="icon"
             onClick={() => setOutlineOpen((v) => !v)}
             title={outlineOpen ? "关闭目录面板" : "打开目录面板"}
             aria-pressed={outlineOpen}
@@ -400,8 +382,7 @@ export default function BlobPage() {
         {!isMarkdown && (
           <Button
             variant="ghost"
-            size="icon-sm"
-            className="h-7"
+            size="icon"
             onClick={() => setSymbolsOpen((v) => !v)}
             title={symbolsOpen ? "关闭符号面板" : "打开符号面板"}
             aria-pressed={symbolsOpen}
@@ -443,7 +424,7 @@ export default function BlobPage() {
             </Button>
           </Tip>
           <div className={cn(!treeCollapsed && "hidden")}>
-            <BranchPicker branch={b} currentPath={path} compact active={treeCollapsed} />
+            <BranchPicker branch={b} currentPath={path} active={treeCollapsed} />
           </div>
           {/* 面包屑（官方 Breadcrumb：repo 链接 / 文件名） */}
           <Link
@@ -456,7 +437,7 @@ export default function BlobPage() {
           <h1 className="min-w-0 truncate font-medium">{fileName}</h1>
           {/* Copy path（官方 Breadcrumb 尾部） */}
           <Tip label="Copy path">
-            <Button size="icon" variant="ghost" className="size-7" onClick={() => void copyPath()}>
+            <Button size="icon" variant="ghost" onClick={() => void copyPath()}>
               {copied ? <Check className="size-3.5 text-chart-1" /> : <Copy className="size-3.5" />}
             </Button>
           </Tip>
@@ -468,8 +449,7 @@ export default function BlobPage() {
             {showTop && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-7 gap-1 text-xs"
+                className="gap-1"
                 onClick={() => window.scrollTo({ top: 0, behavior: "smooth" })}
               >
                 <ArrowUp className="size-3.5" />
@@ -668,18 +648,12 @@ function SymbolsPanel({
       <div className="overflow-hidden rounded-md border">
         {/* 详情头：返回全部符号 + 关闭 */}
         <div className="flex items-center justify-between border-b bg-muted/50 px-2 py-1.5">
-          <Button variant="ghost" size="sm" className="h-7 gap-1 px-2 text-xs" onClick={onBack}>
+          <Button variant="ghost" className="gap-1 px-2" onClick={onBack}>
             <ArrowLeft className="size-3.5" />
             All symbols
           </Button>
           <Tip label="关闭符号面板">
-            <Button
-              size="icon-sm"
-              variant="ghost"
-              className="size-6"
-              onClick={onClose}
-              aria-label="关闭符号面板"
-            >
+            <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭符号面板">
               <X className="size-3.5" />
             </Button>
           </Tip>
@@ -758,13 +732,7 @@ function SymbolsPanel({
       <div className="flex items-center justify-between border-b bg-muted/50 px-3 py-2">
         <h2 className="text-sm font-semibold">Symbols</h2>
         <Tip label="关闭符号面板">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="size-6"
-            onClick={onClose}
-            aria-label="关闭符号面板"
-          >
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭符号面板">
             <X className="size-3.5" />
           </Button>
         </Tip>
@@ -775,7 +743,6 @@ function SymbolsPanel({
           value={filter}
           onChange={(e) => onFilterChange(e.target.value)}
           placeholder="Filter symbols"
-          className="h-7 text-xs"
           aria-label="Filter symbols"
         />
       </div>
@@ -829,13 +796,7 @@ function OutlinePanel({
       <div className="flex items-center justify-between border-b bg-muted/50 px-3 py-2">
         <h2 className="text-sm font-semibold">Outline</h2>
         <Tip label="关闭目录面板">
-          <Button
-            size="icon-sm"
-            variant="ghost"
-            className="size-6"
-            onClick={onClose}
-            aria-label="关闭目录面板"
-          >
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭目录面板">
             <X className="size-3.5" />
           </Button>
         </Tip>
@@ -846,7 +807,6 @@ function OutlinePanel({
           value={filter}
           onChange={(e) => onFilterChange(e.target.value)}
           placeholder="Filter headings"
-          className="h-7 text-xs"
           aria-label="Filter headings"
         />
       </div>

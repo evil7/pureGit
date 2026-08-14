@@ -623,7 +623,6 @@ export default function SearchPage() {
                     name="value"
                     defaultValue={active ?? ""}
                     placeholder={item.placeholder}
-                    className="h-8 text-xs"
                     autoFocus
                   />
                 </form>
@@ -699,7 +698,7 @@ export default function SearchPage() {
           )}
           {tab === "repos" && (
             <Select value={sortValue} onValueChange={changeSort}>
-              <SelectTrigger className="mb-1 h-8 w-36 text-xs">
+              <SelectTrigger className="mb-1 w-36">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

@@ -79,7 +79,7 @@ export default function OrgReposSettings() {
                   <p className="text-xs text-muted-foreground">{formatSize(r.size)}</p>
                 )}
               </div>
-              <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" asChild>
+              <Button variant="ghost" className="gap-1" asChild>
                 <Link to={`/${r.full_name}/settings`}>
                   <Settings className="size-3.5" />
                   {t("common.settings")}

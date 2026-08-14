@@ -183,18 +183,16 @@ export function CodeEditor({
           {/* Edit / Preview 分段控件（官方 SegmentedControl） */}
           <div className="flex items-center rounded-md border bg-background p-0.5">
             <Button
-              size="sm"
               variant={!preview ? "default" : "ghost"}
-              className="h-6 gap-1 text-xs"
+              className="gap-1"
               onClick={() => setPreview(false)}
             >
               <PencilLine className="size-3" />
               编辑
             </Button>
             <Button
-              size="sm"
               variant={preview ? "default" : "ghost"}
-              className="h-6 gap-1 text-xs"
+              className="gap-1"
               onClick={() => setPreview(true)}
             >
               <Eye className="size-3" />
@@ -210,7 +208,7 @@ export function CodeEditor({
                   value={indentMode}
                   onValueChange={(v) => setIndentMode(v as "spaces" | "tab")}
                 >
-                  <SelectTrigger size="sm" className="h-6 gap-1 text-xs">
+                  <SelectTrigger className="gap-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -220,7 +218,7 @@ export function CodeEditor({
                 </Select>
                 {/* Indent size */}
                 <Select value={String(indentSize)} onValueChange={(v) => setIndentSize(Number(v))}>
-                  <SelectTrigger size="sm" className="h-6 gap-1 text-xs">
+                  <SelectTrigger className="gap-1">
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
@@ -233,7 +231,7 @@ export function CodeEditor({
             )}
             {/* Line wrap mode（官方 No wrap / Soft wrap；编辑/预览共用） */}
             <Select value={wrap ? "on" : "off"} onValueChange={(v) => setWrap(v === "on")}>
-              <SelectTrigger size="sm" className="h-6 gap-1 text-xs">
+              <SelectTrigger className="gap-1">
                 <SelectValue />
               </SelectTrigger>
               <SelectContent>

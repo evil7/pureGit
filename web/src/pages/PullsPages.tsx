@@ -35,18 +35,10 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useIsDark } from "@/hooks/useIsDark";
 import { useI18n, type I18nKey } from "@/i18n";
-import {
-  fetchPullsSmart,
-  fetchRepoLabelsSmart,
-  fetchRepoAssigneesSmart,
-  fetchRepoMilestonesSmart,
-  fetchPullCheckRunsBatchSmart,
-} from "@/lib/api";
+import { fetchPullsSmart, fetchRepoFilterDataSmart, fetchPullCheckRunsBatchSmart } from "@/lib/api";
 import {
   apiErrorMessage,
   fetchContributors,
-  fetchRepoLabelCount,
-  fetchRepoMilestoneCount,
   type CheckRunsSummary,
   type RepoLabel,
   type RepoMilestone,
@@ -108,23 +100,21 @@ export default function PullsPage() {
 
   useEffect(() => {
     let cancelled = false;
+    // 复合查询（labels/milestones/assignees + 计数一次 GraphQL）+ contributors（REST author 下拉）
     Promise.all([
-      fetchRepoLabelCount(owner!, repo!, token),
-      fetchRepoMilestoneCount(owner!, repo!, token),
+      fetchRepoFilterDataSmart(owner!, repo!, token).catch(() => null),
       fetchContributors(owner!, repo!, token).catch(() => []),
-      fetchRepoLabelsSmart(owner!, repo!, token).catch(() => []),
-      fetchRepoMilestonesSmart(owner!, repo!, token).catch(() => []),
-      fetchRepoAssigneesSmart(owner!, repo!, token).catch(() => []),
     ])
-      .then(([lc, mc, cs, rls, rms, as]) => {
-        if (!cancelled) {
-          setLabelsCount(lc);
-          setMilestonesCount(mc);
-          setContributors(cs);
-          setRepoLabels(rls);
-          setRepoMilestones(rms);
-          setAssignees(as);
+      .then(([filterData, cs]) => {
+        if (cancelled) return;
+        if (filterData) {
+          setLabelsCount(filterData.labelsCount);
+          setMilestonesCount(filterData.milestonesCount);
+          setRepoLabels(filterData.labels);
+          setRepoMilestones(filterData.milestones);
+          setAssignees(filterData.assignees);
         }
+        setContributors(cs);
       })
       .catch(() => {});
     return () => {
@@ -260,7 +250,7 @@ export default function PullsPage() {
               </span>
             )}
           </Link>
-          <Button size="sm" className="h-8" asChild>
+          <Button className="h-8" asChild>
             <Link to={`/${owner}/${repo}/pulls/new`}>
               <Plus className="size-4" />
               New pull request
@@ -417,7 +407,7 @@ function FiltersMenu({ owner, repo }: { owner: string; repo: string }) {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <Button variant="outline" size="sm" className="h-8 gap-1 rounded-r-none px-2.5">
+        <Button variant="outline" className="h-8 gap-1 rounded-r-none px-2.5">
           {t("pulls.filters")}
           <ChevronDown className="size-3.5" />
         </Button>
@@ -483,9 +473,8 @@ function FilterDropdown({
       <PopoverTrigger asChild>
         <Button
           variant="ghost"
-          size="sm"
           className={cn(
-            "h-7 gap-1 px-1.5 text-xs font-medium text-muted-foreground",
+            "gap-1 px-1.5 font-medium text-muted-foreground",
             "data-[state=open]:text-foreground",
             value && "text-foreground",
           )}

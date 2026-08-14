@@ -97,7 +97,7 @@ export default function ReposNavPage() {
       desc={t("navpage.repos.desc")}
       icon={<BookOpen className="size-6" />}
       action={
-        <Button size="sm" asChild>
+        <Button asChild>
           <Link to="/new">
             <Plus className="size-4" />
             {t("navpage.repos.new")}
@@ -189,7 +189,7 @@ export default function ReposNavPage() {
                     无写权限或非本人/组织仓库 → 置灰不可点击 */}
                 {canManageRepo(r) ? (
                   <PermissionGate>
-                    <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" asChild>
+                    <Button variant="ghost" className="gap-1" asChild>
                       <Link to={`/${r.owner.login}/${r.name}/settings`}>
                         <Settings className="size-3.5" />
                         设置
@@ -199,7 +199,7 @@ export default function ReposNavPage() {
                 ) : (
                   <Tip label="仅仓库所有者可设置">
                     <span className="inline-flex cursor-not-allowed opacity-40">
-                      <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" disabled>
+                      <Button variant="ghost" className="gap-1" disabled>
                         <Settings className="size-3.5" />
                         设置
                       </Button>

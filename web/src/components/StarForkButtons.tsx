@@ -144,7 +144,7 @@ export function StarForkButtons({
       {/* Watch（dropdown：Unwatch / Watch / Ignore；Watching/Ignoring 图标变蓝） */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button size="sm" variant="outline" disabled={busy !== null}>
+          <Button variant="outline" disabled={busy !== null}>
             {busy === "watch" || busy === "unwatch" || busy === "ignore" ? (
               <Loader2 className="size-4 animate-spin" />
             ) : (
@@ -192,12 +192,7 @@ export function StarForkButtons({
       />
 
       {/* Star（已 star：星形图标变黄填充，按钮保持 outline） */}
-      <Button
-        size="sm"
-        variant="outline"
-        onClick={() => void toggleStar()}
-        disabled={busy !== null}
-      >
+      <Button variant="outline" onClick={() => void toggleStar()} disabled={busy !== null}>
         {busy === "star" || busy === "unstar" ? (
           <Loader2 className="size-4 animate-spin" />
         ) : (

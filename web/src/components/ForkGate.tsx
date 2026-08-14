@@ -1,41 +1,32 @@
 /**
- * Fork 引导守卫（非本人仓库的写操作入口拦截）
+ * Fork 引导守卫（无仓库写权限时的写操作入口拦截）
  *
- * 官方语义：编辑/新建/删除**他人仓库**文件前必须 fork（GitHub 官方对无权限用户
- * 直接引导 Create a fork 流程）。本组件在 `owner !== 当前登录用户` 时拦截写操作点击：
- * - 不触发原页面导航 / 确认框（去 AlertDialog——2026-08-14 用户要求）
- * - sonner toast 提示「请 Fork 项目或成为本管理者、协作者后进行操作」
- * - 登录聚光灯聚焦遮罩引导点击页面头部 Fork 按钮（ForkTargetMenu 目标选择）
+ * 官方语义：编辑/新建/删除**无写权限仓库**文件前必须 fork（GitHub 官方对无权限用户
+ * 直接引导 Create a fork 流程）。本组件依据**仓库级写权限**（viewer_permission ∈ WRITE+）判断：
+ * - 有写权限（owner / 协作者 / 组织成员）→ 放行直接编辑
+ * - 无写权限的登录用户 → 拦截写操作点击：sonner toast 提示 + 登录聚光灯聚焦头部 Fork 按钮
+ * - 匿名 → 放行（走登录引导，不拦截）
  *
  * 用法：
- * <ForkGate owner={owner}><Link to={...}>编辑</Link></ForkGate>
- * <ForkGate owner={owner}><Button onClick={...}>删除</Button></ForkGate>
+ * <ForkGate><Link to={...}>编辑</Link></ForkGate>
+ * <ForkGate><Button onClick={...}>删除</Button></ForkGate>
  *
- * 注：仅判断「仓库 owner = 登录用户」为本人管理（组织成员权限需额外 API，暂不纳入）；
- * 与 WriteGate（scope 权限）互补：WriteGate 管令牌写权限，ForkGate 管仓库归属。
+ * 与 WriteGate（scope 权限）互补：WriteGate 管令牌写 scope，ForkGate 管仓库级写权限。
  * fork 按钮定位 id 见 ForkTargetMenu（repo-fork-btn）。
  */
 import { type ReactNode } from "react";
 import { triggerRippleSpotlight } from "@/lib/ui/ripple-spotlight";
 import { toastWarning } from "@/lib/ui/toast";
 import { useAuth } from "@/hooks/useAuth";
+import { useRepoPermission } from "@/hooks/useRepoPermission";
 
-export function ForkGate({
-  owner,
-  children,
-  className,
-}: {
-  /** 仓库 owner（与当前登录用户比对；非本人 → 拦截） */
-  owner: string;
-  children: ReactNode;
-  className?: string;
-}) {
-  const { user, token } = useAuth();
-  // 本人仓库（含匿名——匿名走登录引导，不拦截）→ 直接放行
-  const isOwn = !token || owner.toLowerCase() === user?.login?.toLowerCase();
-  if (isOwn) return <>{children}</>;
+export function ForkGate({ children, className }: { children: ReactNode; className?: string }) {
+  const { token } = useAuth();
+  const { canWrite } = useRepoPermission();
+  // 匿名（无 token）→ 放行走登录引导；有仓库写权限（WRITE+）→ 放行直接编辑
+  if (!token || canWrite) return <>{children}</>;
 
-  // 非本人仓库：点击拦截（不导航/不弹确认框）→ toast 提示 + 聚光灯引导点击头部 Fork 按钮。
+  // 无仓库写权限：点击拦截（不导航/不弹确认框）→ toast 提示 + 聚光灯引导点击头部 Fork 按钮。
   // **必须用捕获阶段（onClickCapture）**：Link 的 navigate 在子元素 a 的冒泡 handler 已执行，
   // 父级 span 冒泡 onClick 拦不住（导航先发生）——捕获阶段先于 target 冒泡，可阻止
   const block = (e: React.SyntheticEvent) => {

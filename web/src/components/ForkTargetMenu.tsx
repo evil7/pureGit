@@ -47,7 +47,6 @@ export function ForkTargetMenu({
   onForked,
   id,
   variant = "outline",
-  size = "sm",
 }: {
   /** 源仓库 owner */
   owner: string;
@@ -60,7 +59,6 @@ export function ForkTargetMenu({
   /** 按钮 id（聚光灯引导定位：非本人仓库写操作拦截后引导点击 fork） */
   id?: string;
   variant?: "outline" | "default";
-  size?: "sm" | "default";
 }) {
   const { token, user } = useAuth();
   const [orgs, setOrgs] = useState<UserOrgItem[] | null>(null);
@@ -112,7 +110,6 @@ export function ForkTargetMenu({
     <Button
       id={id}
       variant={variant}
-      size={size}
       disabled={busy !== false}
       onClick={() => {
         if (isOwnRepo) void doFork(undefined); // 本人项目：直接 fork 本人

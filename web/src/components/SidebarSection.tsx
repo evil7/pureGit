@@ -7,7 +7,7 @@
  * 供 PullMetadataSidebar / IssueDetailPage / MetadataEditors / ParticipantsSection 共用。
  */
 import type { ReactNode } from "react";
-import { Bell, BellRing } from "lucide-react";
+import { Bell, BellRing, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
 
 /** 分区标题 + 可选右侧操作（齿轮图标等）；供已有 <section> 外壳的调用方嵌入 */
@@ -17,6 +17,33 @@ export function SidebarHeading({ title, action }: { title: string; action?: Reac
       <span>{title}</span>
       {action}
     </h3>
+  );
+}
+
+/**
+ * 侧栏标题右侧齿轮编辑按钮（统一样式：Assignees/Labels/Milestone/审计者共用）。
+ * 官方侧栏交互：可编辑板块的标题行内一枚齿轮图标，点击展开编辑/邀请弹窗；
+ * 不再在板块内容下方放置独立「添加」按钮。
+ */
+export function EditActionButton({
+  label,
+  onClick,
+  ariaLabel,
+}: {
+  label: string;
+  onClick: () => void;
+  /** 自定义 aria-label（默认「编辑{label}」；审计者栏语义为邀请，可覆盖为「邀请审计」） */
+  ariaLabel?: string;
+}) {
+  return (
+    <button
+      type="button"
+      onClick={onClick}
+      aria-label={ariaLabel ?? `编辑${label}`}
+      className="-mr-1 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
+    >
+      <Settings className="size-3.5" />
+    </button>
   );
 }
 
@@ -55,8 +82,7 @@ export function SubscribeButton({
   return (
     <Button
       variant="ghost"
-      size="sm"
-      className="h-7 w-full justify-start px-2 text-xs text-muted-foreground"
+      className="w-full justify-start px-2 text-muted-foreground"
       onClick={onToggle}
       disabled={busy}
     >

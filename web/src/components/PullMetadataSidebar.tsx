@@ -1,9 +1,10 @@
 /**
- * PR 详情右侧 metadata 增强侧栏（B1 补：官方 9 项侧栏对齐）
+ * PR 详情右侧 metadata 侧栏（B1 补：官方 9 项侧栏对齐）
  *
  * 官方 PR 详情侧栏（github.com 实测）：Reviewers / Assignees / Labels / Projects /
  * Milestone / Development / Notifications / {n} participants / Lock conversation。
- * 本组件承接 Reviewers 之外的全部项：
+ * 本组件承接全部 9 项（审计者栏 ReviewersSidebar 为首个板块，统一在一个侧栏容器内）：
+ *   - Reviewers：审计者栏（ReviewersSidebar，评审状态 + 请求的评审者 + 邀请审计弹窗）
  *   - Assignees / Labels / Milestone：只读展示 + shadcn Dialog 编辑弹窗（写走 REST）
  *   - Projects：ProjectsV2 关联只读展示（GraphQL-only）
  *   - Development：closingIssuesReferences + linkedBranches 只读展示（GraphQL-only）
@@ -15,6 +16,7 @@ import { useEffect, useState } from "react";
 import { GitPullRequest, Lock, LockOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { useI18n } from "@/i18n";
 import { apiErrorMessage, type GitHubUser } from "@/lib/restapi";
 import {
@@ -23,10 +25,12 @@ import {
   fetchPullDevelopmentSmart,
   type PullProjectItem,
   type PullDevelopment,
+  type PullReviewSummary,
 } from "@/lib/api";
 import { toastSuccess, toastError } from "@/lib/ui/toast";
 import { SidebarSection, SubscribeButton } from "@/components/SidebarSection";
 import { ParticipantsSection } from "@/components/ParticipantsSection";
+import { ReviewersSidebar } from "@/components/PullReviewPanel";
 import {
   AssigneesEditor,
   LabelsEditor,
@@ -42,6 +46,10 @@ export function PullMetadataSidebar({
   owner,
   repo,
   number,
+  authorLogin,
+  reviewSummary,
+  reviewSummaryLoading,
+  onRequestReviewers,
   assignees,
   labels,
   milestone,
@@ -59,6 +67,12 @@ export function PullMetadataSidebar({
   owner: string;
   repo: string;
   number: number;
+  /** PR 作者 login（审计者栏弹窗中过滤——官方不可请求作者本人审计） */
+  authorLogin?: string;
+  /** 评审摘要（审计者栏数据源） */
+  reviewSummary: PullReviewSummary | null;
+  reviewSummaryLoading: boolean;
+  onRequestReviewers?: (logins: string[]) => Promise<void>;
   assignees: SidebarAssignee[];
   labels: SidebarLabel[];
   milestone: SidebarMilestone | null;
@@ -74,7 +88,8 @@ export function PullMetadataSidebar({
   onMilestoneChange: (m: SidebarMilestone | null) => void;
   onLockedChange: (locked: boolean) => void;
 }) {
-  const { token } = useAuth();
+  const { token, user, canWrite } = useAuth();
+  const { canCollaborate } = useRepoPermission();
   const { t } = useI18n();
   // Projects / Development（GraphQL-only 只读，登录加载；失败静默空）
   const [projects, setProjects] = useState<PullProjectItem[] | null>(null);
@@ -112,6 +127,16 @@ export function PullMetadataSidebar({
 
   return (
     <aside className="space-y-5 text-sm">
+      {/* 审计者（官方 Reviewers metadata 第一位；+邀请审计 弹窗） */}
+      <ReviewersSidebar
+        owner={owner}
+        repo={repo}
+        authorLogin={authorLogin}
+        summary={reviewSummary}
+        loading={reviewSummaryLoading}
+        onRequestReviewers={onRequestReviewers}
+      />
+
       {/* Assignees */}
       <AssigneesEditor
         owner={owner}
@@ -213,16 +238,18 @@ export function PullMetadataSidebar({
             subscribeLabel="订阅"
             unsubscribeLabel="取消订阅"
           />
-          <Button
-            variant="ghost"
-            size="sm"
-            className="h-7 w-full justify-start px-2 text-xs text-muted-foreground"
-            onClick={toggleLock}
-            disabled={lockBusy}
-          >
-            {locked ? <LockOpen className="size-3.5" /> : <Lock className="size-3.5" />}
-            {locked ? "解锁会话" : "锁定会话"}
-          </Button>
+          {/* 锁定会话：仅仓库协作权限（TRIAGE+）或 PR 作者可见（令牌写 scope + 仓库权限双门槛） */}
+          {canWrite && (canCollaborate || user?.login === authorLogin) && (
+            <Button
+              variant="ghost"
+              className="w-full justify-start px-2 text-muted-foreground"
+              onClick={toggleLock}
+              disabled={lockBusy}
+            >
+              {locked ? <LockOpen className="size-3.5" /> : <Lock className="size-3.5" />}
+              {locked ? "解锁会话" : "锁定会话"}
+            </Button>
+          )}
         </div>
       )}
     </aside>

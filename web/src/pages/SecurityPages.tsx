@@ -109,7 +109,7 @@ export default function SecurityPage() {
       <section className="flex flex-col gap-3">
         {secMd && (
           <div className="flex justify-end">
-            <Button variant="outline" size="sm" asChild>
+            <Button variant="outline" asChild>
               {/* 官方：Fork this repository and edit the file → 仓库 blob 编辑路径 */}
               <Link to={`/${owner}/${repo}/edit/${"HEAD"}/SECURITY.md`}>
                 {t("security.editPolicy")}
@@ -200,12 +200,7 @@ export default function SecurityPage() {
             </div>
             {hasMore && (
               <div className="text-center">
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => void loadMore()}
-                  disabled={loadingMore}
-                >
+                <Button variant="outline" onClick={() => void loadMore()} disabled={loadingMore}>
                   {loadingMore ? t("common.loading") : t("home.showMore")}
                 </Button>
               </div>
@@ -376,7 +371,7 @@ export function SecurityAdvisoryDetailPage() {
 
           {/* 官方外链 */}
           <div className="mt-4">
-            <Button variant="outline" size="sm" asChild>
+            <Button variant="outline" asChild>
               <a href={advisory.html_url} target="_blank" rel="noreferrer">
                 <ShieldAlert className="size-3.5" />
                 {t("security.advisory.viewOnGithub")}

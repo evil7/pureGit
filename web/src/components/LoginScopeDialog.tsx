@@ -84,9 +84,7 @@ export function LoginScopeDialog({
       ) : (
         <DialogTrigger asChild>
           {/* id=涟漪聚光灯目标定位（topbar 登录按钮，RippleSpotlight 动画落点） */}
-          <Button id={LOGIN_TRIGGER_ID} size="sm">
-            {t("login.button")}
-          </Button>
+          <Button id={LOGIN_TRIGGER_ID}>{t("login.button")}</Button>
         </DialogTrigger>
       )}
       <DialogContent className="sm:max-w-md">

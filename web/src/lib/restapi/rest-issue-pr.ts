@@ -40,6 +40,34 @@ export async function createPullRequest(
 /** fork 仓库（返回 fork 后的仓库） */
 // ===== M2 浏览功能 API =====
 
+/** 仓库级权限（GitHub RepositoryPermission 枚举；由 GraphQL viewerPermission 或 REST permissions 对象映射） */
+export type RepoPermission = "ADMIN" | "MAINTAIN" | "WRITE" | "TRIAGE" | "READ";
+
+/**
+ * REST permissions 对象 → 仓库级权限（优先级 admin > maintain > push > triage > pull）。
+ * REST /repos/{owner}/{repo} 返回 permissions 对象（布尔），匿名/私有无权限返回 null。
+ */
+export function repoPermissionFromRest(
+  p:
+    | {
+        admin?: boolean;
+        maintain?: boolean;
+        push?: boolean;
+        triage?: boolean;
+        pull?: boolean;
+      }
+    | null
+    | undefined,
+): RepoPermission | null {
+  if (!p) return null;
+  if (p.admin) return "ADMIN";
+  if (p.maintain) return "MAINTAIN";
+  if (p.push) return "WRITE";
+  if (p.triage) return "TRIAGE";
+  if (p.pull) return "READ";
+  return null;
+}
+
 export interface Repository {
   id: number;
   name: string;
@@ -81,6 +109,8 @@ export interface Repository {
   viewer_has_starred?: boolean;
   /** 当前登录用户订阅状态（GraphQL viewerSubscription：SUBSCRIBED/IGNORED/UNSUBSCRIBED；REST 无此字段时 undefined） */
   viewer_subscription?: string | null;
+  /** 当前登录用户对本仓库的权限级（GraphQL viewerPermission / REST permissions 映射；匿名/未登录 null） */
+  viewer_permission?: RepoPermission | null;
   /** Features（设置页开关；REST 有 has_* 字段，GraphQL has*Enabled） */
   has_issues?: boolean;
   has_discussions?: boolean;

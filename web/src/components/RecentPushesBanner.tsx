@@ -71,7 +71,7 @@ export function RecentPushesBanner() {
           {t("recentPushes.hadPushes").replace("{date}", fmtDate(branch.committedDate))}
         </span>
       </span>
-      <Button asChild size="sm">
+      <Button asChild>
         <Link to={`/${owner}/${repo}/pulls/new?compare=${encodeURIComponent(branch.name)}`}>
           Compare &amp; pull request
         </Link>

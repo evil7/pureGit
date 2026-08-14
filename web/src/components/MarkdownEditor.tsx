@@ -268,7 +268,6 @@ export function MarkdownEditor({
           {titleSlot}
           <SegmentedControl
             variant="tab"
-            size="xs"
             options={[
               { value: "write", label: t("comments.write") },
               { value: "preview", label: t("comments.preview") },

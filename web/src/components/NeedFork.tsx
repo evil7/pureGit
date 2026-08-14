@@ -35,7 +35,7 @@ export function NeedFork({
         </p>
       </div>
       {/* 简单引导：聚焦聚光灯指向页面头部 Fork 按钮（ForkTargetMenu 目标选择下拉） */}
-      <Button variant="outline" size="sm" onClick={() => triggerRippleSpotlight("#repo-fork-btn")}>
+      <Button variant="outline" onClick={() => triggerRippleSpotlight("#repo-fork-btn")}>
         如何 Fork？点击上方 Fork 按钮
       </Button>
     </div>

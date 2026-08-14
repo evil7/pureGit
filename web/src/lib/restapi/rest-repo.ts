@@ -6,6 +6,7 @@
 import { ApiError, typedRequest, fetchWithTimeout, GITHUB_API } from "./rest-core";
 import type { GitHubUser } from "./rest-core";
 import type { Repository, PullFile } from "./rest-issue-pr";
+import { repoPermissionFromRest } from "./rest-issue-pr";
 
 // ===== 仓库创建/管理（需 token）=====
 
@@ -317,7 +318,12 @@ export async function fetchRepository(
   repo: string,
   token?: string | null,
 ): Promise<Repository> {
-  return typedRequest<Repository>(token, (octokit) => octokit.rest.repos.get({ owner, repo }));
+  // REST /repos/{owner}/{repo} 返回 permissions 对象（admin/maintain/push/triage/pull），
+  // 映射为仓库级 viewer_permission（匿名/私有无权限时字段缺失 → null）
+  const data = await typedRequest<
+    Repository & { permissions?: Parameters<typeof repoPermissionFromRest>[0] }
+  >(token, (octokit) => octokit.rest.repos.get({ owner, repo }));
+  return { ...data, viewer_permission: repoPermissionFromRest(data.permissions) };
 }
 
 /** README 信息（含路径与 raw base，供相对图片/链接解析） */

@@ -180,7 +180,6 @@ export default function OrgMembersSettings() {
           />
           <PermissionGate permission="org">
             <Button
-              size="sm"
               disabled={inviteBusy || !inviteLogin.trim()}
               onClick={() => void inviteMember()}
             >
@@ -206,7 +205,7 @@ export default function OrgMembersSettings() {
                 </Badge>
                 <Button
                   variant="ghost"
-                  size="icon-sm"
+                  size="icon"
                   className="text-muted-foreground hover:text-destructive"
                   title={t("orgSettings.cancelInvite")}
                   disabled={inviteBusy}
@@ -261,7 +260,7 @@ export default function OrgMembersSettings() {
                     onValueChange={(v) => void changeRole(m, v === "admin" ? "admin" : "member")}
                     disabled={roleBusy === m.login}
                   >
-                    <SelectTrigger size="sm" className="w-28" aria-label={m.login}>
+                    <SelectTrigger className="w-28" aria-label={m.login}>
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
@@ -276,7 +275,7 @@ export default function OrgMembersSettings() {
                 <PermissionGate permission="org">
                   <Button
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon"
                     className="text-muted-foreground hover:text-destructive"
                     title={t("orgSettings.removeMember")}
                     onClick={() => setRemoveTarget(m)}

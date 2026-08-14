@@ -26,6 +26,49 @@ export const FILE_RAW_QUERY = /* GraphQL */ `
   }
 `;
 
+/**
+ * blob 页复合查询——文件内容 + 该文件最近提交（一次 GraphQL 两个 object 别名）。
+ * - file: object(expression: $fileExpr)（fileExpr = `branch:path`）→ Blob.text + isTruncated
+ * - commit: object(expression: $commitExpr)（commitExpr = `branch`）→ Commit.history(path, first:1)
+ * 替代 fetchFileContentSmart（FILE_RAW_QUERY）+ fetchFileCommitSmart（FILE_COMMIT_QUERY）两次请求。
+ * ⚠️ commit 的 expression 必须传 branch（非 `branch:path`）——`branch:path` 返回 Blob 非 Commit。
+ */
+export const FILE_WITH_COMMIT_QUERY = /* GraphQL */ `
+  query FileWithCommit(
+    $owner: String!
+    $name: String!
+    $fileExpr: String!
+    $commitExpr: String!
+    $path: String!
+  ) {
+    repository(owner: $owner, name: $name) {
+      file: object(expression: $fileExpr) {
+        ... on Blob {
+          text
+          isTruncated
+        }
+      }
+      commit: object(expression: $commitExpr) {
+        ... on Commit {
+          history(path: $path, first: 1) {
+            nodes {
+              oid
+              message
+              committedDate
+              author {
+                avatarUrl
+                user {
+                  login
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** 编辑页数据一次查——blob 内容(text) + metadata(oid)。
  * oid 与 REST contents.sha 同为 blob SHA（官方文档），可直接用于 createOrUpdateFileContents。
  * >1MB 时 isTruncated=true（text 只含部分 官方确认——text 非 null 但截断），

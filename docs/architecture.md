@@ -41,6 +41,7 @@ flowchart LR
 - 使用 shadcn/ui 组件体系，禁止手写重复基础组件
 - **仓库页布局**（仿 GitHub 简化版）：RepoHeader 全 tab（**官方顺序**：Code/Issues/Pull requests/Discussions/Actions/Projects/Wiki/Security/Insights/Releases/Settings，Features 开关联动显隐）+ About 右侧栏（描述/语言/star/fork/topics/license）；Code tab 提供树状文件树 + **CodeMirror 6 代码高亮/编辑**
 - **复刻原则**：功能做全（对齐官方页面，按 tasks.md 分批路线图推进，深度功能如评审工作流/Webhooks/Packages/Pages 分批纳入）、呈现做简（官方布局骨架 + shadcn/ui + 一步直达交互）
+- **权限体系（双层）**：① **令牌级**（`useAuth`）——`canWrite`（登录 scope 是否「完全控制」模式）、`canManageOrg`/`canEditAccount`/`canGist`（各 scope 维度），由 `WriteGate`/`PermissionGate` 承担置灰/禁用门控；② **仓库级**（`useRepoPermission`，`web/src/hooks/useRepoPermission.ts`）——读 repo context 的 `viewer_permission`（GraphQL `viewerPermission` / REST `permissions` 对象映射，`ADMIN > MAINTAIN > WRITE > TRIAGE > READ`）派生三档：`canCollaborate`（TRIAGE+，标签/指派/里程碑/关闭/锁定/评审）、`canWrite`（WRITE+，文件写/请求评审）、`canAdmin`（ADMIN，仓库设置 tab）。**写操作双门槛叠加**：令牌级 `canWrite` AND 仓库级权限（或 issue/PR 作者本人）；订阅/评论/fork 属个人行为，仅需令牌级。匿名/未登录 → `viewer_permission` null → 三档全 false（只读浏览，齿轮/锁定/关闭等写入口隐藏）
 - **技术限制**：Discussions/Projects 无公开 REST API（仅 GraphQL 需认证）
 - **布局（对齐官方 2026 新版 code view）**：内容区 `max-w-7xl`（1280px）；仓库名行 = 头像 + 名称 + Public/Private 标签 + Star/Fork（行最右侧，对应官方 `repo-header-actions`）；tabs 独立一行；blob 页面包屑横跨全宽（左树右内容之上）；代码带行号（CSS counter）+ 文件头显示 branch/commit 信息；操作栏含分支计数（`N branch`）；About 侧栏含 About 标题 + stars/forks 文本统计（无"更新于"）
 

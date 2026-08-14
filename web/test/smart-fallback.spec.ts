@@ -440,6 +440,25 @@ describe("fetchReadmeSmart（README 定位 + 内容 GraphQL 主通道 + REST 熔
     expect(r).toBeNull();
   });
 
+  it("GraphQL 成功 + 仅有 README.i18n.yaml（非 .md）→ 不误命中，返回 null", async () => {
+    // 回归：/^readme\./ 前缀匹配曾误把 README.i18n.yaml 当 README 渲染；严格匹配 /^readme\.md$/
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          object: {
+            entries: [
+              { name: "README.i18n.yaml", path: "README.i18n.yaml", type: "blob" },
+              { name: "README.md.bak", path: "README.md.bak", type: "blob" },
+            ],
+          },
+        },
+      },
+    } as never);
+    const r = await fetchReadmeSmart("evil7", "puregit", "gho_x");
+    expect(mockFetchReadme).not.toHaveBeenCalled();
+    expect(r).toBeNull();
+  });
+
   it("GraphQL 成功 + 有 README → 定位并取内容（REST 不调用）", async () => {
     // 第 1 次 graphqlRequest：TREE_ENTRIES_QUERY 定位 README；第 2 次（fetchFileContentSmart）：FILE_RAW_QUERY 拿 blob
     mockGraphql

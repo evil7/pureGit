@@ -127,7 +127,7 @@ export function CommentsSection({
           />
           {error && <InlineError message={error} size="sm" />}
           <div className="flex justify-end">
-            <Button type="submit" size="sm" disabled={submitting || !body.trim()}>
+            <Button type="submit" disabled={submitting || !body.trim()}>
               <Send className="size-3.5" />
               {submitting ? t("comments.submitting") : t("comments.submit")}
             </Button>
@@ -136,7 +136,7 @@ export function CommentsSection({
       ) : token ? (
         <p className="text-sm text-muted-foreground">{t("comments.writeRequired")}</p>
       ) : (
-        <Button variant="outline" size="sm" onClick={() => login({ mode: "write" })}>
+        <Button variant="outline" onClick={() => login({ mode: "write" })}>
           {t("comments.loginToComment")}
         </Button>
       )}

@@ -93,7 +93,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchUserOrgsSmart` / `fetchOrgMemberships` | ✅ | ✅ | — | — | ✅ |
 | `fetchMyReposSmart`（游标分页：viewer.repositories(after) + pageInfo） | ✅ | ✅ | — | — | ✅ |
 | `fetchProfileReposSmart`（用户/组织主页仓库翻页游标续接：user/org.repositories(after)） | ✅ | ✅ | — | — | ✅ |
-| `fetchRepositorySmart`（含 id/star/watch/features） | ✅ | ✅ | — | — | ✅ |
+| `fetchRepositorySmart`（含 id/star/watch/features/**viewer_permission 仓库级权限**） | ✅ | ✅ | — | — | ✅ |
 | `fetchRepositoryIdSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchUserProfileSmart` / `fetchOrgProfileSmart` / `fetchOrgDetailSmart` | ✅ | ✅ | — | — | ✅ |
 | `updateUserProfileSmart` / `updateOrganizationSmart` / `createRepositorySmart` | ✅ | ✅ | — | — | ✅ |
@@ -116,8 +116,11 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchBranchesSmart` | ✅ | ✅ | — | — | ✅ |
 | `updateIssueStateSmart`（关闭/重开 issue；GraphQL closeIssue/reopenIssue 需 ISSUE_ID 前置） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchDirContentsSmart` / `fetchReadmeSmart`（目录列举 / README 定位，GraphQL Tree.entries + blob 主通道） | ✅ | ✅ | — | — | ✅ |
+| `fetchDirWithReadmeSmart`（目录页复合：目录条目 + README 定位一次 Tree.entries，消除 fetchDirContentsSmart + fetchReadmeSmart 双查的重复 Tree.entries；README 内容失败静默不影响目录列表） | ✅ | ✅ 分步降级 | — | — | ✅ |
+| `fetchFileWithCommitSmart`（blob 页复合：文件内容 + 文件最近提交一次 GraphQL 两 object 别名，替代 fetchFileContentSmart + fetchFileCommitSmart 双查；**修正 FILE_COMMIT_QUERY expression 传 `branch:path` 返回 Blob 非 Commit 的 bug**） | ✅ | ✅ 分步降级 | — | — | ✅ |
 | `fetchRootFilesSmart`（About Resources 根文件探测，GraphQL Tree.entries 单层） | ✅ | ✅ 降级 | — | — | ✅ |
-| `fetchRepoLabelsSmart` / `fetchRepoAssigneesSmart` | ✅ | ✅ | — | — | ✅ |
+| `fetchRepoLabelsSmart` / `fetchRepoAssigneesSmart` / `fetchRepoMilestonesSmart`（侧栏单字段编辑器 MetadataEditors 用） | ✅ | ✅ | — | — | ✅ |
+| `fetchRepoFilterDataSmart`（Pulls/Issues 列表页 + 新建 Issue 复合：labels/milestones/assignableUsers + 前两者 totalCount 一次 GraphQL——替代列表页 labels/milestones/assignees 三查询 + `fetchRepoLabelCount`/`fetchRepoMilestoneCount` 两 REST Link 头计数，5 请求合并为 1 请求） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchCollaboratorsSmart`（仓库协作者：Repository.collaborators，reviewer 选人数据源） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchPullCommitsSmart`（PR Commits tab：PullRequest.commits → Commit） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchPullCheckRunsSmart`（PR CI 状态：Commit.statusCheckRollup，`... on CheckRun` union 聚合） | ✅ | ✅ 降级 | — | — | ✅ |
@@ -134,6 +137,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchReleasesCountSmart`（GraphQL totalCount 替代 Link header） | ✅ | ✅ | — | — | ✅ |
 | `fetchLatestReleaseSmart`（About 侧栏 Releases 入口：GraphQL totalCount+nodes(first:1) 一次查询 / REST per_page=1 一次请求） | ✅ | ✅ | — | — | ✅（已被 fetchRepoHomeSmart 合并替代，保留独立入口） |
 | `fetchRepoHomeSmart`（仓库主页复合查询：REPO_WITH_RELEASES_QUERY 一次取仓库元数据 + languages + tab 计数 + releases 总数/最新，替代 Repository + LatestRelease 两次请求） | ✅ | ✅ 分步降级 | — | — | ✅ |
+| `fetchRepoHeaderSmart`（仓库代码首页复合：分支列表 + 最新提交一次 GraphQL REPO_HEADER_QUERY，替代 RepoActionBar fetchBranchesSmart + LatestCommitLine fetchLatestCommitSmart 双查） | ✅ | ✅ 分步降级 | — | — | ✅ |
 | **评审工作流** | | | | | |
 | `fetchPullReviewSummarySmart`（reviewDecision+reviews+reviewRequests+mergeable，PR 详情 Reviewers 栏/合并判定） | ✅ | ✅ 降级（reviewDecision 由 reviews 推断；reviewRequests 经 list-requested-reviewers 补全） | — | — | ✅ |
 | `submitPullReviewSmart`（三态：COMMENT/APPROVE/REQUEST_CHANGES） | ✅ | ✅ 降级 | — | — | ✅ |

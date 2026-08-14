@@ -110,7 +110,7 @@ function GistEditor({ existing }: { existing?: Gist | null }) {
     <div className={`${PAGE_SHELL} mx-auto max-w-4xl`}>
       {/* 返回 + 标题 */}
       <div className="mb-5 flex items-center gap-3">
-        <Button variant="ghost" size="sm" className="gap-1" onClick={() => navigate(-1)}>
+        <Button variant="ghost" className="gap-1" onClick={() => navigate(-1)}>
           <ArrowLeft className="size-4" />
           {t("common.back")}
         </Button>
@@ -152,8 +152,7 @@ function GistEditor({ existing }: { existing?: Gist | null }) {
               {files.length > 1 && (
                 <Button
                   variant="ghost"
-                  size="sm"
-                  className="h-8 shrink-0 text-destructive"
+                  className="shrink-0 text-destructive"
                   onClick={() => setFiles((fs) => fs.filter((_, i) => i !== idx))}
                 >
                   {t("gist.removeFile")}
@@ -375,7 +374,7 @@ export function GistDetailPage() {
         </div>
         {token && (
           <PermissionGate permission="gist" className="inline-flex">
-            <Button variant="outline" size="sm" className="gap-1" asChild>
+            <Button variant="outline" className="gap-1" asChild>
               <Link to={`/gist/${gist.id}/edit`}>
                 <PencilLine className="size-3.5" />
                 {t("common.edit")}
@@ -391,7 +390,6 @@ export function GistDetailPage() {
           <PermissionGate permission="gist">
             <Button
               variant={starred ? "default" : "outline"}
-              size="sm"
               className="gap-1"
               disabled={starBusy}
               onClick={async () => {

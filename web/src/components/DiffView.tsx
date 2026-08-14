@@ -21,6 +21,7 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
+import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { PullFile, ReviewComment } from "@/lib/restapi";
@@ -77,6 +78,7 @@ function DiffFile({
   headSha?: string;
 }) {
   const { token, canWrite } = useAuth();
+  const { canWrite: canWriteRepo } = useRepoPermission();
   const { t } = useI18n();
   const [open, setOpen] = useState(true);
   // rows：patch 解析结果；expanded=true 时是全量对比结果
@@ -218,8 +220,7 @@ function DiffFile({
                           {!expanded && baseSha && headSha && (
                             <Button
                               variant="ghost"
-                              size="sm"
-                              className="h-5 px-1.5 text-[11px] text-muted-foreground"
+                              className="text-muted-foreground"
                               onClick={(e) => {
                                 e.stopPropagation();
                                 void expand();
@@ -256,17 +257,23 @@ function DiffFile({
                       <td className={cn("diff-cell-code", cls)}>
                         <span className="diff-marker">{markerOf("add")}</span>
                         <code>{row.newContent}</code>
-                        {/* 行内评论入口（hover 显示） */}
-                        {canWrite && owner && repo && number && headSha && row.newLine && (
-                          <button
-                            type="button"
-                            title={t("diff.commentLine")}
-                            onClick={() => openForm(row.newLine!)}
-                            className="diff-comment-btn ml-1 align-middle text-muted-foreground opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
-                          >
-                            <Plus className="size-3.5" />
-                          </button>
-                        )}
+                        {/* 行内评论入口（hover 显示；需仓库写权限 WRITE+） */}
+                        {canWrite &&
+                          canWriteRepo &&
+                          owner &&
+                          repo &&
+                          number &&
+                          headSha &&
+                          row.newLine && (
+                            <button
+                              type="button"
+                              title={t("diff.commentLine")}
+                              onClick={() => openForm(row.newLine!)}
+                              className="diff-comment-btn ml-1 align-middle text-muted-foreground opacity-0 transition-opacity hover:text-primary group-hover:opacity-100"
+                            >
+                              <Plus className="size-3.5" />
+                            </button>
+                          )}
                       </td>
                       {isFormRow && (
                         <InlineCommentForm
@@ -368,15 +375,10 @@ function InlineCommentForm({
         />
         {error && <InlineError message={error} size="sm" />}
         <div className="flex items-center justify-end gap-2">
-          <Button type="button" variant="ghost" size="sm" onClick={onCancel}>
+          <Button type="button" variant="ghost" onClick={onCancel}>
             {t("common.cancel")}
           </Button>
-          <Button
-            type="button"
-            size="sm"
-            onClick={onSubmit}
-            disabled={busy || !defaultValue.trim()}
-          >
+          <Button type="button" onClick={onSubmit} disabled={busy || !defaultValue.trim()}>
             <MessageSquare className="size-3.5" />
             {busy ? t("comments.submitting") : t("comments.submit")}
           </Button>
@@ -433,8 +435,6 @@ function CommentRows({
             {token && c.threadId && onToggleThread && (
               <Button
                 variant="ghost"
-                size="sm"
-                className="h-6 px-1.5 text-[11px]"
                 disabled={busyThreadId === c.threadId}
                 onClick={() => onToggleThread(c)}
               >

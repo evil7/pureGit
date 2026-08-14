@@ -173,7 +173,7 @@ export default function NewPullRequestPage() {
   return (
     <div className={PAGE_SHELL}>
       <div className="mx-auto max-w-4xl">
-        <Button variant="ghost" size="sm" asChild className="mb-3">
+        <Button variant="ghost" asChild className="mb-3">
           <Link to={`/${owner}/${repo}/pulls`}>
             <ArrowLeft className="size-4" />
             返回 Pull Requests

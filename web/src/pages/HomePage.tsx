@@ -159,7 +159,6 @@ export default function HomePage() {
             {tab === "trending" && (
               <SegmentedControl
                 variant="tab"
-                size="xs"
                 options={PERIODS}
                 value={hotKey(days)}
                 onValueChange={(k) => setSearchParams({ hot: k })}
@@ -1195,7 +1194,7 @@ function TrendingSection({ days }: { days: number }) {
       {error && repos.length === 0 && (
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           <InlineError message={error} className="flex-1" />
-          <Button variant="outline" size="sm" onClick={() => setReloadKey((k) => k + 1)}>
+          <Button variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
             重试
           </Button>
         </div>

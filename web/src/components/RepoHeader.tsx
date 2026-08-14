@@ -24,7 +24,6 @@ import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Badge } from "@/components/ui/badge";
 import { StarForkButtons } from "@/components/StarForkButtons";
 import { WriteGate } from "@/components/WriteGate";
-import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import type { Repository } from "@/lib/restapi";
 
@@ -82,7 +81,6 @@ export default function RepoHeader({
 }) {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
   const { pathname } = useLocation();
-  const { user } = useAuth();
   const { t } = useI18n();
   // 当前仓库根路径（pathname 前缀），用于计算当前 tab
   const basePath = `/${owner}/${repo}`;
@@ -91,9 +89,9 @@ export default function RepoHeader({
   const rest = pathname.slice(basePath.length).replace(/^\/+/, "");
   const current = rest === "" ? "code" : rest.split("/")[0].toLowerCase();
   const isCodeActive = current === "code" || current === "tree" || current === "blob";
-  // Settings tab 仅仓库所有者可见（官方：非 owner/admin 完全无设置入口）。
-  // 组织仓库需组织 admin 权限（用 login 精确匹配；组织 admin 场景走 OrgSettingsPage）
-  const isOwner = Boolean(data && user && data.owner.login === user.login);
+  // Settings tab 仅仓库管理员（ADMIN）可见（官方：非 admin 完全无设置入口）；
+  // 组织仓库由组织 admin 成员持有 ADMIN 权限（viewer_permission 已反映，无需 login 匹配）
+  const canAdmin = data?.viewer_permission === "ADMIN";
 
   return (
     <div className="border-b">
@@ -194,8 +192,8 @@ export default function RepoHeader({
                 )}
               </Link>
             );
-            // Settings tab 仅仓库所有者可见（官方：非 owner/admin 完全无设置入口）
-            return tab.to === "/settings" ? (isOwner ? link : null) : link;
+            // Settings tab 仅仓库管理员（ADMIN）可见（官方：非 admin 完全无设置入口）
+            return tab.to === "/settings" ? (canAdmin ? link : null) : link;
           })}
         </nav>
       </div>

@@ -14,10 +14,11 @@ import { InlineError } from "@/components/InlineError";
 import { useAuth } from "@/hooks/useAuth";
 import { useRepoData } from "@/lib/repo/repo-context";
 import { tStatic } from "@/i18n";
-import { fetchDirContentsSmart, fetchReadmeSmart, apiErrorMessage } from "@/lib/api";
+import { fetchDirWithReadmeSmart, apiErrorMessage } from "@/lib/api";
 import type { ReadmeInfo, DirEntry } from "@/lib/restapi";
 import { MarkdownView } from "@/components/MarkdownView";
 import { WriteGate } from "@/components/WriteGate";
+import { ForkGate } from "@/components/ForkGate";
 import { useTreeCollapse } from "@/lib/repo/tree-collapse";
 import { cn } from "@/lib/utils";
 import { BranchPicker, GoToFileInput, FileList } from "./RepoCode";
@@ -38,9 +39,15 @@ export default function TreePage() {
   useEffect(() => {
     let cancelled = false;
     setEntries(null);
+    setReadme(null);
     setLoadError(null);
-    fetchDirContentsSmart(owner, repo, path, b, token)
-      .then((items) => !cancelled && setEntries(items))
+    // 目录条目 + 子目录 README 一次 Tree.entries 复合查询（原 fetchDirContentsSmart + fetchReadmeSmart 双查）
+    fetchDirWithReadmeSmart(owner, repo, path, b, token)
+      .then(({ entries: es, readme: r }) => {
+        if (cancelled) return;
+        setEntries(es);
+        setReadme(r);
+      })
       .catch((e) => {
         if (cancelled) return;
         setEntries([]);
@@ -59,18 +66,6 @@ export default function TreePage() {
       cancelled = true;
     };
   }, [owner, repo, path, b, token]);
-
-  // 子目录 README（官方：目录下有 README 渲染在文件列表下方；无则隐藏）
-  useEffect(() => {
-    let cancelled = false;
-    setReadme(null);
-    fetchReadmeSmart(owner, repo, token, path)
-      .then((r) => !cancelled && setReadme(r))
-      .catch(() => !cancelled && setReadme(null));
-    return () => {
-      cancelled = true;
-    };
-  }, [owner, repo, path, token]);
 
   return (
     <div>
@@ -92,7 +87,7 @@ export default function TreePage() {
             </Button>
           </Tip>
           <div className={cn(!treeCollapsed && "hidden")}>
-            <BranchPicker branch={b} currentPath={path} compact active={treeCollapsed} />
+            <BranchPicker branch={b} currentPath={path} active={treeCollapsed} />
           </div>
           <div className="min-w-0">
             <Breadcrumb branch={b} path={path} />
@@ -101,12 +96,14 @@ export default function TreePage() {
             <GoToFileInput branch={b} className={cn(!treeCollapsed && "hidden")} />
             {token && (
               <WriteGate className="shrink-0">
-                <Button variant="outline" size="sm" className="h-8 gap-1.5 text-xs" asChild>
-                  <Link to={`/${owner}/${repo}/new/${b}${path ? `/${path}` : ""}`}>
-                    <Plus className="size-3.5" />
-                    新增文件
-                  </Link>
-                </Button>
+                <ForkGate>
+                  <Button variant="outline" className="gap-1.5" asChild>
+                    <Link to={`/${owner}/${repo}/new/${b}${path ? `/${path}` : ""}`}>
+                      <Plus className="size-3.5" />
+                      新增文件
+                    </Link>
+                  </Button>
+                </ForkGate>
               </WriteGate>
             )}
           </div>

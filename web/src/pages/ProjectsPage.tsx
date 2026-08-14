@@ -60,7 +60,7 @@ export default function ProjectsPage() {
       {/* H1 Projects + New project（官方右上，外链官方新建页） */}
       <header className="flex flex-wrap items-center justify-between gap-3">
         <h1 className="text-2xl font-bold">Projects</h1>
-        <Button size="sm" className="gap-1" asChild>
+        <Button className="gap-1" asChild>
           <a
             href={`https://github.com/${owner}/${repo}/projects/new`}
             target="_blank"

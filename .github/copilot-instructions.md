@@ -31,7 +31,7 @@
 
 > **决策记录机制已整体移除**（2026-08-10）：不保留 ADR/决策表。临时任务与决策随开发开始和结束自然消亡，最终结果沉淀在代码注释（总结性语义描述，说明代码最终用意）与公开框架文档中。开发过程中只需**不断修正关键框架文档**（vision/design/architecture/api-compat 等），避免临时记录过度堆积导致文档膨胀、关联混乱。
 
-**新会话自动遵循路径（vibe coding）**：读本文件 → 读 `docs/index.md` 导航 → 新功能先对照 `vision.md` → **复刻/改造官方页面先走「复刻工作策略」6 步流程（见下文 + skill `replica-workflow`）** → 写 UI 先查 `design.md` 与 `ui-layout` skill → 涉及 API 先查 `api-compat.md` → 改动后同步修正关键框架文档。
+**新会话自动遵循路径（vibe coding）**：读本文件 → 读 `docs/index.md` 导航 → 新功能先对照 `vision.md` → **改造/复刻官方页面先走「复刻工作策略」流程（见下文 + skill `replica-workflow`）** → 写 UI 先查 `design.md` 与 `ui-layout` skill → 涉及 API 先查 `api-compat.md` → 改动后同步修正关键框架文档。
 
 ## 架构红线
 
@@ -40,7 +40,7 @@
 2. **职责边界**：Worker 只做四件事——① OAuth2 令牌管理（换取/KV 会话/恢复/登出/**PAT 直接登录**）；② CLI git 镜像端点自动代理（clone/pull/push）；③ **Wiki 内容代理**（`/$wiki/*` → raw.githubusercontent.com/wiki——API 无 wiki 通道，服务端 fetch 解决前端 raw 被墙）；④ **Raw 内容代理**（`/$raw/*` → raw.githubusercontent.com，README 图片降级通道）。另含 `/$healthz` 健康检查探活（非业务，通用在线探活，供外部监控程序探活）。**API 调试工具 `/$debug` 为纯前端路由**（`web/src/App.tsx` lazy 页，前端 SPA 调试面板，GraphQL/REST 统一执行，身份切换 匿名/账号/临时 PAT；worker 完全不参与，token 复用主站会话、权限继承主站 session，无额外安全面）。业务逻辑与 API 请求全在前端。**系统路由优先级**：系统前缀保留段（`/$auth`、`/$wiki`、`/$raw`、`/$healthz`、git 端点）优先于用户级通配 `/:owner/:repo`——`$` 前缀（GitHub 用户名/仓库名不含 `$`）永不被用户路由占用；判断顺序：`/$healthz`（无条件探活）→ auth（switch）→ 系统代理（`/$wiki`/`/$raw` 含匿名闸 `PROXY_ALLOW_ANON`，`false` 时强制登录）→ git → SPA fallback（`/$debug` 由前端路由接管）。
 3. **访问路径（已定稿）**：注册 GitHub OAuth2 App 申请令牌；前端**全部功能**由该令牌完成，请求**直连 GitHub API**（Bearer token）；Worker 仅承担 OAuth2 登录与 CLI 自动代理。**会话元数据补全**：OAuth 回调网络受限时 `/user` 降级（login/userId 空）→ 前端拿到 token 后补全并 `POST /$auth/session` 写回 KV（worker 用 token 验证身份防伪造，403 identity_mismatch）。**旁路**：github.com 主站受限导致 OAuth 授权页不可达时，登录框可粘贴 PAT 经 `/$auth/pat` 直接登录（PAT 只存 Worker KV + httpOnly cookie，前端不落 localStorage 明文，与 OAuth 同等安全模型）。
 4. **API 策略（v0.0.1 定稿：登录强制 GraphQL 唯一主通道 + 匿名强制 REST）**：**Octokit SDK 统一封装**——登录态**强制 GraphQL 唯一主通道**（`@octokit/graphql`，**不评估收益/复杂度；唯一例外 = GraphQL 无适配**——schema 无对应字段/端点/能力时保留 REST），REST 走 `@octokit/rest`（入口 `web/src/lib/octokit.ts`：额度跟踪/熔断 cooldown/去重）；统一经 `web/src/lib/api.ts` 智能封装层（smart 函数 = **GraphQL 请求模板 + 路径参数变量**，模板集中 `web/src/lib/graphql.ts`），页面组件不感知具体协议；**GraphQL 失败 → `withRestFallback` 熔断降级 REST**（复用 rest 层现有实现，不废弃；日志经 `web/src/lib/api-log.ts` 统一工具：主请求无图标、降级触发打 `[Fallback#n]` 序号行、降级 REST 前缀 `↪` 图标、时间戳含毫秒、GraphQL 主请求含 vars）；**匿名强制 REST**（GraphQL 匿名恒 403——REST 数据层保留的核心原因）；偏好页与 footer 显示 REST core 与 GraphQL 双额度（官方 `/rate_limit` 分开计数：认证 REST 5000/时、GraphQL 5000 点/时）。**禁止**新增「REST 优先」模式选项。
-5. **UI/UX 规范（design.md 定稿）**：全部 UI 必须遵守 `docs/design.md`（Design System：框架层级/单双三栏模板/组件定义/响应式/动画/验收清单）。**布局**：多列/分块页面**必须**使用 `PageLayout` 统一布局组件（`web/src/components/PageLayout.tsx`）与共享布局常量 `web/src/lib/layout.ts`（`PAGE_SHELL` / `SIDEBAR_STICKY` / `SIDEBAR_STICKY_SCROLL` / `CONTENT_FILL`），**禁止手写散落类名**；外层容器**禁止 `py-*` 底部 padding**；单层 sticky 侧栏的 grid **必须 `items-start`**（PageLayout 已内置，否则 sticky 失效）；sticky 锚点统一 `top-20`（与 topbar 留 23px 间隔，卡片不贴顶）；导航型侧栏用 `SIDEBAR_STICKY`（纯 sticky，超高裁切），工具型（文件树）用 `SIDEBAR_STICKY_SCROLL`。**组件**：一律复用 shadcn/ui 与业务组件，禁止硬编码颜色，danger 操作必用 AlertDialog。详细规范见 skill `ui-layout`。
+5. **UI/UX 规范（design.md 定稿）**：全部 UI 必须遵守 `docs/design.md`（Design System：框架层级/单双三栏模板/组件定义/响应式/动画/验收清单）。**布局**：多列/分块页面**必须**使用 `PageLayout` 统一布局组件（`web/src/components/PageLayout.tsx`）与共享布局常量 `web/src/lib/layout.ts`（`PAGE_SHELL` / `SIDEBAR_STICKY` / `SIDEBAR_STICKY_SCROLL` / `CONTENT_FILL`），**禁止手写散落类名**；外层容器**禁止 `py-*` 底部 padding**；单层 sticky 侧栏的 grid **必须 `items-start`**（PageLayout 已内置，否则 sticky 失效）；sticky 锚点统一 `top-20`（与 topbar 留 23px 间隔，卡片不贴顶）；导航型侧栏用 `SIDEBAR_STICKY`（纯 sticky，超高裁切），工具型（文件树）用 `SIDEBAR_STICKY_SCROLL`。**组件**：一律复用 shadcn/ui 与业务组件，禁止硬编码颜色，danger 操作必用 AlertDialog。**自定义阶段 shadcn 原生**：组件构造直接使用 shadcn 官方组件**默认样式**（尺寸/颜色/间距/圆角），**非必要不对原始 shadcn 样式手动调整**（禁止散落 `size="sm"/"xs"/"lg"` 与 `h-*/text-xs` 等尺寸覆盖，统一回 `default`）；确需定制走主题 CSS 变量。详细规范见 skill `ui-layout`。
 6. **外部资产操作问询（红线）**：凡涉及**用户真实外部文件、外部站点的资产、账号、数据、密钥**的操作/访问/使用——如真实 GitHub 账号的写操作（删除/改名/推送真实仓库、修改真实个人资料与设置、使用真实 token/凭据）、外部站点的资源抓取或修改、用户本地真实文件的读写——在测试开发中**必须先问询请示用户**，经批准后才按用户指导、限定的方式处理；不得擅自对真实外部资产执行任何写操作或高危访问。
 
 ## 开发规范（必须遵守）
@@ -59,18 +59,17 @@
     - **oxfmt 格式一致**：`pnpm format`（根：web/worker/scripts 全量格式化）后 `pnpm format:check` 必须通过——格式规范化、一致性（提交前可先 `pnpm format` 自动规范；PR 评审同样按此格式要求检查 diff）。
     - **测试质量门（web）**：`pnpm test`（vitest）必须全绿——含 `/$debug` 参数解析/填充/匹配/排序的全量真实产物验证（1108 端点 × 6 断言，见 `docs/debug-page.md` §14）；凡改动 debug 相关逻辑必跑。
 
-## 复刻工作策略（GitHub 官方页面复刻标准流程）
+## 复刻工作策略（GitHub 官方页面改造标准流程）
 
-> 任何「**复刻 / 改造某个 GitHub 官方页面**」的任务必须遵循以下 6 步流程（本项目核心玩法 = 官方复刻，见 `docs/vision.md`）。详细方法论见 skill `replica-workflow`（复刻任务自动匹配加载）。
+> 任何「**改造 / 复刻某个 GitHub 官方页面**」的任务必须遵循以下 5 步流程（本项目核心玩法 = 功能对齐官方、UI 自定义，见 `docs/vision.md`）。详细方法论见 skill `replica-workflow`（复刻任务自动匹配加载）。
 
-1. **官方调研**：访问对应 GitHub 官方页面（`https://github.com/...`），用浏览器 devtools 分析 layout / 功能 / 行为 / 所用可参考组件（DOM class 结构、交互细节、空/加载/错误态），记录调研笔记。**注意**：调研仅限只读观察；涉及真实账号数据的写操作先问询用户（红线 6）。
-2. **对照评估**：对照本项目现有页面（已实现者）逐项评估**改造难度 / 影响 / 收益 / 大致计划流程**，输出对照结论后再进入下一步。
-3. **讨论确认**：与用户积极讨论难点、疑点、待定项，确认**核心差异处理方案**后再动手。
-   - **3.1 破坏性重构**：对难以直接修改到位的文件，可**完全重构**（0.0.x 阶段不保兼容，开发规范 5）；重构前先说明理由与影响面。
-4. **实施复刻**：按方案改造实施；完成后按「**精简界面、纯化功能**」思路提出优化建议（去杂项、操作由繁化简，对齐中心思想）。
-5. **决策升华**：待用户确认最终决策方案后，对已复刻页面进行**改造升华**（打磨细节、补全边界态）。
-6. **文档同步**：关键项修订到对应公开框架文档（`architecture.md` / `design.md` / `api-compat.md` / `vision.md`）；必要时**重启 dev 进程**；**新增组件需发起 rebuild**（`pnpm build`）。
-   - **6.1 重大改动审计**：审计所有文档**统一对齐描述与不一致项**；若对数据格式等底层进行调整，还应触发 **clean 重置缓存**（`node scripts/clean.mjs`）。
+1. **对照评估**：对照本项目现有页面（已实现者）逐项评估**改造难度 / 影响 / 收益 / 大致计划流程**，输出对照结论后再进入下一步。
+2. **讨论确认**：与用户积极讨论难点、疑点、待定项，确认**核心差异处理方案**后再动手。
+   - **2.1 破坏性重构**：对难以直接修改到位的文件，可**完全重构**（0.0.x 阶段不保兼容，开发规范 5）；重构前先说明理由与影响面。
+3. **实施改造**：按方案改造实施；完成后按「**精简界面、纯化功能**」思路提出优化建议（去杂项、操作由繁化简，对齐中心思想）。
+4. **决策升华**：待用户确认最终决策方案后，对已改造页面进行**改造升华**（打磨细节、补全边界态）。
+5. **文档同步**：关键项修订到对应公开框架文档（`architecture.md` / `design.md` / `api-compat.md` / `vision.md`）；必要时**重启 dev 进程**；**新增组件需发起 rebuild**（`pnpm build`）。
+   - **5.1 重大改动审计**：审计所有文档**统一对齐描述与不一致项**；若对数据格式等底层进行调整，还应触发 **clean 重置缓存**（`node scripts/clean.mjs`）。
 
 ## 构建与测试
 

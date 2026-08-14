@@ -257,7 +257,6 @@ export default function NotificationsPage() {
             </div>
             <WriteGate>
               <Button
-                size="sm"
                 variant="outline"
                 className="gap-1.5"
                 disabled={marking || !canWrite}
@@ -313,7 +312,6 @@ export default function NotificationsPage() {
                     <div className="flex shrink-0 items-center gap-2">
                       <WriteGate>
                         <Button
-                          size="sm"
                           className="gap-1"
                           disabled={!canWrite || busyId !== null}
                           onClick={() => void actOnInvite(inv, true)}
@@ -331,7 +329,6 @@ export default function NotificationsPage() {
                       <WriteGate>
                         <Button
                           variant="outline"
-                          size="sm"
                           className="gap-1"
                           disabled={!canWrite || busyId !== null}
                           onClick={() => void actOnInvite(inv, false)}
@@ -388,7 +385,7 @@ export default function NotificationsPage() {
                           {n.unread && canWrite && (
                             <Button
                               variant="ghost"
-                              size="icon-sm"
+                              size="icon"
                               className="text-muted-foreground hover:text-primary"
                               title={t("notifications.markRead")}
                               disabled={markingId !== null}

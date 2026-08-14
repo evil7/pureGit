@@ -57,7 +57,7 @@ export function OrganizationsSection() {
           {t("orgsSettings.title")}
           {orgs !== null && <span className="text-muted-foreground"> ({orgs.length})</span>}
         </h2>
-        <Button variant="outline" size="sm" asChild>
+        <Button variant="outline" asChild>
           <a href="https://github.com/account/organizations/new" target="_blank" rel="noreferrer">
             <Plus className="size-4" />
             {t("orgsSettings.new")}
@@ -109,7 +109,7 @@ export function OrganizationsSection() {
               )}
               {/* 组织设置入口（组织 admin 才进设置页；非 admin 隐藏；官方 /settings/profile 主路由） */}
               {roles[o.login] === "admin" && (
-                <Button variant="ghost" size="icon-sm" asChild>
+                <Button variant="ghost" size="icon" asChild>
                   <Link
                     to={`/organizations/${o.login}/settings/profile`}
                     title={t("orgsSettings.settings")}

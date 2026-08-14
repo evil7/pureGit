@@ -8,6 +8,7 @@ import type { GraphQLResponse } from "./api-core";
 import {
   FILE_RAW_QUERY,
   FILE_EDIT_QUERY,
+  FILE_WITH_COMMIT_QUERY,
   TREE_ENTRIES_QUERY,
   repoRawBase,
 } from "@/lib/repo/repo-raw";
@@ -16,6 +17,7 @@ import {
   ApiError,
   fetchFileContent,
   fetchFileMeta,
+  fetchFileCommit,
   fetchDirContents,
   fetchReadme,
   fetchRootFiles,
@@ -131,6 +133,97 @@ export async function fetchFileContentSmart(
   return fallback();
 }
 
+/** blob 文件头 commit 信息（与 REST fetchFileCommit 返回结构一致） */
+export type FileCommitInfo = Awaited<ReturnType<typeof fetchFileCommit>>;
+
+/**
+ * blob 页复合查询——一次 GraphQL 同时拿文件内容(text) + 该文件最近提交(commit)。
+ * 替代 BlobPage 原先 fetchFileContentSmart + fetchFileCommitSmart 两次请求（登录态 2→1）。
+ *
+ * 分层：
+ * - 登录且 ≤1MB：一次 FILE_WITH_COMMIT_QUERY（file alias 拿 Blob.text + commit alias 拿 Commit.history）。
+ *   text 完整（非截断）→ content + commit 一次到位；
+ *   text 截断（>1MB）→ content 降级 REST（commit 保留 GraphQL 结果）；
+ *   commit 为 null（文件无提交历史）→ commit 降级 REST。
+ * - 其余（匿名 / >1MB 门控 / GraphQL 失败）→ 分别降级：
+ *   content 走 fetchFileContentSmart 完整降级链（GraphQL blob → REST → $raw）；
+ *   commit 走 REST fetchFileCommit（静默 null，BlobPage 匿名本就跳过 commit）。
+ */
+export async function fetchFileWithCommitSmart(
+  owner: string,
+  repo: string,
+  path: string,
+  token?: string | null,
+  branch = "HEAD",
+  knownSize?: number,
+): Promise<{ content: string; commit: FileCommitInfo }> {
+  const detail = `${owner}/${repo} ${branch}:${path}`;
+  // GraphQL commit 节点 → FileCommitInfo
+  const mapCommit = (n: {
+    oid: string;
+    message: string;
+    committedDate: string;
+    author: { avatarUrl: string; user: { login: string } | null } | null;
+  }): FileCommitInfo => ({
+    sha: n.oid,
+    commit: { message: n.message, committer: { date: n.committedDate } },
+    author: n.author?.user ? { login: n.author.user.login, avatar_url: n.author.avatarUrl } : null,
+  });
+
+  // 合并查询主通道（仅登录且 ≤1MB——>1MB text 必截断，跳过省一次无效查询）
+  if (token && !(knownSize != null && knownSize > API_GQL_MAX_BYTES)) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          file: { text: string | null; isTruncated: boolean } | null;
+          commit: {
+            history: { nodes: Parameters<typeof mapCommit>[0][] } | null;
+          } | null;
+        } | null;
+      }> = await graphqlRequest(
+        FILE_WITH_COMMIT_QUERY,
+        { owner, name: repo, fileExpr: `${branch}:${path}`, commitExpr: branch, path },
+        token,
+      );
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        const file = resp.data.repository.file;
+        const commitNode = resp.data.repository.commit?.history?.nodes?.[0];
+        // text 完整（非截断）→ content + commit 一次到位
+        if (file?.text != null && !file.isTruncated) {
+          fileContentLog(detail, "graphql-blob+commit", file.text.length);
+          return {
+            content: file.text,
+            commit: commitNode
+              ? mapCommit(commitNode)
+              : await fetchFileCommit(owner, repo, path, branch, token),
+          };
+        }
+        // text 截断（>1MB）→ content 走 REST contents 降级（commit 保留）
+        fileContentLog(detail, "graphql-blob→truncated", 0);
+        try {
+          const rest = await fetchFileContent(owner, repo, path, token, branch);
+          return {
+            content: rest,
+            commit: commitNode
+              ? mapCommit(commitNode)
+              : await fetchFileCommit(owner, repo, path, branch, token),
+          };
+        } catch {
+          /* content REST 失败 → 落入下方完整降级链 */
+        }
+      }
+    } catch {
+      /* GraphQL 失败 → 落入下方完整降级链 */
+    }
+  }
+  // 完整降级链（匿名 / 截断 REST 失败 / GraphQL 失败）
+  const [content, commit] = await Promise.all([
+    fetchFileContentSmart(owner, repo, path, token, branch, knownSize),
+    token ? fetchFileCommit(owner, repo, path, branch, token) : Promise.resolve(null),
+  ]);
+  return { content, commit };
+}
+
 // ===== 目录列举 / README（登录 GraphQL 主通道 + REST 熔断）=====
 
 /** GraphQL TreeEntry 结构子集（Tree.entries 查询返回节点） */
@@ -212,8 +305,9 @@ export async function fetchReadmeSmart(
       }> = await graphqlRequest(TREE_ENTRIES_QUERY, { owner, name: repo, expr }, token);
       const entries = resp.data?.repository?.object?.entries;
       if (!hasGraphQLErrors(resp) && entries) {
-        // README 定位：blob 且 name 以 readme 开头（大小写不敏感，REST /readme 同规则的前缀匹配）
-        const readme = entries.find((e) => e.type === "blob" && /^readme\./i.test(e.name));
+        // README 定位：blob 且 name 严格匹配 readme.md（大小写不敏感）——
+        // 勿用 /^readme\./ 前缀匹配（会误命中 README.i18n.yaml 等非 md 文件）
+        const readme = entries.find((e) => e.type === "blob" && /^readme\.md$/i.test(e.name));
         if (readme) {
           const readmePath = readme.path ?? (dir ? `${dir}/${readme.name}` : readme.name);
           const content = await fetchFileContentSmart(owner, repo, readmePath, token);
@@ -239,6 +333,70 @@ export async function fetchReadmeSmart(
   }
   // 匿名强制 REST
   return fetchReadme(owner, repo, token, dir);
+}
+
+/**
+ * 目录页复合查询——一次 Tree.entries 同时返回目录条目 + 定位 README（CodeIndex / TreePage 主通道）。
+ * 替代 fetchDirContentsSmart + fetchReadmeSmart 两次请求（后者内部又查一次 Tree.entries 定位 README）。
+ * 消除同一目录 Tree.entries 的重复拉取，并统一 branch 语义（原 fetchReadmeSmart 写死 HEAD，非默认分支不一致）。
+ *
+ * 分层：
+ * - 登录：一次 TREE_ENTRIES_QUERY 拿 entries → 目录列表 + README 定位（blob 且 name 以 readme 开头）；
+ *   README 命中后 fetchFileContentSmart 拿内容（GraphQL blob + REST/$raw 保底）。
+ * - 匿名 / GraphQL 失败 → withRestFallback 降级 REST 分步（fetchDirContents + fetchReadme 并行）。
+ */
+export async function fetchDirWithReadmeSmart(
+  owner: string,
+  repo: string,
+  path = "",
+  branch = "HEAD",
+  token?: string | null,
+): Promise<{ entries: DirEntry[]; readme: ReadmeInfo | null }> {
+  // REST 降级分步（README 失败静默 null，不影响目录列表）
+  const fromRest = async (): Promise<{ entries: DirEntry[]; readme: ReadmeInfo | null }> => {
+    const [entries, readme] = await Promise.all([
+      fetchDirContents(owner, repo, path, branch, token),
+      fetchReadme(owner, repo, token, path).catch(() => null),
+    ]);
+    return { entries, readme };
+  };
+  if (token) {
+    try {
+      const expr = path ? `${branch}:${path}` : `${branch}:`;
+      const resp: GraphQLResponse<{
+        repository: { object: { entries: TreeEntryNode[] | null } | null } | null;
+      }> = await graphqlRequest(TREE_ENTRIES_QUERY, { owner, name: repo, expr }, token);
+      const entries = resp.data?.repository?.object?.entries;
+      if (!hasGraphQLErrors(resp) && entries) {
+        const dirEntries = entries.map(toDirEntry);
+        // README 定位：blob 且 name 严格匹配 readme.md（大小写不敏感）——
+        // 勿用 /^readme\./ 前缀匹配（会误命中 README.i18n.yaml 等非 md 文件）
+        const readme = entries.find((e) => e.type === "blob" && /^readme\.md$/i.test(e.name));
+        let readmeInfo: ReadmeInfo | null = null;
+        if (readme) {
+          const readmePath = readme.path ?? (path ? `${path}/${readme.name}` : readme.name);
+          try {
+            const content = await fetchFileContentSmart(owner, repo, readmePath, token, branch);
+            readmeInfo = {
+              content,
+              path: readmePath,
+              rawBase: repoRawBase(owner, repo, branch) + (path ? `/${path}` : ""),
+            };
+          } catch {
+            readmeInfo = null; // README 内容失败静默（不影响目录列表）
+          }
+        }
+        return { entries: dirEntries, readme: readmeInfo };
+      }
+      // GraphQL 失败 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchDirWithReadmeSmart", resp);
+    } catch {
+      // 网络层错误 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchDirWithReadmeSmart", undefined);
+    }
+  }
+  // 匿名强制 REST 分步
+  return fromRest();
 }
 
 /**

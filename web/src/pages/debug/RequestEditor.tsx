@@ -400,7 +400,6 @@ export function RequestEditor({
         </InputGroup>
         {/* Send（凭据已由 Headers 表格 Authorization 行控制，身份下拉已删） */}
         <Button
-          size="sm"
           className="h-8 shrink-0 gap-1.5"
           onClick={onRun}
           disabled={running}
@@ -490,7 +489,6 @@ export function RequestEditor({
         {req.protocol === "rest" && !noBodyMethod && (
           <div className="ml-auto flex items-center gap-1 pl-2">
             <SegmentedControl<BodyType>
-              size="xs"
               variant="tab"
               value={req.bodyType}
               onValueChange={applyBodyType}

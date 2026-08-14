@@ -84,17 +84,17 @@ export default function Nav() {
                   <CircleDot className="size-4" />
                 </Link>
               </Button>
-              <Button variant="ghost" size="icon" className="size-8" title={t("nav.pulls")} asChild>
+              <Button variant="ghost" size="icon" title={t("nav.pulls")} asChild>
                 <Link to="/pulls">
                   <GitPullRequest className="size-4" />
                 </Link>
               </Button>
-              <Button variant="ghost" size="icon" className="size-8" title={t("nav.repos")} asChild>
+              <Button variant="ghost" size="icon" title={t("nav.repos")} asChild>
                 <Link to="/repositories">
                   <BookOpen className="size-4" />
                 </Link>
               </Button>
-              <Button variant="ghost" size="icon" className="size-8" title={t("nav.gist")} asChild>
+              <Button variant="ghost" size="icon" title={t("nav.gist")} asChild>
                 <Link to="/gist">
                   <FileCode2 className="size-4" />
                 </Link>

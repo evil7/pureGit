@@ -11,7 +11,7 @@ import { Card, CardContent } from "@/components/ui/card";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
 import { useRepoData } from "@/lib/repo/repo-context";
-import { fetchReadmeSmart, fetchDirContentsSmart } from "@/lib/api";
+import { fetchDirWithReadmeSmart, fetchRepoHeaderSmart, type RepoHeaderData } from "@/lib/api";
 import type { ReadmeInfo, DirEntry } from "@/lib/restapi";
 import { ArchivedBanner } from "@/components/ArchivedBanner";
 import { ForkInfoBar } from "@/components/ForkInfoBar";
@@ -26,17 +26,34 @@ export default function CodeIndex() {
   const branch = repoData?.default_branch ?? "main";
   const [readme, setReadme] = useState<ReadmeInfo | null>(null);
   const [entries, setEntries] = useState<DirEntry[] | null>(null);
+  // 分支列表 + 最新提交（一次复合查询，下发 RepoActionBar / FileList）
+  const [repoHeader, setRepoHeader] = useState<RepoHeaderData | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    Promise.all([
-      fetchReadmeSmart(owner, repo, token).catch(() => null),
-      fetchDirContentsSmart(owner, repo, "", branch, token).catch(() => []),
-    ]).then(([r, es]) => {
-      if (cancelled) return;
-      setReadme(r);
-      setEntries(es);
-    });
+    // 目录条目 + README 一次 Tree.entries 复合查询（原 fetchDirContentsSmart + fetchReadmeSmart 双查）
+    fetchDirWithReadmeSmart(owner, repo, "", branch, token)
+      .then(({ entries: es, readme: r }) => {
+        if (cancelled) return;
+        setReadme(r);
+        setEntries(es);
+      })
+      .catch(() => {
+        if (cancelled) return;
+        setReadme(null);
+        setEntries([]);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [owner, repo, branch, token]);
+
+  useEffect(() => {
+    let cancelled = false;
+    // 分支列表 + 最新提交一次复合查询（原 RepoActionBar fetchBranchesSmart + LatestCommitLine fetchLatestCommitSmart 双查）
+    fetchRepoHeaderSmart(owner, repo, branch, token)
+      .then((h) => !cancelled && setRepoHeader(h))
+      .catch(() => !cancelled && setRepoHeader({ branches: [], latestCommit: null }));
     return () => {
       cancelled = true;
     };
@@ -50,11 +67,16 @@ export default function CodeIndex() {
       <ForkInfoBar />
       {/* 最近推送分支提示条（官方 Recently touched branches；仅登录 + 14 天内非默认分支） */}
       <RecentPushesBanner />
-      <RepoActionBar branch={branch} />
+      <RepoActionBar branch={branch} branches={repoHeader?.branches ?? []} />
       {entries === null ? (
         <Skeleton className="h-64 w-full" />
       ) : (
-        <FileList entries={entries} branch={branch} path="" />
+        <FileList
+          entries={entries}
+          branch={branch}
+          path=""
+          latestCommit={repoHeader?.latestCommit ?? null}
+        />
       )}
 
       {readme && (

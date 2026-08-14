@@ -56,12 +56,10 @@ import { TreeCollapseCtx } from "@/lib/repo/tree-collapse";
 export function BranchPicker({
   branch,
   currentPath,
-  compact = false,
   active = true,
 }: {
   branch: string;
   currentPath: string;
-  compact?: boolean;
   active?: boolean;
 }) {
   const { owner = "", repo = "" } = useParams();
@@ -86,7 +84,7 @@ export function BranchPicker({
   return (
     <DropdownMenu>
       <DropdownMenuTrigger asChild>
-        <Button variant="outline" size="sm" className={cn("font-mono text-xs", compact && "h-7")}>
+        <Button variant="outline" className="font-mono">
           <GitBranch className="size-3.5" />
           {branch}
           <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -140,7 +138,14 @@ export function GoToFileInput({ branch, className }: { branch: string; className
 
 // ===== 操作栏（分支选择器 + Go to file + 新增文件 + Code 克隆按钮）=====
 
-export function RepoActionBar({ branch }: { branch: string }) {
+export function RepoActionBar({
+  branch,
+  branches: externalBranches,
+}: {
+  branch: string;
+  /** 外部提供的分支列表（CodeIndex 首页合并查询下发；undefined = 内部自行 fetch） */
+  branches?: string[];
+}) {
   const { owner = "", repo = "" } = useParams();
   const { token } = useAuth();
   const [branches, setBranches] = useState<string[]>([]);
@@ -150,6 +155,11 @@ export function RepoActionBar({ branch }: { branch: string }) {
   const siteHost = window.location.host;
 
   useEffect(() => {
+    // 外部已提供分支列表（合并查询下发）→ 直接采用，不再单独 fetch
+    if (externalBranches !== undefined) {
+      setBranches(externalBranches);
+      return;
+    }
     let cancelled = false;
     fetchBranchesSmart(owner, repo, token)
       .then((bs) => !cancelled && setBranches(bs.map((b) => b.name)))
@@ -157,7 +167,7 @@ export function RepoActionBar({ branch }: { branch: string }) {
     return () => {
       cancelled = true;
     };
-  }, [owner, repo, token]);
+  }, [owner, repo, token, externalBranches]);
 
   const goSearch = () => {
     if (!filter.trim()) return;
@@ -180,7 +190,7 @@ export function RepoActionBar({ branch }: { branch: string }) {
       {/* 分支选择器 + 分支计数（官方：main ▾ | 1 Branch） */}
       <DropdownMenu>
         <DropdownMenuTrigger asChild>
-          <Button variant="outline" size="sm" className="font-mono text-xs">
+          <Button variant="outline" className="font-mono">
             <GitBranch className="size-3.5" />
             {branch}
             <ChevronDown className="size-3.5 text-muted-foreground" />
@@ -228,10 +238,10 @@ export function RepoActionBar({ branch }: { branch: string }) {
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {token && (
           <WriteGate>
-            {/* ForkGate：非本人仓库点击新增文件 → fork 引导（官方语义：编辑他人仓库前必须 fork） */}
-            <ForkGate owner={owner}>
+            {/* ForkGate：无写权限仓库点击新增文件 → fork 引导（官方语义：编辑他人仓库前必须 fork） */}
+            <ForkGate>
               <Tip label="新增文件">
-                <Button variant="ghost" size="icon" className="size-8" asChild>
+                <Button variant="ghost" size="icon" asChild>
                   <Link to={`/${owner}/${repo}/new/${branch}`}>
                     <Plus className="size-4" />
                   </Link>
@@ -244,7 +254,7 @@ export function RepoActionBar({ branch }: { branch: string }) {
         {/* Code 克隆按钮（恢复默认主色调 + 去右侧下拉图标，避免要素过多） */}
         <DropdownMenu>
           <DropdownMenuTrigger asChild>
-            <Button size="sm">
+            <Button>
               <Code2 className="size-4" />
               Code
             </Button>
@@ -330,19 +340,31 @@ export function RepoActionBar({ branch }: { branch: string }) {
 
 // ===== 最新提交信息行（复刻 GitHub 列表顶部）=====
 
-function LatestCommitLine({ branch }: { branch: string }) {
+function LatestCommitLine({
+  branch,
+  latestCommit: externalCommit,
+}: {
+  branch: string;
+  /** 外部提供的最新提交（CodeIndex 首页合并查询下发；undefined = 内部自行 fetch） */
+  latestCommit?: Awaited<ReturnType<typeof fetchLatestCommitSmart>>;
+}) {
   const { owner = "", repo = "" } = useParams();
   const { token } = useAuth();
   const { fmt } = useDateFormat();
   const [commit, setCommit] = useState<Awaited<ReturnType<typeof fetchLatestCommitSmart>>>(null);
 
   useEffect(() => {
+    // 外部已提供最新提交（合并查询下发）→ 直接采用，不再单独 fetch
+    if (externalCommit !== undefined) {
+      setCommit(externalCommit);
+      return;
+    }
     let cancelled = false;
     fetchLatestCommitSmart(owner, repo, branch, token).then((c) => !cancelled && setCommit(c));
     return () => {
       cancelled = true;
     };
-  }, [owner, repo, branch, token]);
+  }, [owner, repo, branch, token, externalCommit]);
 
   if (!commit) return null;
 
@@ -365,11 +387,14 @@ export function FileList({
   entries,
   branch,
   path,
+  latestCommit,
 }: {
   entries: DirEntry[];
   branch: string;
   /** 当前目录路径（空 = 仓库根） */
   path: string;
+  /** 外部提供的最新提交（CodeIndex 首页合并查询下发；undefined = LatestCommitLine 内部自行 fetch） */
+  latestCommit?: Awaited<ReturnType<typeof fetchLatestCommitSmart>>;
 }) {
   const { owner = "", repo = "" } = useParams();
   const sorted = useMemo(
@@ -388,7 +413,7 @@ export function FileList({
   return (
     // 自定义容器（不用 shadcn Card：其 py-(--card-spacing) 会让信息栏上方露出 16px 空白）
     <div className="overflow-hidden rounded-lg border bg-card">
-      <LatestCommitLine branch={branch} />
+      <LatestCommitLine branch={branch} latestCommit={latestCommit} />
       <div className="divide-y">
         {path && (
           <Link
@@ -456,13 +481,7 @@ export function FileTreeSidebar({
         <span>Files</span>
         {onToggleCollapse && (
           <Tip label="折叠文件树">
-            <Button
-              variant="ghost"
-              size="icon-sm"
-              className="size-6"
-              onClick={onToggleCollapse}
-              aria-label="折叠文件树"
-            >
+            <Button variant="ghost" size="icon" onClick={onToggleCollapse} aria-label="折叠文件树">
               <PanelLeftClose className="size-3.5" />
             </Button>
           </Tip>

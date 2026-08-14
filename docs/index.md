@@ -55,7 +55,7 @@
 | `.github/copilot-instructions.md` | **全局指令（顶层框架）**：架构红线、开发规范、文档体系与规则层级、构建命令 | 所有会话**自动加载**（vibe coding 的默认遵循路径） |
 | `.github/prompts/puregit.prompt.md` | **会话启动总纲**：项目背景/开发原则/技能策略/工作流/会话检查清单 | Chat 输入 `/puregit` 调用；开发 agent 会话自动采用 |
 | `.github/skills/shadcn-ui` | shadcn/ui 组件添加流程、目录约定、主题定制 | 任务关键词匹配时自动加载 |
-| `.github/skills/replica-workflow` | **官方页面复刻工作流**（6 步：调研/评估/讨论/实施/升华/文档同步） | 复刻/改造官方页面的任务 |
+| `.github/skills/replica-workflow` | **页面改造/复刻工作流**（评估/讨论/实施/升华/文档同步 5 步） | 改造/复刻官方页面的任务 |
 | `.github/skills/ui-layout` | 全 UI/UX 规范**速查**（权威版指向 `design.md`） | 任何 UI/布局任务 |
 | `.github/skills/api-strategy` | **API 策略速查**（GraphQL 唯一主通道 + REST 熔断降级复用 rest 层；权威版指向 `architecture.md`「API 模式」与 `api-compat.md`） | 新增/修改 API 接入、smart 封装、GraphQL 模板、REST 降级逻辑 |
 | `.github/skills/cf-worker-auth` | Worker OAuth2 令牌管理（端点/KV 会话/密钥安全） | Worker 鉴权任务 |
@@ -68,17 +68,9 @@
 1. Copilot 自动加载 `copilot-instructions.md` → 获得红线、规范与文档地图
 2. 读本文件（`docs/index.md`）→ 确认文档层级
 3. 新功能/方向取舍 → 先读 `vision.md`；涉及 UI → `design.md` + `ui-layout` skill
-4. **复刻/改造官方页面 → 加载 `replica-workflow` skill（6 步标准流程）**
+4. **改造/复刻官方页面 → 加载 `replica-workflow` skill（标准流程）**
 5. 涉及 API 数据获取 → 先读 `api-compat.md`（对照表定通道 + 实施指导）＋加载 `api-strategy` skill（GraphQL 唯一主通道 + REST 熔断降级）
 6. 动手后：**修正关键框架文档**（vision/design/architecture/api-compat 等公开文档），保持代码与文档同步
-
-## 三·五、调研档案（`docs/research/`）导航
-
-> **官方页面审计档案**：每页一份「事实依据库」（布局/组件/交互/DOM class/对照表）。入口 `00-分型总览.md`（布局分型总表）；编号 = **依赖层级**（L0 基础设施 → L1 公共组件 → L2 全局页 → L3 用户级 → L4 仓库核心 → L5 深度功能）。
-
-- **需求基线** → `docs/tasks.md`（内部）
-- **开发路线图** → `docs/plan.md`（内部）
-- **公共组件专项**（代码展示/Diff/Markdown 编辑器/回复）→ `04-公共组件层.md`
 
 ## 当前状态
 

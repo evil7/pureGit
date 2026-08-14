@@ -11,7 +11,7 @@
  */
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { Check, Milestone as MilestoneIcon, Settings } from "lucide-react";
+import { Check, Milestone as MilestoneIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import {
@@ -24,9 +24,10 @@ import {
 } from "@/components/ui/dialog";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useAuth } from "@/hooks/useAuth";
+import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { useIsDark } from "@/hooks/useIsDark";
 import { UserAvatar } from "@/components/UserAvatar";
-import { SidebarHeading } from "@/components/SidebarSection";
+import { SidebarHeading, EditActionButton } from "@/components/SidebarSection";
 import {
   updatePullAssignees,
   updatePullLabels,
@@ -47,21 +48,6 @@ export type SidebarAssignee = { login: string; avatar_url?: string };
 
 /** 侧栏里程碑类型（title + 可选 number，与 issue.milestone / pr.milestone 一致） */
 export type SidebarMilestone = { title: string; number?: number };
-
-/* ── 标题右侧齿轮编辑入口 ── */
-
-function EditAction({ label, onClick }: { label: string; onClick: () => void }) {
-  return (
-    <button
-      type="button"
-      onClick={onClick}
-      aria-label={`编辑${label}`}
-      className="-mr-1 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
-    >
-      <Settings className="size-3.5" />
-    </button>
-  );
-}
 
 /* ── 编辑弹窗基础外壳（统一三态：加载/空/列表） ── */
 
@@ -128,6 +114,7 @@ export function AssigneesEditor({
   emptyText: string;
 }) {
   const { token, canWrite } = useAuth();
+  const { canCollaborate } = useRepoPermission();
   const [open, setOpen] = useState(false);
   const [candidates, setCandidates] = useState<SidebarAssignee[] | null>(null);
   const [selected, setSelected] = useState<string[]>([]);
@@ -167,7 +154,11 @@ export function AssigneesEditor({
     <section>
       <SidebarHeading
         title={title}
-        action={canWrite ? <EditAction label={title} onClick={openDialog} /> : undefined}
+        action={
+          canWrite && canCollaborate ? (
+            <EditActionButton label={title} onClick={openDialog} />
+          ) : undefined
+        }
       />
       {current.length > 0 ? (
         <ul className="space-y-1.5">
@@ -248,6 +239,7 @@ export function LabelsEditor({
   emptyText: string;
 }) {
   const { token, canWrite } = useAuth();
+  const { canCollaborate } = useRepoPermission();
   const isDark = useIsDark();
   const [open, setOpen] = useState(false);
   const [candidates, setCandidates] = useState<RepoLabel[] | null>(null);
@@ -289,7 +281,11 @@ export function LabelsEditor({
     <section>
       <SidebarHeading
         title={title}
-        action={canWrite ? <EditAction label={title} onClick={openDialog} /> : undefined}
+        action={
+          canWrite && canCollaborate ? (
+            <EditActionButton label={title} onClick={openDialog} />
+          ) : undefined
+        }
       />
       {current.length > 0 ? (
         <div className="flex flex-wrap gap-1.5">
@@ -376,6 +372,7 @@ export function MilestoneEditor({
   emptyText: string;
 }) {
   const { token, canWrite } = useAuth();
+  const { canCollaborate } = useRepoPermission();
   const [open, setOpen] = useState(false);
   const [milestones, setMilestones] = useState<RepoMilestone[] | null>(null);
   const [selected, setSelected] = useState<number | null>(null);
@@ -413,7 +410,11 @@ export function MilestoneEditor({
     <section>
       <SidebarHeading
         title={title}
-        action={canWrite ? <EditAction label={title} onClick={openDialog} /> : undefined}
+        action={
+          canWrite && canCollaborate ? (
+            <EditActionButton label={title} onClick={openDialog} />
+          ) : undefined
+        }
       />
       {current ? (
         <span className="flex items-center gap-1.5">

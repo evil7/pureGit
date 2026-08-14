@@ -34,8 +34,7 @@ export default function ScopeWarningBanner() {
         <span className="ml-auto flex items-center gap-2">
           <Button
             variant="outline"
-            size="sm"
-            className="h-7 gap-1 border-amber-600/40 text-amber-800 hover:bg-amber-100 dark:border-amber-400/40 dark:text-amber-200 dark:hover:bg-amber-900/50"
+            className="gap-1 border-amber-600/40 text-amber-800 hover:bg-amber-100 dark:border-amber-400/40 dark:text-amber-200 dark:hover:bg-amber-900/50"
             onClick={() => login({ mode, redirect: `${location.pathname}${location.search}` })}
           >
             <ShieldCheck className="size-3.5" />

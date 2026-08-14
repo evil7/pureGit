@@ -175,7 +175,7 @@ function RepoCard({
           {/* 设置入口：可管理（自己/自己组织）→ 有写权限可点；否则置灰 */}
           {canManageRepo(r) ? (
             <PermissionGate>
-              <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" asChild>
+              <Button variant="ghost" className="gap-1" asChild>
                 <Link to={`/${r.owner.login}/${r.name}/settings`}>
                   <Settings className="size-3.5" />
                   设置
@@ -185,7 +185,7 @@ function RepoCard({
           ) : (
             <Tip label="仅仓库所有者可设置">
               <span className="inline-flex cursor-not-allowed opacity-40">
-                <Button variant="ghost" size="sm" className="h-7 gap-1 text-xs" disabled>
+                <Button variant="ghost" className="gap-1" disabled>
                   <Settings className="size-3.5" />
                   设置
                 </Button>

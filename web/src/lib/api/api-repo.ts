@@ -10,6 +10,7 @@ import {
   REPOSITORY_QUERY,
   REPO_STATS_QUERY,
   LATEST_COMMIT_QUERY,
+  REPO_HEADER_QUERY,
   FILE_COMMIT_QUERY,
   REPO_WITH_RELEASES_QUERY,
   CREATE_REPOSITORY_MUTATION,
@@ -40,6 +41,7 @@ import {
   fetchPublicRepoStats,
   fetchLatestCommit,
   fetchFileCommit,
+  fetchBranches,
 } from "../restapi";
 import type { Repository, Release, RepoStats } from "../restapi";
 
@@ -147,7 +149,7 @@ export async function fetchFileCommitSmart(
         } | null;
       }> = await graphqlRequest(
         FILE_COMMIT_QUERY,
-        { owner, name, expression: `${branch}:${path}`, path },
+        { owner, name, expression: branch, path },
         token,
       );
       const c = resp.data?.repository?.object?.history?.nodes?.[0];
@@ -288,6 +290,7 @@ export interface GraphQLRepository {
   watchers?: { totalCount: number };
   viewerSubscription?: string;
   viewerHasStarred?: boolean;
+  viewerPermission?: string;
   primaryLanguage: { name: string } | null;
   languages?: { edges: { size: number; node: { name: string } }[] };
   repositoryTopics?: { nodes: { topic: { name: string } }[] };
@@ -360,6 +363,7 @@ export function toRepository(g: GraphQLRepository, owner: string): Repository {
     open_issues_count: g.openIssues?.totalCount,
     open_pulls_count: g.openPullRequests?.totalCount,
     viewer_subscription: g.viewerSubscription ?? null,
+    viewer_permission: (g.viewerPermission as Repository["viewer_permission"]) ?? null,
   };
 }
 
@@ -540,6 +544,66 @@ export async function fetchRepoHomeSmart(
     }
   }
   // 匿名强制 REST 分步
+  return fromRest();
+}
+
+/** 仓库代码首页头部数据（分支列表 + 最新提交） */
+export interface RepoHeaderData {
+  branches: string[];
+  latestCommit: Awaited<ReturnType<typeof fetchLatestCommit>>;
+}
+
+/**
+ * 仓库代码首页复合查询——分支列表 + 最新提交（一次 GraphQL REPO_HEADER_QUERY）。
+ * 替代 RepoActionBar 的 fetchBranchesSmart + LatestCommitLine 的 fetchLatestCommitSmart 两次请求（登录态 2→1）。
+ * 登录：refs + object(expression) 一次拿；失败/匿名 → 熔断降级 REST 分步（fetchBranches + fetchLatestCommit 并行）。
+ */
+export async function fetchRepoHeaderSmart(
+  owner: string,
+  name: string,
+  branch = "HEAD",
+  token?: string | null,
+): Promise<RepoHeaderData> {
+  const fromRest = async (): Promise<RepoHeaderData> => {
+    const [branches, latestCommit] = await Promise.all([
+      fetchBranches(owner, name, 100, token).then((bs) => bs.map((b) => b.name)),
+      fetchLatestCommit(owner, name, branch, token),
+    ]);
+    return { branches, latestCommit };
+  };
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          refs: { nodes: { name: string; target: { oid: string } }[] } | null;
+          object: {
+            oid: string;
+            message: string;
+            committedDate: string;
+            author: { avatarUrl: string; user: { login: string } | null } | null;
+          } | null;
+        } | null;
+      }> = await graphqlRequest(REPO_HEADER_QUERY, { owner, name, expression: branch }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        const r = resp.data.repository;
+        const branches = (r.refs?.nodes ?? []).map((n) => n.name.replace(/^refs\/heads\//, ""));
+        const c = r.object;
+        const latestCommit = c
+          ? {
+              sha: c.oid,
+              commit: { message: c.message, committer: { date: c.committedDate } },
+              author: c.author?.user
+                ? { login: c.author.user.login, avatar_url: c.author.avatarUrl }
+                : null,
+            }
+          : null;
+        return { branches, latestCommit };
+      }
+      return withRestFallback(fromRest, "fetchRepoHeaderSmart", resp);
+    } catch {
+      return withRestFallback(fromRest, "fetchRepoHeaderSmart", undefined);
+    }
+  }
   return fromRest();
 }
 

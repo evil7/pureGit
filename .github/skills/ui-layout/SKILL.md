@@ -7,7 +7,7 @@ argument-hint: "需要开发/修复哪个页面的 UI/布局/组件，或参考�
 # PureGit UI/UX 规范（Design System）
 
 > **完整权威**：`docs/design.md`（本 skill 是其速查版，冲突时以 design.md 为准）。
-> **一句话**：所有 UI 必须用 `PageLayout` 统一布局组件 + 共享常量（`web/src/lib/layout.ts`）+ shadcn 组件，禁止手写散落类名/硬编码颜色。
+> **一句话**：所有 UI 必须用 `PageLayout` 统一布局组件 + 共享常量（`web/src/lib/layout.ts`）+ shadcn 组件，禁止手写散落类名/硬编码颜色；**自定义阶段 shadcn 原生**——组件直接用官方默认样式，非必要不手动调整尺寸/颜色。
 
 ## 1. 全局骨架（所有页面）
 
@@ -119,7 +119,7 @@ argument-hint: "需要开发/修复哪个页面的 UI/布局/组件，或参考�
 
 ## 7. 组件速查（全部详见 design.md §4）
 
-- **按钮**：`Button` variant default/outline/ghost/destructive/link；size default/sm/icon
+- **按钮**：`Button` variant default/outline/ghost/destructive/link；size **统一 default**（图标按钮 `icon`）——禁止散落 `sm/xs/lg` 与 `h-*/text-xs` 覆盖
 - **标签**：`Badge`（状态/元数据）；scope 用 `variant="outline" font-mono text-xs`
 - **卡片**：`Card` + `hover:bg-accent/50 transition-colors`
 - **表单**：`Input`/`Textarea` + `Label className="mb-1.5 block"`
@@ -141,6 +141,7 @@ argument-hint: "需要开发/修复哪个页面的 UI/布局/组件，或参考�
 - [ ] 外层 `PAGE_SHELL`（`pt-[23px]`，无 `py-*`）；多栏用 `PageLayout`（left/right，禁 GRID_2COL_*）
 - [ ] 侧栏用 `SIDEBAR_STICKY`/`SIDEBAR_STICKY_SCROLL`/`SIDEBAR_STICKY_SCROLL_HEAD`（禁散落类名）
 - [ ] 组件全部复用（ui/ 或 components/）；无硬编码颜色
+- [ ] shadcn 原生：按钮/输入/下拉/开关等一律 default 尺寸（图标 `icon`），无散落 `size="sm/xs/lg"` 或 `h-*/text-xs` 覆盖
 - [ ] loading/error/empty 三态齐全
 - [ ] 响应式：默认单列 → md 两栏 → lg/xl 三栏/加宽
 - [ ] 矮视口（~500px）滚动到底：导航型侧栏 top 恒定（无偏移）；工具型内部滚动正常

@@ -119,7 +119,6 @@ export function ResponsePanel({
           )}
           {/* 美化 Toggle：仅 Braces icon；按下开启 pretty、取消即 raw */}
           <Toggle
-            size="xs"
             variant="outline"
             pressed={viewMode === "pretty"}
             onPressedChange={(on) => setViewMode(on ? "pretty" : "raw")}

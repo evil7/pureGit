@@ -89,6 +89,42 @@ export const REPO_ASSIGNEES_QUERY = /* GraphQL */ `
   }
 `;
 
+/**
+ * 仓库过滤下拉复合查询（Pulls/Issues 列表页与新建 Issue 页共用）。
+ * 一次 GraphQL 同时拿 labels / milestones / assignableUsers 三个列表 + 前两者的 totalCount
+ * （totalCount 直接替代 REST per_page=1 读 Link header 的 fetchRepoLabelCount / fetchRepoMilestoneCount
+ * 两个独立请求）——把列表页 5 次请求合并为 1 次，省 4 次网络往返 + 配额。
+ */
+export const REPO_FILTER_DATA_QUERY = /* GraphQL */ `
+  query RepoFilterData($owner: String!, $name: String!) {
+    repository(owner: $owner, name: $name) {
+      labels(first: 100) {
+        totalCount
+        nodes {
+          name
+          color
+          description
+        }
+      }
+      milestones(states: [OPEN], first: 100) {
+        totalCount
+        nodes {
+          number
+          title
+          state
+          description
+        }
+      }
+      assignableUsers(first: 100) {
+        nodes {
+          login
+          avatarUrl
+        }
+      }
+    }
+  }
+`;
+
 /** 用户 Star 的仓库列表（StarredRepositories，GraphQL 首选；按最近 star 排序） */
 export const STARRED_REPOS_QUERY = /* GraphQL */ `
   query UserStars($login: String!) {

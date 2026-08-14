@@ -111,7 +111,6 @@ export function EmailsSection() {
           <PermissionGate permission="editAccount">
             <Button
               variant="outline"
-              size="sm"
               disabled={busy}
               onClick={() => {
                 setShowAdd((v) => !v);
@@ -194,7 +193,7 @@ export function EmailsSection() {
                 ) : canWrite ? (
                   <Button
                     variant="ghost"
-                    size="icon-sm"
+                    size="icon"
                     className="text-muted-foreground hover:text-destructive"
                     title={t("emailsSettings.removeTitle")}
                     disabled={busy}

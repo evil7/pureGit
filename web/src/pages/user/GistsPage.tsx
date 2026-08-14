@@ -107,7 +107,7 @@ export default function GistsPage() {
                 <h1 className="text-lg font-semibold leading-tight">{user.login}</h1>
                 <p className="text-sm text-muted-foreground">gist</p>
               </div>
-              <Button variant="outline" size="sm" className="w-full" asChild>
+              <Button variant="outline" className="w-full" asChild>
                 <Link to={`/${user.login}`}>
                   <ExternalLink className="size-3.5" />
                   {t("navpage.gists.viewProfile")}
@@ -136,7 +136,7 @@ export default function GistsPage() {
               </div>
             </div>
             <PermissionGate permission="gist">
-              <Button size="sm" className="gap-1" asChild>
+              <Button className="gap-1" asChild>
                 <Link to="/gist/new">
                   <Plus className="size-3.5" />
                   新建 Gist

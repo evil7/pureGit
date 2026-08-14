@@ -171,7 +171,7 @@ export default function InsightsPage() {
           <p className="mt-1 text-sm text-muted-foreground">{rangeText}</p>
         </div>
         <Select value={period} onValueChange={(v) => setPeriod(v as PeriodKey)}>
-          <SelectTrigger className="h-8 w-40 text-xs">
+          <SelectTrigger className="w-40">
             <span className="mr-1 text-muted-foreground">{t("insights.periodLabel")}:</span>
             <SelectValue />
           </SelectTrigger>
