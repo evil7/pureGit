@@ -262,16 +262,27 @@ export interface ReceivedEvent {
     description?: string | null;
     master_branch?: string;
     pusher_type?: string;
+    /** PushEvent：received_events API 实际只返回 ref/head/before（commits 列表被省略），摘要卡片用它们渲染 */
+    head?: string;
+    before?: string;
     commits?: { message: string; sha: string; url: string }[];
     size?: number;
     /** 评论内容（IssueCommentEvent / PullRequestReviewCommentEvent） */
     comment?: { body?: string; html_url?: string };
     /** 评审内容（PullRequestReviewEvent） */
     review?: { body?: string; html_url?: string; state?: string };
-    /** 评论所属 issue（IssueCommentEvent） */
-    issue?: { title?: string; html_url?: string; number?: number };
-    /** 评论所属 PR（PullRequestReviewEvent / PullRequestReviewCommentEvent） */
-    pull_request?: { title?: string; html_url?: string; number?: number };
+    /** 评论所属 issue（IssueCommentEvent）；state 供 issue 动态卡片（IssuesEvent 同构） */
+    issue?: { title?: string; html_url?: string; number?: number; state?: string };
+    /** 评论所属 PR（PullRequestReviewEvent / PullRequestReviewCommentEvent）；state/merged 供 PR 动态卡片 */
+    pull_request?: {
+      title?: string;
+      html_url?: string;
+      number?: number;
+      state?: string;
+      merged?: boolean;
+    };
+    /** Release 动态（ReleaseEvent）：版本信息 + 正文预览 */
+    release?: { tag_name?: string; name?: string; html_url?: string; body?: string };
   };
 }
 

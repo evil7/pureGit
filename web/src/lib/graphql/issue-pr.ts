@@ -53,6 +53,20 @@ export const ISSUES_QUERY = /* GraphQL */ `
   }
 `;
 
+/** issue 计数（列表分页用）：分页请求（page>1）REST 响应不含总数 → 轻量补查 open/closed 计数供分页器计算总页数 */
+export const ISSUE_COUNTS_QUERY = /* GraphQL */ `
+  query RepoIssueCounts($owner: String!, $name: String!) {
+    repository(owner: $owner, name: $name) {
+      openCount: issues(states: [OPEN]) {
+        totalCount
+      }
+      closedCount: issues(states: [CLOSED]) {
+        totalCount
+      }
+    }
+  }
+`;
+
 /** issue 详情 */
 export const ISSUE_DETAIL_QUERY = /* GraphQL */ `
   query IssueDetail($owner: String!, $name: String!, $number: Int!) {
@@ -90,6 +104,20 @@ export const ISSUE_DETAIL_QUERY = /* GraphQL */ `
         milestone {
           title
         }
+      }
+    }
+  }
+`;
+
+/** PR 计数（列表分页用）：语义与 PULLS_QUERY 的 openCount/closedCount 完全一致（CLOSED+MERGED 合计） */
+export const PULL_COUNTS_QUERY = /* GraphQL */ `
+  query RepoPullCounts($owner: String!, $name: String!) {
+    repository(owner: $owner, name: $name) {
+      openCount: pullRequests(states: [OPEN]) {
+        totalCount
+      }
+      closedCount: pullRequests(states: [CLOSED, MERGED]) {
+        totalCount
       }
     }
   }

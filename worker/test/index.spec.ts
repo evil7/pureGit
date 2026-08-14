@@ -425,7 +425,7 @@ describe("PureGit worker prefs sync", () => {
     expect(await response.json()).toEqual({ error: "unauthenticated" });
   });
 
-  it("stores under prefs:{userId} (whitelist incl. dateFormat), old login key read-compatible", async () => {
+  it("stores under prefs:{userId} (whitelist incl. dateFormat/feedFilter), old login key read-compatible", async () => {
     // 旧数据（2026-08-10 前 prefs:{login}）——userId 会话应能读到
     await env.SESSIONS.put("prefs:octocat", JSON.stringify({ theme: "dark", updatedAt: "1" }));
     await env.SESSIONS.put("session:prefs-1", JSON.stringify(makeSession("octocat", 123456)));
@@ -437,7 +437,7 @@ describe("PureGit worker prefs sync", () => {
     const init = (await res.json()) as { prefs: Record<string, string> };
     expect(init.prefs.theme).toBe("dark");
 
-    // PUT：整体序列化 + 白名单（theme/lang/codeTheme/apiMode/dateFormat）丢弃未知键
+    // PUT：整体序列化 + 白名单（theme/lang/codeTheme/apiMode/dateFormat/feedFilter）丢弃未知键
     res = await SELF.fetch("https://example.com/$auth/prefs", {
       method: "PUT",
       headers: { ...headers, "Content-Type": "application/json" },
@@ -448,6 +448,7 @@ describe("PureGit worker prefs sync", () => {
           codeTheme: "oneDark",
           apiMode: "graphql",
           dateFormat: "relative",
+          feedFilter: "star,fork",
           evil: "injected",
         },
       }),
@@ -455,7 +456,7 @@ describe("PureGit worker prefs sync", () => {
     expect(res.status).toBe(200);
     expect(await res.json()).toEqual({ ok: true });
 
-    // GET 确认：白名单 5 键 + updatedAt，未知键被丢弃
+    // GET 确认：白名单 6 键 + updatedAt，未知键被丢弃
     res = await SELF.fetch("https://example.com/$auth/prefs", { headers });
     expect(res.status).toBe(200);
     const data = (await res.json()) as { prefs: Record<string, string> };
@@ -464,6 +465,7 @@ describe("PureGit worker prefs sync", () => {
     expect(data.prefs.codeTheme).toBe("oneDark");
     expect(data.prefs.apiMode).toBe("graphql");
     expect(data.prefs.dateFormat).toBe("relative");
+    expect(data.prefs.feedFilter).toBe("star,fork");
     expect(data.prefs.updatedAt).toBeDefined();
     expect(data.prefs).not.toHaveProperty("evil");
 

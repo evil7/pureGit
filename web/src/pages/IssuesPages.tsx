@@ -86,8 +86,9 @@ export default function IssuesPage() {
       .then(({ items, openCount: openCountRes, closedCount: closedCountRes }) => {
         if (!cancelled) {
           setIssues(items);
-          setOpenCount(openCountRes);
-          setClosedCount(closedCountRes);
+          // 分页响应（page>1 REST 分支）计数可能为 null → 保留已有计数，totalPages 稳定（Pager 不消失）
+          if (openCountRes != null) setOpenCount(openCountRes);
+          if (closedCountRes != null) setClosedCount(closedCountRes);
         }
       })
       .catch((e) => {
@@ -150,8 +151,8 @@ export default function IssuesPage() {
                   to={`/${owner}/${repo}/issues?${qualifier ? `q=${encodeURIComponent(qualifier)}&` : ""}state=${state}`}
                   onClick={(e) => {
                     e.preventDefault();
-                    // 预设项 = 整体替换 q（qualifier 为空即清除过滤）
-                    updateParams({ q: qualifier || null });
+                    // 预设项 = 整体替换 q（qualifier 为空即清除过滤）；过滤变化重置页码
+                    updateParams({ q: qualifier || null, page: null });
                   }}
                   className={cn(
                     "flex items-center gap-2 rounded-md px-3 py-1.5 text-sm transition-colors",
@@ -168,7 +169,7 @@ export default function IssuesPage() {
             {q && (
               <button
                 type="button"
-                onClick={() => updateParams({ q: null })}
+                onClick={() => updateParams({ q: null, page: null })}
                 className="mt-2 flex items-center gap-2 rounded-md px-3 py-1.5 text-xs text-destructive transition-colors hover:bg-destructive/10"
               >
                 <X className="size-3.5" />
@@ -190,7 +191,7 @@ export default function IssuesPage() {
               to={`/${owner}/${repo}/issues?state=open`}
               onClick={(e) => {
                 e.preventDefault();
-                updateParams({ state: "open" });
+                updateParams({ state: "open", page: null });
               }}
               className={cn(
                 "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
@@ -209,7 +210,7 @@ export default function IssuesPage() {
               to={`/${owner}/${repo}/issues?state=closed`}
               onClick={(e) => {
                 e.preventDefault();
-                updateParams({ state: "closed" });
+                updateParams({ state: "closed", page: null });
               }}
               className={cn(
                 "flex items-center gap-1.5 border-b-2 px-3 py-2 text-sm transition-colors",
@@ -238,7 +239,7 @@ export default function IssuesPage() {
           <RepoSearchInput
             defaultValue={q}
             placeholder={t("issues.searchPlaceholder")}
-            onSubmit={(raw) => updateParams({ q: raw || null })}
+            onSubmit={(raw) => updateParams({ q: raw || null, page: null })}
             className="min-w-0 flex-1"
           />
           <Select
@@ -246,7 +247,7 @@ export default function IssuesPage() {
             onValueChange={(v) => {
               const next =
                 v === "@me" ? addQualifier(q, "author", "@me") : removeQualifier(q, "author");
-              updateParams({ q: next || null });
+              updateParams({ q: next || null, page: null });
             }}
           >
             <SelectTrigger className="h-8 w-auto min-w-24 text-xs">
@@ -269,7 +270,7 @@ export default function IssuesPage() {
                 v === "created"
                   ? removeQualifier(q, "sort")
                   : addQualifier(q, "sort", v === "comments" ? "comments-desc" : "updated-desc");
-              updateParams({ q: next || null });
+              updateParams({ q: next || null, page: null });
             }}
           >
             <SelectTrigger className="h-8 w-auto min-w-24 text-xs">

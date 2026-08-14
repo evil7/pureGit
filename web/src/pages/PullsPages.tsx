@@ -156,8 +156,9 @@ export default function PullsPage() {
       .then(({ items, openCount: openCountRes, closedCount: closedCountRes }) => {
         if (!cancelled) {
           setPulls(items);
-          setOpenCount(openCountRes);
-          setClosedCount(closedCountRes);
+          // 分页响应（page>1 REST 分支）计数可能为 null → 保留已有计数，totalPages 稳定（Pager 不消失）
+          if (openCountRes != null) setOpenCount(openCountRes);
+          if (closedCountRes != null) setClosedCount(closedCountRes);
         }
       })
       .catch((e) => {

@@ -249,14 +249,24 @@ export function CodeEditor({
         /* 预览：CodeMirror 6 只读（同引擎；无光标/无输入，保留选择复制） */
         <div
           ref={previewRef}
-          className={cn("cm-host cm-view", fill ? "min-h-0 flex-1" : minHeight)}
+          className={cn(
+            "cm-host cm-view",
+            // flex-col：cm-editor flex:1 撑满（min-h 或 fill 链，内容少时无底部空白）
+            fill ? "min-h-0 flex-1" : "flex min-h-0 flex-col",
+            minHeight,
+          )}
           style={{ backgroundColor: colors.bg }}
         />
       ) : (
         /* 编辑态：CodeMirror 6（行号 + 语法高亮 + 缩进 + 括号匹配；readOnly 时无光标/无输入） */
         <div
           ref={editRef}
-          className={cn("cm-host", readOnly && "cm-view", fill ? "min-h-0 flex-1" : minHeight)}
+          className={cn(
+            "cm-host",
+            readOnly && "cm-view",
+            fill ? "min-h-0 flex-1" : "flex min-h-0 flex-col",
+            minHeight,
+          )}
           style={{ backgroundColor: colors.bg }}
         />
       )}

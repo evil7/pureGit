@@ -2,13 +2,15 @@
  * 代码只读展示组件（新增，统一所有代码展示场景为 CM6）
  *
  * 能力（与官方 GitHub blob 页同源）：
- * - CodeMirror 6 只读模式：行号、语法高亮（Lezer）、选择/复制、搜索、软换行
+ * - CodeMirror 6 只读模式：行号、语法高亮（Lezer）、选择/复制、搜索
+ * - 默认 No wrap（横向滚动，代码浏览不自动换行）；需要软换行传 wrap
+ * - 高度自适应：minHeight 下 flex 撑满（无底部空白）；fill 撑满父容器高度
  * - 跟随代码配色（code-theme）与页面明暗，与编辑器 CodeEditor 完全同引擎
  * - 支持 diff 行背景装饰（add 绿 / del 红，官方 PR Files changed 同款）
  *
  * 用法：
  * <CodeView code={rawContent} path="src/a.ts" minHeight="min-h-96" />
- * <CodeView code={content} path="a.ts" diffLines={[{from,to,type}]} />
+ * <CodeView code={content} path="a.ts" diffLines={[{from,to,type}]} fill />
  */
 import { useEffect, useRef } from "react";
 import type { EditorView } from "@codemirror/view";
@@ -24,8 +26,12 @@ interface Props {
   code: string;
   /** 文件名（推断语言与高亮） */
   path: string;
-  /** 最小高度 */
+  /** 最小高度（flex 撑满 min-height，内容少时无底部空白） */
   minHeight?: string;
+  /** 撑满父容器高度（flex 布局、内部滚动；替代 minHeight） */
+  fill?: boolean;
+  /** 软换行（默认 false：横向滚动，代码浏览不自动 wrap line） */
+  wrap?: boolean;
   /** diff 行背景装饰（行号 → add/del） */
   diffLines?: Array<{ from: number; to: number; type: "add" | "del" }>;
   /** 符号列表回调（CM6 就绪后提取 lezer 语法树符号，供 symbols 面板） */
@@ -38,6 +44,8 @@ export function CodeView({
   code,
   path,
   minHeight = "min-h-64",
+  fill,
+  wrap = false,
   diffLines,
   onSymbolsChange,
   onViewReady,
@@ -61,7 +69,7 @@ export function CodeView({
     const cm = createCmEditor(el, {
       value: code,
       lang,
-      wrap: true,
+      wrap,
       indentMode: "spaces",
       indentSize: 2,
       dark,
@@ -86,12 +94,17 @@ export function CodeView({
       cmRef.current = null;
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [lang, dark, codeThemeId, path]);
+  }, [lang, dark, codeThemeId, path, wrap]);
 
   return (
     <div
       ref={hostRef}
-      className={cn("cm-host cm-view overflow-hidden", minHeight)}
+      className={cn(
+        "cm-host cm-view overflow-hidden",
+        // flex-col：cm-editor flex:1 撑满容器高度（内容少时无底部空白；内容多时内部滚动）
+        fill ? "min-h-0 flex-1" : "flex min-h-0 flex-col",
+        minHeight,
+      )}
       style={{ backgroundColor: bg }}
     />
   );

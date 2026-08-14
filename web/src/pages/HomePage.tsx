@@ -7,7 +7,7 @@
  * - 右栏：去掉（官方 changelog 属非核心，化简）
  * - 匿名：仅显示热点（动态需登录态）
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import {
   Plus,
@@ -23,7 +23,8 @@ import {
   MessageSquare,
   CircleDot,
   GitPullRequest,
-  Bookmark,
+  SlidersHorizontal,
+  Loader2,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -35,30 +36,33 @@ import { InlineError } from "@/components/InlineError";
 import { LangDot } from "@/components/LangDot";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { WriteGate } from "@/components/WriteGate";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { useAuth } from "@/hooks/useAuth";
 import { useDateFormat, formatDate } from "@/hooks/useDateFormat";
+import {
+  useFeedFilter,
+  FEED_TYPES,
+  parseFeedTypes,
+  isAllFeedTypes,
+  type FeedFilterType,
+} from "@/hooks/useFeedFilter";
 import {
   fetchTrendingRepositoriesSmart,
   fetchReceivedEvents,
   fetchMyReposSmart,
   fetchRepositorySmart,
+  forkRepositorySmart,
   apiErrorMessage,
   type Repository,
   type ReceivedEvent,
 } from "@/lib/api";
-import { toastInfo } from "@/lib/ui/toast";
+import { toastError, toastSuccess } from "@/lib/ui/toast";
 import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/ui/format";
 import { PAGE_SHELL } from "@/lib/ui/layout";
 import PageLayout from "@/components/PageLayout";
-import { useI18n, tStatic } from "@/i18n";
+import { useI18n, tStatic, type I18nKey } from "@/i18n";
 import { SegmentedControl, type SegmentedOption } from "@/components/SegmentedControl";
 
 const PERIODS: SegmentedOption<"day" | "week" | "month">[] = [
@@ -75,15 +79,28 @@ const TRENDING_PAGE_SIZE = 10;
  * 通用翻页器 → 已提取为共享组件 `@/components/Pager`（核心页统一复用）
  */
 
-/** Feed 类型过滤（官方 Filter 语义 提升到主页：tabs 横线最右） */
-export type FeedFilterType = "all" | "star" | "fork" | "push" | "comment";
-
 export default function HomePage() {
   const { token } = useAuth();
   const { t } = useI18n();
   const [searchParams, setSearchParams] = useSearchParams();
-  // C8 Feed Filter（tabs 横线最右下拉；切换时重置页码）
-  const [feedFilter, setFeedFilter] = useState<FeedFilterType>("all");
+  // Feed 类型过滤：偏好 hook（默认全选）+ URL `?feed=` 覆盖（逗号分隔多选，可分享）
+  const { types: prefTypes, setFilter: setPrefFilter } = useFeedFilter();
+  const hasFeedParam = searchParams.has("feed");
+  const urlTypes = useMemo(
+    () => (hasFeedParam ? parseFeedTypes(searchParams.get("feed")) : null),
+    [hasFeedParam, searchParams],
+  );
+  /** 生效勾选：URL 有 feed 参数 → URL 优先；否则偏好（默认全选） */
+  const types = urlTypes ?? prefTypes;
+
+  /** 勾选变化：更新偏好（持久默认）+ 同步 URL（replace，全选 → 删除参数） */
+  const applyFeedTypes = (next: FeedFilterType[]) => {
+    setPrefFilter(next);
+    const params = new URLSearchParams(searchParams);
+    if (isAllFeedTypes(next)) params.delete("feed");
+    else params.set("feed", next.join(","));
+    setSearchParams(params, { replace: true });
+  };
 
   // URL 驱动（?feed → 动态；?hot=day|week|month → 热点+周期；无参数 → 登录动态/匿名热点）
   const hasFeed = searchParams.has("feed");
@@ -170,27 +187,11 @@ export default function HomePage() {
                 className="pb-1.5"
               />
             ) : (
-              token && (
-                <Select
-                  value={feedFilter}
-                  onValueChange={(v) => setFeedFilter(v as FeedFilterType)}
-                >
-                  <SelectTrigger className="mb-1 h-8 w-36 text-xs">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="all">{tStatic("feed.filter.all")}</SelectItem>
-                    <SelectItem value="star">{tStatic("feed.filter.star")}</SelectItem>
-                    <SelectItem value="fork">{tStatic("feed.filter.fork")}</SelectItem>
-                    <SelectItem value="push">{tStatic("feed.filter.push")}</SelectItem>
-                    <SelectItem value="comment">{tStatic("feed.filter.comment")}</SelectItem>
-                  </SelectContent>
-                </Select>
-              )
+              token && <FeedTypeFilterDropdown types={types} onApply={applyFeedTypes} />
             )}
           </div>
 
-          {tab === "feed" ? <FeedSection filter={feedFilter} /> : <TrendingSection days={days} />}
+          {tab === "feed" ? <FeedSection types={types} /> : <TrendingSection days={days} />}
         </main>
       </PageLayout>
 
@@ -201,6 +202,63 @@ export default function HomePage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** Feed 类型过滤下拉（勾选式多选）：各类型 Checkbox；全选 = 全量勾选（默认），无独立「全部」项 */
+const FEED_FILTER_LABEL_KEYS: Record<FeedFilterType, I18nKey> = {
+  star: "feed.filter.star",
+  fork: "feed.filter.fork",
+  push: "feed.filter.push",
+  comment: "feed.filter.comment",
+  release: "feed.filter.release",
+  issue: "feed.filter.issue",
+  pr: "feed.filter.pr",
+};
+
+function FeedTypeFilterDropdown({
+  types,
+  onApply,
+}: {
+  types: FeedFilterType[];
+  onApply: (next: FeedFilterType[]) => void;
+}) {
+  const all = isAllFeedTypes(types);
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button variant="outline" size="sm" className="mb-1 h-8 text-xs">
+          <SlidersHorizontal className="size-3.5" />
+          {tStatic("feed.filter.title")}
+          {!all && (
+            <span className="rounded-full bg-accent px-1.5 text-[11px] font-medium text-foreground">
+              {types.length}
+            </span>
+          )}
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="w-48 p-1">
+        <div className="flex flex-col gap-0.5 p-1">
+          {FEED_TYPES.map((type) => (
+            <label
+              key={type}
+              className="flex cursor-pointer items-center gap-2 rounded-md px-2 py-1.5 text-sm hover:bg-accent/60"
+            >
+              <Checkbox
+                checked={all || types.includes(type)}
+                onCheckedChange={(c) => {
+                  const next = c
+                    ? [...types.filter((x) => x !== type), type]
+                    : types.filter((x) => x !== type);
+                  onApply(next);
+                }}
+              />
+              {tStatic(FEED_FILTER_LABEL_KEYS[type])}
+            </label>
+          ))}
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }
 
@@ -346,7 +404,31 @@ function SidebarContent() {
 
 // ===== 中栏：动态 Feed（好友动态，Events API）=====
 
-function FeedSection({ filter }: { filter: FeedFilterType }) {
+/** 事件类型 → Feed 过滤类型匹配（Events API 类型映射；comment 聚合三类评论事件） */
+function eventMatchesType(ev: ReceivedEvent, t: FeedFilterType): boolean {
+  switch (t) {
+    case "star":
+      return ev.type === "WatchEvent";
+    case "fork":
+      return ev.type === "ForkEvent";
+    case "push":
+      return ev.type === "PushEvent";
+    case "comment":
+      return (
+        ev.type === "IssueCommentEvent" ||
+        ev.type === "PullRequestReviewEvent" ||
+        ev.type === "PullRequestReviewCommentEvent"
+      );
+    case "release":
+      return ev.type === "ReleaseEvent";
+    case "issue":
+      return ev.type === "IssuesEvent";
+    case "pr":
+      return ev.type === "PullRequestEvent";
+  }
+}
+
+function FeedSection({ types }: { types: FeedFilterType[] }) {
   const { token, user } = useAuth();
   const [events, setEvents] = useState<ReceivedEvent[] | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -355,7 +437,7 @@ function FeedSection({ filter }: { filter: FeedFilterType }) {
   // 过滤变化重置页码（Filter 下拉已上移 tabs 横线最右）
   useEffect(() => {
     setPage(1);
-  }, [filter]);
+  }, [types]);
 
   useEffect(() => {
     if (!token || !user?.login) return;
@@ -374,22 +456,12 @@ function FeedSection({ filter }: { filter: FeedFilterType }) {
     };
   }, [token, user?.login]);
 
-  // C8：按事件类型过滤（前端，官方 Filter 下拉语义）
+  // 按事件类型过滤（前端，勾选集合；全选/全不选 = 全部显示）
   const filtered = useMemo(() => {
     if (!events) return null;
-    if (filter === "all") return events;
-    return events.filter((ev) => {
-      if (filter === "star") return ev.type === "WatchEvent";
-      if (filter === "fork") return ev.type === "ForkEvent";
-      if (filter === "push") return ev.type === "PushEvent";
-      // comment：评论相关事件
-      return (
-        ev.type === "IssueCommentEvent" ||
-        ev.type === "PullRequestReviewEvent" ||
-        ev.type === "PullRequestReviewCommentEvent"
-      );
-    });
-  }, [events, filter]);
+    if (isAllFeedTypes(types)) return events;
+    return events.filter((ev) => types.some((t) => eventMatchesType(ev, t)));
+  }, [events, types]);
 
   if (events === null && !error) {
     return (
@@ -444,7 +516,7 @@ function FeedSection({ filter }: { filter: FeedFilterType }) {
   if (!filtered?.length) {
     return (
       <p className="rounded-lg border bg-card px-4 py-8 text-center text-sm text-muted-foreground">
-        {filter === "all" ? tStatic("empty.feed") : tStatic("empty.noResults")}
+        {isAllFeedTypes(types) ? tStatic("empty.feed") : tStatic("empty.noResults")}
       </p>
     );
   }
@@ -540,30 +612,6 @@ function FeedCard({ ev }: { ev: ReceivedEvent }) {
   const { format, fmt } = useDateFormat();
   const meta = feedMeta(ev);
   const repoName = ev.repo.name;
-  // 评论动态：提取评论内容与所属 issue/PR（无正文时回退仓库体卡片）
-  const isComment =
-    ev.type === "IssueCommentEvent" ||
-    ev.type === "PullRequestReviewEvent" ||
-    ev.type === "PullRequestReviewCommentEvent";
-  const commentBody =
-    ev.type === "PullRequestReviewEvent"
-      ? (ev.payload?.review?.body ?? "")
-      : (ev.payload?.comment?.body ?? "");
-  const commentSubject =
-    ev.type === "IssueCommentEvent" && ev.payload?.issue
-      ? {
-          title: ev.payload.issue.title ?? "",
-          url: ev.payload.issue.html_url ?? "",
-          number: ev.payload.issue.number ?? 0,
-        }
-      : ev.payload?.pull_request
-        ? {
-            title: ev.payload.pull_request.title ?? "",
-            url: ev.payload.pull_request.html_url ?? "",
-            number: ev.payload.pull_request.number ?? 0,
-          }
-        : null;
-  const showCommentCard = isComment && commentBody.trim().length > 0;
   return (
     <div className="rounded-lg border bg-card">
       {/* 标题行：头像 + 事件图标角标 + 动作文案（官方 feed 结构） */}
@@ -598,12 +646,6 @@ function FeedCard({ ev }: { ev: ReceivedEvent }) {
               ? fmt(ev.created_at)
               : `${fmt(ev.created_at)} · ${formatDate(ev.created_at, "relative")}`}
           </p>
-          {/* 事件附加信息 */}
-          {ev.type === "PushEvent" && ev.payload?.commits?.length ? (
-            <p className="mt-1 truncate text-xs text-muted-foreground">
-              {ev.payload.commits.length} 次提交： {ev.payload.commits[0].message.split("\n")[0]}
-            </p>
-          ) : null}
           {ev.type === "CreateEvent" && ev.payload?.description ? (
             <p className="mt-1 line-clamp-1 text-xs text-muted-foreground">
               {ev.payload.description}
@@ -612,23 +654,169 @@ function FeedCard({ ev }: { ev: ReceivedEvent }) {
         </div>
       </div>
 
-      {/* 评论动态：评论内容卡片（预览 + read more）；其余：仓库体卡片 */}
+      {/* 内容区：按事件类型差异化（push 提交摘要 / release / issue / PR / 评论正文；无 payload 回退仓库体） */}
       <div className="px-4 pb-4">
-        {showCommentCard ? (
-          <CommentCard body={commentBody} subject={commentSubject} />
-        ) : (
-          <FeedRepoCard fullName={repoName} token={token} />
-        )}
+        <FeedContent ev={ev} token={token} />
       </div>
     </div>
   );
 }
 
-/**
- * 评论动态卡片（官方 feed）：评论正文预览（超 10 行折叠 + 底部渐变隐去）+
- * 所属 issue/PR 链接 + 「Read more」展开全文。
- */
-function CommentCard({
+/** Feed 内容区：统一仓库体卡片（owner/repo + Star/Fork + 语言·forks 元信息），仅 desc 行按事件类型差异化 */
+function FeedContent({ ev, token }: { ev: ReceivedEvent; token: string | null }) {
+  const repoName = ev.repo.name;
+  // 评论动态：提取评论内容与所属 issue/PR（无正文时 desc 回退仓库描述）
+  const isComment =
+    ev.type === "IssueCommentEvent" ||
+    ev.type === "PullRequestReviewEvent" ||
+    ev.type === "PullRequestReviewCommentEvent";
+  const commentBody =
+    ev.type === "PullRequestReviewEvent"
+      ? (ev.payload?.review?.body ?? "")
+      : (ev.payload?.comment?.body ?? "");
+  const commentSubject =
+    ev.type === "IssueCommentEvent" && ev.payload?.issue
+      ? {
+          title: ev.payload.issue.title ?? "",
+          url: ev.payload.issue.html_url ?? "",
+          number: ev.payload.issue.number ?? 0,
+        }
+      : ev.payload?.pull_request
+        ? {
+            title: ev.payload.pull_request.title ?? "",
+            url: ev.payload.pull_request.html_url ?? "",
+            number: ev.payload.pull_request.number ?? 0,
+          }
+        : null;
+  let desc: ReactNode = null;
+  if (isComment && commentBody.trim().length > 0) {
+    desc = <CommentDesc body={commentBody} subject={commentSubject} />;
+  } else {
+    switch (ev.type) {
+      case "PushEvent":
+        // received_events 的 PushEvent 无 commits 数组（仅 ref/head/before）→ 有分支/SHA 即显示 push 摘要
+        if (ev.payload?.ref || ev.payload?.head) desc = <PushDesc ev={ev} />;
+        break;
+      case "ReleaseEvent":
+        if (ev.payload?.release) desc = <ReleaseDesc ev={ev} />;
+        break;
+      case "IssuesEvent":
+        if (ev.payload?.issue) desc = <IssueDesc ev={ev} />;
+        break;
+      case "PullRequestEvent":
+        if (ev.payload?.pull_request) desc = <PullDesc ev={ev} />;
+        break;
+    }
+  }
+  return <FeedRepoCard fullName={repoName} token={token} desc={desc} />;
+}
+
+/** Push desc：分支 + SHA 区间（received_events 无 commits 列表 → before→head；有 commits 显示数量） */
+function PushDesc({ ev }: { ev: ReceivedEvent }) {
+  const { t } = useI18n();
+  const commits = ev.payload?.commits ?? [];
+  const ref = ev.payload?.ref?.replace("refs/heads/", "") ?? "HEAD";
+  const head = ev.payload?.head ?? "";
+  const before = ev.payload?.before ?? "";
+  return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <GitCommitHorizontal className="size-3.5 shrink-0 text-emerald-500" />
+      <span className="min-w-0 truncate font-medium text-foreground">{ref}</span>
+      {commits.length > 0 ? (
+        <span className="shrink-0">
+          {t("feed.push.commits").replace("{count}", String(commits.length))}
+        </span>
+      ) : head ? (
+        <code className="shrink-0 text-[11px]">
+          {before ? `${before.slice(0, 7)} → ` : ""}
+          {head.slice(0, 7)}
+        </code>
+      ) : null}
+    </div>
+  );
+}
+
+/** Release desc：版本号 + 正文预览（line-clamp-2） */
+function ReleaseDesc({ ev }: { ev: ReceivedEvent }) {
+  const rel = ev.payload?.release;
+  if (!rel) return null;
+  const body = rel.body?.trim() ?? "";
+  return (
+    <div className="text-sm text-muted-foreground">
+      <a
+        href={rel.html_url ?? "#"}
+        target="_blank"
+        rel="noreferrer"
+        className="font-medium text-foreground hover:underline"
+      >
+        {rel.tag_name ?? rel.name ?? ev.repo.name}
+      </a>
+      {body && <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap wrap-break-word">{body}</p>}
+    </div>
+  );
+}
+
+/** Issue desc：#num 标题（状态着色）+ 动作 */
+function IssueDesc({ ev }: { ev: ReceivedEvent }) {
+  const issue = ev.payload?.issue;
+  if (!issue) return null;
+  const action = ev.payload?.action ?? "updated";
+  const closed = issue.state === "closed";
+  return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <CircleDot
+        className={cn(
+          "size-3.5 shrink-0",
+          closed ? "text-[#8250df] dark:text-[#a371f7]" : "text-[#1a7f37] dark:text-[#3fb950]",
+        )}
+      />
+      <a
+        href={issue.html_url ?? "#"}
+        target="_blank"
+        rel="noreferrer"
+        className="min-w-0 truncate font-medium text-foreground hover:underline"
+        title={issue.title}
+      >
+        #{issue.number} {issue.title}
+      </a>
+      <span className="shrink-0 text-xs">{action}</span>
+    </div>
+  );
+}
+
+/** PR desc：#num 标题（merged/closed/open 着色）+ 动作 */
+function PullDesc({ ev }: { ev: ReceivedEvent }) {
+  const pr = ev.payload?.pull_request;
+  if (!pr) return null;
+  const action = ev.payload?.action ?? "updated";
+  const merged = pr.merged;
+  const closed = pr.state === "closed";
+  return (
+    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+      <GitPullRequest
+        className={cn(
+          "size-3.5 shrink-0",
+          merged || closed
+            ? "text-[#8250df] dark:text-[#a371f7]"
+            : "text-[#1a7f37] dark:text-[#3fb950]",
+        )}
+      />
+      <a
+        href={pr.html_url ?? "#"}
+        target="_blank"
+        rel="noreferrer"
+        className="min-w-0 truncate font-medium text-foreground hover:underline"
+        title={pr.title}
+      >
+        #{pr.number} {pr.title}
+      </a>
+      <span className="shrink-0 text-xs">{action}</span>
+    </div>
+  );
+}
+
+/** Comment desc：评论正文摘要（line-clamp-2）+ 所属 issue/PR 链接 + Read more 展开 */
+function CommentDesc({
   body,
   subject,
 }: {
@@ -636,23 +824,13 @@ function CommentCard({
   subject: { title: string; url: string; number: number } | null;
 }) {
   const [expanded, setExpanded] = useState(false);
-  const collapsible = !expanded && body.split("\n").length > 10;
+  const collapsible = !expanded && body.split("\n").length > 4;
   return (
-    <div className="overflow-hidden rounded-md border bg-muted/30">
-      <div className="relative p-3">
-        <p
-          className={cn(
-            "whitespace-pre-wrap wrap-break-word text-sm text-muted-foreground",
-            collapsible && "line-clamp-10",
-          )}
-        >
-          {body}
-        </p>
-        {collapsible && (
-          <div className="pointer-events-none absolute inset-x-0 bottom-0 h-14 bg-linear-to-t from-card to-transparent" />
-        )}
-      </div>
-      <div className="flex items-center justify-between gap-2 border-t px-3 py-2">
+    <div className="text-sm text-muted-foreground">
+      <p className={cn("whitespace-pre-wrap wrap-break-word", collapsible && "line-clamp-2")}>
+        {body}
+      </p>
+      <div className="mt-1 flex items-center justify-between gap-2">
         {subject?.number ? (
           <a
             href={subject.url}
@@ -671,7 +849,7 @@ function CommentCard({
             onClick={() => setExpanded(true)}
             className="shrink-0 text-xs font-medium text-primary hover:underline"
           >
-            Read more
+            {tStatic("feed.readMore")}
           </button>
         )}
       </div>
@@ -680,10 +858,11 @@ function CommentCard({
 }
 
 /**
- * 官方 feed「仓库体」：仓库元信息 + 列表内 Star / Add to list。
+ * 官方 feed「仓库体」：owner/repo + 元信息（语言 · forks）+ Star / Fork 按钮。
+ * desc 行按事件类型差异化：默认仓库描述；push/release/issue/pr/comment 传入各自摘要节点。
  * - 元数据经 fetchRepositorySmart 获取（GraphQL 首选），模块级缓存避免同仓库重复请求
  * - Star 用仓库查询自带的 viewer_has_starred 初始态；切换经 setStarredSmart（GraphQL 首选）
- * - Add to list：官方 Saved Lists 无公开 API → 保留视觉按钮，点击提示暂不支持
+ * - Fork 经 forkRepositorySmart（REST POST /forks；GraphQL 无 mutation），成功后跳转 fork 仓库
  */
 const feedRepoCache = new Map<string, Promise<Repository | null>>();
 function fetchFeedRepo(fullName: string, token: string | null): Promise<Repository | null> {
@@ -699,8 +878,19 @@ function fetchFeedRepo(fullName: string, token: string | null): Promise<Reposito
   return p;
 }
 
-function FeedRepoCard({ fullName, token }: { fullName: string; token: string | null }) {
+function FeedRepoCard({
+  fullName,
+  token,
+  desc,
+}: {
+  fullName: string;
+  token: string | null;
+  /** 差异化 desc 行（事件类型摘要）；缺省 → 仓库描述 */
+  desc?: ReactNode;
+}) {
+  const { t } = useI18n();
   const [repo, setRepo] = useState<Repository | null | undefined>(undefined);
+  const [forkBusy, setForkBusy] = useState(false);
 
   useEffect(() => {
     let cancelled = false;
@@ -713,6 +903,22 @@ function FeedRepoCard({ fullName, token }: { fullName: string; token: string | n
       cancelled = true;
     };
   }, [fullName, token]);
+
+  // Fork（真实写操作）：REST POST /forks → 跳转 fork 后的仓库
+  const doFork = async () => {
+    if (!token) return;
+    setForkBusy(true);
+    try {
+      const [forkOwner, forkRepo] = fullName.split("/");
+      const forkedName = await forkRepositorySmart(token, forkOwner, forkRepo);
+      toastSuccess(t("feed.forked"), forkedName);
+      window.open(`/${forkedName}`, "_blank", "noopener");
+    } catch {
+      toastError(t("feed.forkFailed"));
+    } finally {
+      setForkBusy(false);
+    }
+  };
 
   if (repo === undefined) {
     return (
@@ -740,7 +946,7 @@ function FeedRepoCard({ fullName, token }: { fullName: string; token: string | n
   const [owner] = fullName.split("/");
   return (
     <div className="rounded-md border bg-muted/30 p-3">
-      {/* 首行：仓库头像 + 链接 + Star / Add to list */}
+      {/* 首行：仓库头像 + 链接 + Star / Fork */}
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           <Avatar className="size-6 rounded">
@@ -760,24 +966,29 @@ function FeedRepoCard({ fullName, token }: { fullName: string; token: string | n
             initialStarred={repo.viewer_has_starred}
             initialCount={repo.stargazers_count}
           />
-          <Tip label="Add to list">
+          <Tip label={t("feed.fork")}>
             <Button
               variant="ghost"
               size="icon"
               className="size-7"
-              onClick={() =>
-                toastInfo("保存列表", "GitHub 官方未公开 Saved Lists API，此功能暂不支持。")
-              }
+              onClick={() => void doFork()}
+              disabled={forkBusy}
             >
-              <Bookmark className="size-3.5" />
+              {forkBusy ? (
+                <Loader2 className="size-3.5 animate-spin" />
+              ) : (
+                <GitFork className="size-3.5" />
+              )}
             </Button>
           </Tip>
         </div>
       </div>
 
-      {repo.description && (
-        <p className="mt-1.5 line-clamp-1 text-sm text-muted-foreground">{repo.description}</p>
-      )}
+      {/* desc 行：差异化摘要（push/release/issue/pr/comment）或仓库描述 */}
+      {desc ??
+        (repo.description && (
+          <p className="mt-1.5 line-clamp-1 text-sm text-muted-foreground">{repo.description}</p>
+        ))}
 
       {/* 元信息：语言 · forks（stars 已在按钮内） */}
       <div className="mt-1.5 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">

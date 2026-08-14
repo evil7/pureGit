@@ -7,10 +7,12 @@ import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
 import {
   ISSUES_QUERY,
+  ISSUE_COUNTS_QUERY,
   ISSUE_DETAIL_QUERY,
   ISSUE_ID_QUERY,
   UPDATE_ISSUE_SUBSCRIPTION_MUTATION,
   PULLS_QUERY,
+  PULL_COUNTS_QUERY,
   PULL_DETAIL_QUERY,
   RELEASES_QUERY,
   RELEASE_DETAIL_QUERY,
@@ -358,6 +360,36 @@ export async function fetchMyPullsSmart(
 }
 
 /**
+ * 轻量 issue 计数（列表分页用）：仅取 repository open/closed issue 的 totalCount（无列表体）。
+ * 分页请求（page>1）走 REST 不含总数，由本函数补全计数供分页器计算总页数；
+ * 失败/匿名返回 null（页面层保留已有计数，Pager 不消失）。
+ */
+export async function fetchIssueCountsSmart(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<{ openCount: number; closedCount: number } | null> {
+  if (!token) return null;
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        openCount: { totalCount: number };
+        closedCount: { totalCount: number };
+      } | null;
+    }> = await graphqlRequest(ISSUE_COUNTS_QUERY, { owner, name: repo }, token);
+    if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+      return {
+        openCount: resp.data.repository.openCount.totalCount,
+        closedCount: resp.data.repository.closedCount.totalCount,
+      };
+    }
+  } catch {
+    /* 网络异常 → null（页面层保留旧计数 / 降级不显示分页器） */
+  }
+  return null;
+}
+
+/**
  * 智能获取仓库 issue 列表：GraphQL repository.issues 首选（天然排除 PR），
  * 失败自动降级 REST /repos/.../issues（客户端过滤 PR）。
  * 过滤参数（author/assignee/labels/sort/q）：GraphQL 不直接支持 → 有过滤时走 REST（免复杂 query 拼装）。
@@ -404,10 +436,27 @@ export async function fetchIssuesSmart(
       ]
         .filter(Boolean)
         .join(" ");
-      const resp = await searchIssuesSmart(qParts, token);
+      const resp = await searchIssuesSmart(qParts, token, page);
       return { items: resp.items, openCount: null, closedCount: null };
     }
     const items = await fetchIssues(owner, repo, state, limit, token, filters, page);
+    // 分页（page>1 且无过滤）REST 响应不含 open/closed 总数 → 并发补一次轻量 GraphQL 计数
+    //（供页面分页器计算总页数；失败/匿名返回 null，页面层保留已有计数防 Pager 消失）
+    const noFilters =
+      !filters ||
+      (!filters.author &&
+        !filters.assignee &&
+        !filters.labels &&
+        !filters.q &&
+        (!filters.sort || filters.sort === "created"));
+    if (page > 1 && noFilters && token) {
+      const counts = await fetchIssueCountsSmart(owner, repo, token);
+      return {
+        items,
+        openCount: counts?.openCount ?? null,
+        closedCount: counts?.closedCount ?? null,
+      };
+    }
     return { items, openCount: null, closedCount: null };
   }
   if (token) {
@@ -635,6 +684,24 @@ export async function fetchPullsSmart(
   // 分页请求（page>1）→ 直接 REST（GraphQL 分页需游标）
   if (page > 1) {
     const items = await fetchPulls(owner, repo, state, 30, token, page, restSort, direction);
+    // 分页 REST 响应不含 open/closed 总数 → 并发补一次轻量 GraphQL 计数
+    //（无过滤时页面分页器需要 totalPages；失败/匿名返回 null，页面层保留已有计数）
+    const noFilters =
+      !filters ||
+      (!filters.author &&
+        !filters.labels &&
+        !filters.milestone &&
+        !filters.assignee &&
+        !filters.q &&
+        !filters.sort);
+    if (noFilters && token) {
+      const counts = await fetchPullsCountsSmart(owner, repo, token);
+      return {
+        items,
+        openCount: counts?.openCount ?? null,
+        closedCount: counts?.closedCount ?? null,
+      };
+    }
     return { items, openCount: null, closedCount: null };
   }
   // 有过滤条件 → search API（REST /pulls 不支持 q/author=@me/labels/milestone/assignee 便捷过滤）
@@ -655,7 +722,7 @@ export async function fetchPullsSmart(
     ]
       .filter(Boolean)
       .join(" ");
-    const resp = await searchIssuesSmart(qParts, token);
+    const resp = await searchIssuesSmart(qParts, token, page);
     // Issue → 最小 PullRequest（search 结果缺 PR 特有字段，行渲染用到的字段已映射）
     const items: PullRequest[] = resp.items
       .filter((i) => i.pull_request)
@@ -730,6 +797,35 @@ export async function fetchPullsSmart(
   }
   const items = await fetchPulls(owner, repo, state, 30, token, 1, restSort, direction);
   return { items, openCount: null, closedCount: null };
+}
+
+/**
+ * 轻量 PR 计数（列表分页用）：仅取 repository open/closed PR 的 totalCount（无列表体）。
+ * 语义与 PULLS_QUERY 一致（closed 含 merged）；失败/匿名返回 null（页面层保留已有计数）。
+ */
+export async function fetchPullsCountsSmart(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<{ openCount: number; closedCount: number } | null> {
+  if (!token) return null;
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        openCount: { totalCount: number };
+        closedCount: { totalCount: number };
+      } | null;
+    }> = await graphqlRequest(PULL_COUNTS_QUERY, { owner, name: repo }, token);
+    if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+      return {
+        openCount: resp.data.repository.openCount.totalCount,
+        closedCount: resp.data.repository.closedCount.totalCount,
+      };
+    }
+  } catch {
+    /* 网络异常 → null（页面层保留旧计数 / 降级不显示分页器） */
+  }
+  return null;
 }
 
 /** 智能获取 PR 详情：GraphQL pullRequest(number) 主通道 + REST 熔断降级（匿名走 REST 硬约束）。 */

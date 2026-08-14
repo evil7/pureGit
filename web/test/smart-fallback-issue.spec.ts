@@ -262,8 +262,28 @@ beforeEach(() => {
 });
 
 describe("fetchIssuesSmart（三级决策：REST 条件 / search / GraphQL 首选降级）", () => {
-  it("page>1 分页 → 直 REST（GraphQL 不调用）", async () => {
-    await fetchIssuesSmart("evil7", "puregit", "open", "gho_x", undefined, 30, 2);
+  it("page>1 分页 → 列表直 REST + 轻量计数补查 GraphQL（供分页器 totalPages）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: { openCount: { totalCount: 10 }, closedCount: { totalCount: 5 } },
+      },
+    } as never);
+    const r = await fetchIssuesSmart("evil7", "puregit", "open", "gho_x", undefined, 30, 2);
+    expect(mockFetchIssues).toHaveBeenCalled(); // 列表直 REST（GraphQL 分页需游标）
+    expect(mockGraphql).toHaveBeenCalledTimes(1); // 仅计数补查（ISSUE_COUNTS_QUERY），非列表
+    expect(r.items).toEqual([restIssue]);
+    expect(r.openCount).toBe(10);
+    expect(r.closedCount).toBe(5);
+  });
+
+  it("page>1 匿名 → 直 REST，无计数补查（GraphQL 不可用）", async () => {
+    await fetchIssuesSmart("evil7", "puregit", "open", undefined, undefined, 30, 2);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchIssues).toHaveBeenCalled();
+  });
+
+  it("page>1 含过滤 → 直 REST，无计数补查（过滤态页面不渲染分页器）", async () => {
+    await fetchIssuesSmart("evil7", "puregit", "open", "gho_x", { author: "alice" }, 30, 2);
     expect(mockGraphql).not.toHaveBeenCalled();
     expect(mockFetchIssues).toHaveBeenCalled();
   });
@@ -407,8 +427,27 @@ describe("setIssueSubscriptionSmart（双步 GraphQL + REST 兜底，订阅语�
 });
 
 describe("fetchPullsSmart（三级决策：分页 REST / 过滤 search / GraphQL 首选降级）", () => {
-  it("page>1 → 直 REST", async () => {
-    await fetchPullsSmart("evil7", "puregit", "open", "gho_x", undefined, 2);
+  it("page>1 → 列表直 REST + 轻量计数补查 GraphQL（供分页器 totalPages）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: { openCount: { totalCount: 3 }, closedCount: { totalCount: 1 } },
+      },
+    } as never);
+    const r = await fetchPullsSmart("evil7", "puregit", "open", "gho_x", undefined, 2);
+    expect(mockFetchPulls).toHaveBeenCalled(); // 列表直 REST（GraphQL 分页需游标）
+    expect(mockGraphql).toHaveBeenCalledTimes(1); // 仅计数补查（PULL_COUNTS_QUERY）
+    expect(r.openCount).toBe(3);
+    expect(r.closedCount).toBe(1);
+  });
+
+  it("page>1 匿名 → 直 REST，无计数补查", async () => {
+    await fetchPullsSmart("evil7", "puregit", "open", undefined, undefined, 2);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchPulls).toHaveBeenCalled();
+  });
+
+  it("page>1 含过滤 → 直 REST，无计数补查（过滤态页面不渲染分页器）", async () => {
+    await fetchPullsSmart("evil7", "puregit", "open", "gho_x", { author: "alice" }, 2);
     expect(mockGraphql).not.toHaveBeenCalled();
     expect(mockFetchPulls).toHaveBeenCalled();
   });

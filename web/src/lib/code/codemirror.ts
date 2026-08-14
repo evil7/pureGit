@@ -281,12 +281,19 @@ export function createCmEditor(
         backgroundColor: colors.bg,
         color: colors.fg,
         fontSize: "13px",
-        height: "100%",
+        // 高度自适应外部容器：flex 父下 flex:1 撑满（min-h 或 fill 链，避免底部空白）；
+        // 独立高度容器由 height:100% 兜底（custom.css .cm-view .cm-editor）
+        flex: "1 1 auto",
+        minHeight: "0",
       },
       ".cm-content": {
         caretColor: colors.accent,
         fontFamily: '"SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace',
         lineHeight: "1.5rem",
+      },
+      ".cm-scroller": {
+        // 横竖滚动条默认允许（内容超出即出现；代码浏览默认 no wrap 依赖横向滚动）
+        overflow: "auto",
       },
       ".cm-gutters": {
         backgroundColor: colors.bg,

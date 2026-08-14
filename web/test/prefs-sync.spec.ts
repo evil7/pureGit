@@ -4,10 +4,11 @@
  * ============================================================================
  *
  * 【本文件针对的验收基线（第一性原理，勿降断言）】
- * `collectLocalPrefs` 将本地偏好（theme/lang/codeTheme/apiMode/dateFormat）打包为
+ * `collectLocalPrefs` 将本地偏好（theme/lang/codeTheme/apiMode/dateFormat/feedFilter）打包为
  * 可上传对象（Worker 端白名单校验，未知键丢弃；本模块先本地过滤一次）：
  * - 合法值收集：theme ∈ {light,dark,system}、lang ∈ {system,zh-CN,en-US}、
- *   codeTheme 任意非空、apiMode ∈ {graphql,rest}、dateFormat ∈ {absolute,iso,relative}
+ *   codeTheme 任意非空、apiMode ∈ {graphql,rest}、dateFormat ∈ {absolute,iso,relative}、
+ *   feedFilter 逗号分隔小写类型串（≤64 字符）
  * - 非法值忽略（不入包）
  * - localStorage 不可用 → 空对象
  * - 安全：prefs 仅 UI 偏好，绝不含 token/密钥
@@ -51,6 +52,7 @@ describe("collectLocalPrefs", () => {
         "pg-code-theme": "github-dark",
         puregit_api_mode: "rest",
         "pg-date-format": "relative",
+        "pg-feed-filter": "star,fork,push",
       }),
     );
     expect(collectLocalPrefs()).toEqual({
@@ -59,7 +61,21 @@ describe("collectLocalPrefs", () => {
       codeTheme: "github-dark",
       apiMode: "rest",
       dateFormat: "relative",
+      feedFilter: "star,fork,push",
     });
+  });
+
+  it("feedFilter 非法值忽略（含大写/特殊字符/超长）", () => {
+    vi.stubGlobal(
+      "localStorage",
+      makeStorage({
+        "pg-feed-filter": "Star,Fork!",
+      }),
+    );
+    expect(collectLocalPrefs()).toEqual({});
+    // 超长（>64 字符）忽略
+    vi.stubGlobal("localStorage", makeStorage({ "pg-feed-filter": "a".repeat(65) }));
+    expect(collectLocalPrefs()).toEqual({});
   });
 
   it("非法值忽略（不入包）", () => {

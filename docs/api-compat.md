@@ -277,7 +277,7 @@ export async function fetchXxxSmart(
 | Teams | teams / team / 团队 | `Organization.teams` → `Team.members` / `Team.repositories` | 🧩 读可迁、写无 mutation → 写维持 REST |
 | Orgs | org member / member role / 成员 / 角色 / 2fa | `Organization.membersWithRole` → `OrganizationMemberEdge.role` / `hasTwoFactorEnabled` | ✅ 成员含角色/2FA 可迁 |
 | Git | git / branch / ref / 分支 / 写文件 / commit | `createRef` / `updateRef` / `deleteRef` / `createCommitOnBranch` | ⚠️ 建分支/写文件有 mutation 但复杂（需 FileChanges 树） |
-| Activity | notification / 通知 / feed / 动态 | — | ✗ `Viewer.notifications` 不存在 → 维持 REST |
+| Activity | notification / 通知 / feed / 动态 | — | ✗ `Viewer.notifications` 不存在 → 维持 REST（feed：`fetchReceivedEvents` 事件类型过滤——`?feed=star,fork,push,comment,release,issue,pr` 逗号分隔多选，`all`/缺省全选；follow 无事件类型（Events API 无 FollowEvent）不提供；过滤偏好键 `pg-feed-filter` 云同步） |
 | Users | gpg / ssh key / 公钥 | — | ✗ 无 `gpgKeys` 字段 / `GpgKey` 类型 → 维持 REST |
 | Security Advisories | security advisory / ghsa / 漏洞 | `SecurityAdvisory`（ghsaId/databaseId/cvss/cwes） | ⚠️ 类型存在但 `Repository.securityAdvisories` 入口不存在 → 维持 REST |
 | Checks | check run / check suite / ci status | `CheckSuite` / `CheckRun`（`Commit.statusCheckRollup`） | ✅ 有入口（项目当前走 REST check-runs） |
