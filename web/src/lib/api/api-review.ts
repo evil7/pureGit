@@ -55,6 +55,7 @@ import type {
   CheckRunsSummary,
   Collaborator,
 } from "../restapi";
+import { toCheckRunsSummary } from "../restapi";
 import { toPull, toIssueComment } from "./api-issue";
 import type { GraphQLPullNode, GraphQLCommentNode } from "./api-issue";
 
@@ -1113,26 +1114,8 @@ export async function fetchPullCheckRunsSmart(
         } | null;
       }> = await graphqlRequest(PR_CHECK_RUNS_QUERY, { owner, name: repo, expression: sha }, token);
       if (!hasGraphQLErrors(resp) && resp.data?.repository?.object) {
-        const runs = resp.data.repository.object.statusCheckRollup.contexts.nodes;
-        if (runs.length === 0) return null;
-        const summary: CheckRunsSummary = {
-          total: runs.length,
-          success: 0,
-          failure: 0,
-          pending: 0,
-        };
-        for (const r of runs) {
-          if (r.status !== "COMPLETED") summary.pending++;
-          else if (r.conclusion === "SUCCESS") summary.success++;
-          else if (
-            r.conclusion === "FAILURE" ||
-            r.conclusion === "CANCELLED" ||
-            r.conclusion === "TIMED_OUT"
-          )
-            summary.failure++;
-          else summary.pending++; // neutral/skipped/stale/action_required 视为非失败
-        }
-        return summary;
+        const runs = resp.data.repository.object.statusCheckRollup?.contexts?.nodes ?? [];
+        return toCheckRunsSummary(runs);
       }
       return withRestFallback(
         () => fetchPullCheckRuns(owner, repo, sha, token),
@@ -1148,6 +1131,76 @@ export async function fetchPullCheckRunsSmart(
     }
   }
   return fetchPullCheckRuns(owner, repo, sha, token);
+}
+
+/**
+ * 批量获取多个 PR head commit 的 CI check-runs 汇总（列表页批量合并，替代逐行单查）。
+ *
+ * 实现：单次 GraphQL 请求内用**别名重复 object(expression)**（c0/c1/c2… 各对应一个 sha），
+ * 一次网络往返返回全部 commit 的 statusCheckRollup —— 列表页 30 行 PR 由 30 次请求合并为 1 次。
+ * 注：PullRequest.headRef.target.statusCheckRollup 批量内联在 GitHub 侧不稳定（部分返回 null），
+ * object(expression) 别名是可靠通道（详情页单查同通道已验证）。
+ *
+ * 分片：object 别名过多会超 GraphQL 成本限制（statusCheckRollup 计费），每批 10 个，循环直至取完。
+ * 降级：整批 GraphQL 失败 → 逐 sha 走 fetchPullCheckRunsSmart（REST 熔断链，日志自动 ↪ 标记）。
+ */
+export async function fetchPullCheckRunsBatchSmart(
+  owner: string,
+  repo: string,
+  shas: string[],
+  token?: string | null,
+): Promise<Map<string, CheckRunsSummary | null>> {
+  const out = new Map<string, CheckRunsSummary | null>();
+  if (!token || shas.length === 0) return out;
+  const BATCH = 10;
+  for (let i = 0; i < shas.length; i += BATCH) {
+    const batch = shas.slice(i, i + BATCH);
+    // 别名 object(expression)：cN 与 sha 下标一一对应（GraphQL 不支持表达式数组，动态拼接）
+    const aliasFields = batch
+      .map(
+        (sha, j) =>
+          `c${i + j}: object(expression: ${JSON.stringify(sha)}) { ... on Commit { statusCheckRollup { contexts(first: 100) { nodes { ... on CheckRun { status conclusion } } } } } }`,
+      )
+      .join("\n");
+    const query = `query PullChecksBatch($owner: String!, $name: String!) {
+      repository(owner: $owner, name: $name) {
+        ${aliasFields}
+      }
+    }`;
+    try {
+      const resp: GraphQLResponse<{
+        repository: Record<
+          string,
+          {
+            statusCheckRollup: {
+              contexts: { nodes: { status: string; conclusion: string | null }[] };
+            } | null;
+          } | null
+        > | null;
+      }> = await graphqlRequest(query, { owner, name: repo }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        for (let k = 0; k < batch.length; k++) {
+          const node = resp.data.repository[`c${i + k}`];
+          out.set(
+            batch[k],
+            node?.statusCheckRollup
+              ? toCheckRunsSummary(node.statusCheckRollup.contexts.nodes)
+              : null,
+          );
+        }
+        continue; // 本批成功 → 下一批
+      }
+      // 本批 GraphQL 失败 → 逐 sha 单查（熔断链）
+      for (const sha of batch) {
+        out.set(sha, await fetchPullCheckRunsSmart(owner, repo, sha, token));
+      }
+    } catch {
+      for (const sha of batch) {
+        out.set(sha, await fetchPullCheckRunsSmart(owner, repo, sha, token));
+      }
+    }
+  }
+  return out;
 }
 
 /** 智能获取仓库协作者：GraphQL Repository.collaborators 首选，失败降级 REST（reviewer 选人数据源）。 */

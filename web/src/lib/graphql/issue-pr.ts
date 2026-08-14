@@ -535,6 +535,8 @@ export const PULL_DETAIL_FULL_QUERY = /* GraphQL */ `
             url
           }
         }
+        # 总评论数（官方字段：issue 评论 + 行内评审评论合计；Conversation tab 计数）
+        totalCommentsCount
         commits {
           totalCount
         }

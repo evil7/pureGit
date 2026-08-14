@@ -121,6 +121,7 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | `fetchCollaboratorsSmart`（仓库协作者：Repository.collaborators，reviewer 选人数据源） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchPullCommitsSmart`（PR Commits tab：PullRequest.commits → Commit） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchPullCheckRunsSmart`（PR CI 状态：Commit.statusCheckRollup，`... on CheckRun` union 聚合） | ✅ | ✅ 降级 | — | — | ✅ |
+| `fetchPullCheckRunsBatchSmart`（PR 列表批量 CI：别名 object(expression) 一次请求拿全部 head commit rollup，每批 10 分片；替代列表行逐 PR 单查——30 行 PR 由 30 次请求合并为 3 次） | ✅ | ✅ 降级 | — | — | ✅ |
 | `fetchSshKeysSmart` / `addSshKeySmart` / `deleteSshKeySmart` | ✅ | ✅ | — | — | ✅ |
 | `isFollowingSmart` / `setFollowingSmart` | ✅ | ✅ | — | — | ✅ |
 | `fetchRepoTopicsSmart` / `replaceRepoTopicsSmart` | ✅ | ✅ | — | — | ✅ |

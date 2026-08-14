@@ -33,6 +33,8 @@ import {
   Strikethrough,
 } from "lucide-react";
 import { useAuth } from "@/hooks/useAuth";
+import { useCodeTheme } from "@/hooks/useCodeTheme";
+import { useTheme } from "@/hooks/useTheme";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import { fetchContributors, type Contributor, type Issue } from "@/lib/restapi";
@@ -127,6 +129,14 @@ export function MarkdownEditor({
 }) {
   const { t } = useI18n();
   const { token } = useAuth();
+  // 编辑器背景跟随偏好设置代码配色（与 CodeView/CodeEditor 同源 codeTheme 明暗背景——
+  // 2026-08-14 用户要求；textarea 透明底透出容器色，预览/空态同底色切换零闪动）
+  const { codeTheme } = useCodeTheme();
+  const { theme } = useTheme();
+  const dark =
+    theme === "dark" ||
+    (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const editorBg = dark ? codeTheme.preview.bgDark : codeTheme.preview.bgLight;
   const fallbackId = useId();
   const textareaId = id ?? fallbackId;
   const [tab, setTab] = useState<"write" | "preview">("write");
@@ -229,12 +239,18 @@ export function MarkdownEditor({
       expander.removeEventListener("text-expander-value", onValueEvt);
       expander.removeEventListener("text-expander-committed", onCommittedEvt);
     };
-  }, [matchSuggestions, onChange]);
+    // tab 依赖：预览切回写模式时 text-expander 重挂载（卸载→新 DOM），
+    // 必须重绑事件，否则 @/#/: 补全失效（切回后输入 @ 无菜单——2026-08-14 实测）
+  }, [matchSuggestions, onChange, tab]);
 
   const handleInput = (v: string) => {
     setValue(v);
     onChange?.(v);
   };
+
+  // 编辑/预览统一最小高度（px）：rows×行高(text-sm leading-relaxed≈23px) + p-3 上下 padding(24px)，
+  // 下限 96px（官方评论编辑器空态高度）。写/预览/空态三处引用同一值 → 切换零闪动（2026-08-14）
+  const editorMinHeight = Math.max(rows * 23 + 24, 96);
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
     if ((e.ctrlKey || e.metaKey) && e.key === "Enter") {
@@ -245,7 +261,8 @@ export function MarkdownEditor({
 
   return (
     <div className={cn("overflow-hidden rounded-lg border bg-card", className)}>
-      {/* 顶部：标题插槽（左）+ Write/Preview + 工具栏（GitHub 官方布局） */}
+      {/* 顶部：标题插槽（左）+ Write/Preview + 工具栏（GitHub 官方布局）——保持主题色（bg-card 继承），
+          仅正文输入区跟随偏好设置代码配色（下） */}
       <div className="flex flex-wrap items-center justify-between gap-2 border-b px-2 py-1.5">
         <div className="flex min-w-0 items-center gap-2">
           {titleSlot}
@@ -276,19 +293,26 @@ export function MarkdownEditor({
         )}
       </div>
 
-      {/* 正文：写模式 textarea / 预览模式 MarkdownView */}
+      {/* 正文：写模式 textarea / 预览模式 MarkdownView（三态最小高度统一 = editorMinHeight） */}
       {tab === "write" ? (
         <text-expander ref={expanderRef} keys=": @ #" className="relative block">
           <textarea
             id={textareaId}
             ref={textareaRef}
-            defaultValue={defaultValue}
+            // 非受控 textarea 的挂载初始值 = 当前编辑值（value state 是唯一事实源）：
+            // 切预览再切回 write 会卸载重挂，若用 props 初始值 defaultValue 则编辑内容丢失
+            // （2026-08-14 实测修复）；提交后清空走父组件 key 重建（重置为 defaultValue prop）
+            defaultValue={value}
             placeholder={placeholder}
             rows={rows}
             autoFocus={autoFocus}
             onChange={(e) => handleInput(e.target.value)}
             onKeyDown={handleKeyDown}
-            className="w-full resize-y bg-transparent p-3 text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
+            style={{ minHeight: editorMinHeight, backgroundColor: editorBg }}
+            // block：textarea 默认 inline-block，在 text-expander 行盒中残留基线行高
+            // （line-height 24px 与自身高度差 ~6px）→ 编辑态底部多出空白，与预览态/圆角容器
+            // 底部不一致（2026-08-14 实测修复）；block 后高度 = 精确 minHeight
+            className="block w-full resize-y bg-transparent p-3 text-sm leading-relaxed outline-none placeholder:text-muted-foreground"
           />
           {/* 补全菜单容器（text-expander 注入 fragment 并定位） */}
           <div
@@ -299,13 +323,19 @@ export function MarkdownEditor({
           />
         </text-expander>
       ) : value.trim() ? (
-        <div className="max-h-80 min-h-24 overflow-y-auto bg-muted/30 p-3">
+        <div
+          className="max-h-80 overflow-y-auto p-3"
+          style={{ minHeight: editorMinHeight, backgroundColor: editorBg }}
+        >
           <MarkdownView rawBase={owner && repo ? repoRawBase(owner, repo) : undefined}>
             {value}
           </MarkdownView>
         </div>
       ) : (
-        <div className="flex h-24 items-center justify-center bg-muted/30 text-sm text-muted-foreground">
+        <div
+          className="flex items-center justify-center text-sm text-muted-foreground"
+          style={{ minHeight: editorMinHeight, backgroundColor: editorBg }}
+        >
           {t("comments.previewEmpty")}
         </div>
       )}

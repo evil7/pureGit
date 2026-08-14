@@ -41,6 +41,7 @@ vi.mock("@/lib/restapi", async (importOriginal) => {
 import {
   fetchPullCommitsSmart,
   fetchPullCheckRunsSmart,
+  fetchPullCheckRunsBatchSmart,
   fetchCollaboratorsSmart,
 } from "@/lib/api/api-review";
 import {
@@ -220,6 +221,68 @@ describe("fetchPullCheckRunsSmart（GraphQL statusCheckRollup 首选 + 降级）
     mockGraphql.mockRejectedValue(new Error("net"));
     expect((await fetchPullCheckRunsSmart("evil7", "puregit", "abc", "gho_x"))?.total).toBe(2);
     expect(mockFetchPullCheckRuns).toHaveBeenCalledTimes(2);
+  });
+});
+
+describe("fetchPullCheckRunsBatchSmart（列表页批量合并：别名 object(expression) 一次拿全部）", () => {
+  it("token 为空 → 返回空 Map（匿名列表无 CI 图标）", async () => {
+    const r = await fetchPullCheckRunsBatchSmart("evil7", "puregit", ["a", "b"], undefined);
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(r.size).toBe(0);
+  });
+
+  it("shas 为空 → 空 Map，不请求", async () => {
+    const r = await fetchPullCheckRunsBatchSmart("evil7", "puregit", [], "gho_x");
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(r.size).toBe(0);
+  });
+
+  it("GraphQL 成功：一次请求含全部别名（≤10），按 sha 映射汇总（无 CI → null）", async () => {
+    const shas = Array.from({ length: 10 }, (_, i) => `sha${i}`);
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          c0: {
+            statusCheckRollup: {
+              contexts: { nodes: [{ status: "COMPLETED", conclusion: "SUCCESS" }] },
+            },
+          },
+          c1: {
+            statusCheckRollup: {
+              contexts: { nodes: [{ status: "COMPLETED", conclusion: "FAILURE" }] },
+            },
+          },
+          // c2..c9 无 rollup（无 CI）
+        },
+      },
+    } as never);
+    const r = await fetchPullCheckRunsBatchSmart("evil7", "puregit", shas, "gho_x");
+    expect(mockGraphql).toHaveBeenCalledTimes(1);
+    expect(r.size).toBe(10);
+    expect(r.get("sha0")).toEqual({ total: 1, success: 1, failure: 0, pending: 0 });
+    expect(r.get("sha1")).toEqual({ total: 1, success: 0, failure: 1, pending: 0 });
+    expect(r.get("sha2")).toBeNull(); // 无 rollup → null
+    // 请求体含 10 个别名（c0..c9）——单请求批量合并
+    const query = mockGraphql.mock.calls[0][0] as string;
+    expect(query).toContain("c0: object(expression:");
+    expect(query).toContain("c9: object(expression:");
+  });
+
+  it(">10 个 shas 分片：每批 10 个别名，循环请求直至取完", async () => {
+    const shas = Array.from({ length: 25 }, (_, i) => `sha${i}`);
+    mockGraphql.mockResolvedValue({
+      data: { repository: { c0: { statusCheckRollup: null } } },
+    } as never);
+    const r = await fetchPullCheckRunsBatchSmart("evil7", "puregit", shas, "gho_x");
+    expect(mockGraphql).toHaveBeenCalledTimes(3); // 25 = 10 + 10 + 5
+    expect(r.size).toBe(25);
+  });
+
+  it("GraphQL errors → 本批逐 sha 熔断降级 REST 单查", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "boom" }] } as never);
+    const r = await fetchPullCheckRunsBatchSmart("evil7", "puregit", ["a", "b"], "gho_x");
+    expect(mockFetchPullCheckRuns).toHaveBeenCalledTimes(2); // 每 sha 一次 REST 降级
+    expect(r.get("a")).toEqual({ total: 2, success: 1, failure: 0, pending: 1 });
   });
 });
 

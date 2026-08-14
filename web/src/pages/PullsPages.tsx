@@ -40,7 +40,7 @@ import {
   fetchRepoLabelsSmart,
   fetchRepoAssigneesSmart,
   fetchRepoMilestonesSmart,
-  fetchPullCheckRunsSmart,
+  fetchPullCheckRunsBatchSmart,
 } from "@/lib/api";
 import {
   apiErrorMessage,
@@ -91,6 +91,8 @@ export default function PullsPage() {
   const page = Math.max(1, Number(searchParams.get("page") ?? "1"));
 
   const [pulls, setPulls] = useState<PullRequest[]>([]);
+  // CI 状态批量映射（sha → 汇总；列表加载后一次批量请求填充，替代逐行单查）
+  const [checksMap, setChecksMap] = useState<Map<string, CheckRunsSummary | null>>(new Map());
   const [openCount, setOpenCount] = useState<number | null>(null);
   const [closedCount, setClosedCount] = useState<number | null>(null);
   const [labelsCount, setLabelsCount] = useState<number | null>(null);
@@ -159,6 +161,21 @@ export default function PullsPage() {
           // 分页响应（page>1 REST 分支）计数可能为 null → 保留已有计数，totalPages 稳定（Pager 不消失）
           if (openCountRes != null) setOpenCount(openCountRes);
           if (closedCountRes != null) setClosedCount(closedCountRes);
+        }
+        // CI 状态批量拉取（仅 open PR 且有 head sha；一次 GraphQL 别名请求拿全部，替代逐行单查）
+        if (!cancelled) {
+          const shas: string[] = [];
+          for (const p of items) {
+            const sha = p.head?.sha;
+            if (p.state === "open" && sha) shas.push(sha);
+          }
+          if (shas.length > 0) {
+            fetchPullCheckRunsBatchSmart(owner!, repo!, shas, token)
+              .then((m) => !cancelled && setChecksMap(m))
+              .catch(() => {});
+          } else {
+            setChecksMap(new Map());
+          }
         }
       })
       .catch((e) => {
@@ -366,7 +383,14 @@ export default function PullsPage() {
         ) : (
           <div className="divide-y">
             {pulls.map((pr) => (
-              <PullRow key={pr.id} pr={pr} owner={owner!} repo={repo!} fmt={fmt} />
+              <PullRow
+                key={pr.id}
+                pr={pr}
+                owner={owner!}
+                repo={repo!}
+                fmt={fmt}
+                checks={pr.head?.sha ? checksMap.get(pr.head.sha) : undefined}
+              />
             ))}
           </div>
         )}
@@ -595,28 +619,17 @@ export function PullRow({
   owner,
   repo,
   fmt,
+  checks,
 }: {
   pr: PullRequest;
   owner: string;
   repo: string;
   fmt: (iso: string) => string;
+  /** CI 汇总（父级批量拉取注入；undefined = 批量未覆盖，不显示图标） */
+  checks?: CheckRunsSummary | null;
 }) {
-  const { token } = useAuth();
   const { t } = useI18n();
   const isDark = useIsDark();
-  const [checks, setChecks] = useState<CheckRunsSummary | null>(null);
-
-  // check-runs 懒加载（仅 open PR 且 head.sha 存在）
-  useEffect(() => {
-    if (pr.state !== "open" || !pr.head?.sha) return;
-    let cancelled = false;
-    fetchPullCheckRunsSmart(owner, repo, pr.head.sha, token)
-      .then((s) => !cancelled && setChecks(s))
-      .catch(() => {});
-    return () => {
-      cancelled = true;
-    };
-  }, [owner, repo, pr.state, pr.head?.sha, token]);
 
   // 状态图标：open=绿 PR / merged=紫 merge / closed=红 PR / draft=灰边框（官方 octicon 配色）
   const statusIcon = pr.draft ? (

@@ -53,7 +53,7 @@ import {
 } from "@/lib/restapi";
 import { fetchCollaboratorsSmart } from "@/lib/api";
 import { COPILOT_AVATAR, copilotDisplayName, isCopilotLogin } from "@/lib/repo/copilot";
-import { REVIEW_STATE_BADGE_TINTED, REVIEW_STATE_ICON } from "@/lib/ui/state-colors";
+import { REVIEW_STATE_BADGE_TINTED } from "@/lib/ui/state-colors";
 import { toastSuccess } from "@/lib/ui/toast";
 import type { PullReviewSummary } from "@/lib/api";
 
@@ -150,31 +150,26 @@ function avatarOf(login: string, avatarUrl?: string | null) {
 
 /* ── 评审状态徽标 ── */
 
-const REVIEW_STATE_META: Record<string, { label: string; className: string; iconClass: string }> = {
+const REVIEW_STATE_META: Record<string, { label: string; className: string }> = {
   APPROVED: {
     label: "已批准",
     className: REVIEW_STATE_BADGE_TINTED.APPROVED,
-    iconClass: REVIEW_STATE_ICON.APPROVED,
   },
   CHANGES_REQUESTED: {
     label: "请求修改",
     className: REVIEW_STATE_BADGE_TINTED.CHANGES_REQUESTED,
-    iconClass: REVIEW_STATE_ICON.CHANGES_REQUESTED,
   },
   COMMENTED: {
     label: "已评论",
     className: REVIEW_STATE_BADGE_TINTED.COMMENTED,
-    iconClass: REVIEW_STATE_ICON.COMMENTED,
   },
   DISMISSED: {
     label: "已驳回",
     className: REVIEW_STATE_BADGE_TINTED.DISMISSED,
-    iconClass: REVIEW_STATE_ICON.DISMISSED,
   },
   PENDING: {
     label: "待提交",
     className: REVIEW_STATE_BADGE_TINTED.PENDING,
-    iconClass: REVIEW_STATE_ICON.PENDING,
   },
 };
 
@@ -190,13 +185,17 @@ export function ReviewStateBadge({
   if (!meta) return null;
   const Icon = state === "APPROVED" ? Check : state === "CHANGES_REQUESTED" ? X : MessageSquare;
   if (iconOnly) {
-    // 评论图标 fill 填色（官方审计者状态图标；Check/X 保持 outline 描边）
+    // 审计者栏状态胶囊：shadcn Badge（圆形 tinted 底 + 状态色 icon，官方 GitHub 审计者状态胶囊同款）
+    // ——不用裸 svg（无组件化/无配色规范）；Check/X 保持 outline 描边，COMMENTED 填色
     return (
-      <Icon
+      <Badge
+        variant="outline"
         aria-label={meta.label}
-        className={`size-3.5 shrink-0 ${meta.iconClass ?? "text-muted-foreground"}`}
-        fill={state === "COMMENTED" ? "currentColor" : undefined}
-      />
+        title={meta.label}
+        className={`size-5 shrink-0 items-center justify-center rounded-full border-transparent p-0 ${meta.className}`}
+      >
+        <Icon className="size-3" fill={state === "COMMENTED" ? "currentColor" : undefined} />
+      </Badge>
     );
   }
   return (

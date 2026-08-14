@@ -48,12 +48,14 @@ import { CodeView } from "@/components/CodeView";
 import { MarkdownView } from "@/components/MarkdownView";
 import { UserAvatar } from "@/components/UserAvatar";
 import { WriteGate } from "@/components/WriteGate";
+import { ForkGate } from "@/components/ForkGate";
 import { SegmentedControl } from "@/components/SegmentedControl";
 import { useTreeCollapse } from "@/lib/repo/tree-collapse";
 import { cn } from "@/lib/utils";
 import type { EditorView } from "@codemirror/view";
 import { collectReferences, type SymbolInfo, type SymbolRef } from "@/lib/code/symbols";
 import { extractOutline, type OutlineItem } from "@/lib/markdown/markdown-outline";
+import { SIDEBAR_STICKY_SCROLL_HEAD } from "@/lib/ui/layout";
 import { BranchPicker, GoToFileInput } from "./RepoCode";
 
 export default function BlobPage() {
@@ -343,36 +345,42 @@ export default function BlobPage() {
             </Button>
           </Tip>
         </div>
-        {/* Edit + More-edit（官方 ButtonGroup：pencil 图标 + 三角下拉；仅写权限显示） */}
+        {/* Edit + More-edit（官方 ButtonGroup：pencil 图标 + 三角下拉；仅写权限显示）
+            ForkGate：非本人仓库点击编辑/删除 → fork 引导（官方语义：他人仓库先 fork 再改） */}
         {token && (
           <WriteGate className="flex items-center gap-1.5">
-            <div className="flex items-stretch overflow-hidden rounded-md border">
-              <Tip label="编辑此文件">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-7 rounded-none"
-                  asChild
-                  aria-label="编辑此文件"
-                >
-                  {/*：blob 已加载内容随导航 state 传给编辑页（省一次内容请求）；直接访问编辑链接则自加载 */}
-                  <Link to={`/${owner}/${repo}/edit/${b}/${path}`} state={{ content: rawContent }}>
-                    <PencilLine className="size-3.5" />
-                  </Link>
-                </Button>
-              </Tip>
-              <Tip label="删除文件">
-                <Button
-                  variant="ghost"
-                  size="icon-sm"
-                  className="h-7 rounded-none text-destructive hover:bg-destructive/10 hover:text-destructive"
-                  onClick={() => setDelOpen(true)}
-                  aria-label="删除文件"
-                >
-                  <Trash2 className="size-3.5" />
-                </Button>
-              </Tip>
-            </div>
+            <ForkGate owner={owner} className="flex items-center gap-1.5">
+              <div className="flex items-stretch overflow-hidden rounded-md border">
+                <Tip label="编辑此文件">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 rounded-none"
+                    asChild
+                    aria-label="编辑此文件"
+                  >
+                    {/*：blob 已加载内容随导航 state 传给编辑页（省一次内容请求）；直接访问编辑链接则自加载 */}
+                    <Link
+                      to={`/${owner}/${repo}/edit/${b}/${path}`}
+                      state={{ content: rawContent }}
+                    >
+                      <PencilLine className="size-3.5" />
+                    </Link>
+                  </Button>
+                </Tip>
+                <Tip label="删除文件">
+                  <Button
+                    variant="ghost"
+                    size="icon-sm"
+                    className="h-7 rounded-none text-destructive hover:bg-destructive/10 hover:text-destructive"
+                    onClick={() => setDelOpen(true)}
+                    aria-label="删除文件"
+                  >
+                    <Trash2 className="size-3.5" />
+                  </Button>
+                </Tip>
+              </div>
+            </ForkGate>
           </WriteGate>
         )}
         {/* 面板切换按钮（官方 blob 头最右）：markdown 预览 → Outline；代码 → Symbols；markdown Code 视图无 */}
@@ -531,7 +539,8 @@ export default function BlobPage() {
             </div>
           </div>
           {outlineOpen && outline.length > 0 && (
-            <div className="w-75 shrink-0">
+            /* Outline 面板：sticky 对齐操作头（top-25），页面滚动自然锁定（同 Symbols） */
+            <div className={cn("w-75 shrink-0", SIDEBAR_STICKY_SCROLL_HEAD)}>
               <OutlinePanel
                 outline={filteredOutline}
                 filter={outlineFilter}
@@ -569,7 +578,9 @@ export default function BlobPage() {
             </div>
           </div>
           {!isMarkdown && symbolsOpen && symbols.length > 0 && (
-            <div className="w-75 shrink-0">
+            /* Symbols 面板：sticky 对齐操作头（top-25），页面滚动自然锁定——
+               面板自身 max-h 限高内滚（SIDEBAR_STICKY_SCROLL_HEAD） */
+            <div className={cn("w-75 shrink-0", SIDEBAR_STICKY_SCROLL_HEAD)}>
               <SymbolsPanel
                 symbols={filteredSymbols}
                 filter={symFilter}

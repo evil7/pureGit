@@ -3,7 +3,7 @@
  * Board file. See rest.ts barrel for full export surface & docs/api-compat.md.
  */
 
-import { typedRequest, fetchWithTimeout, GITHUB_API } from "./rest-core";
+import { typedRequest, fetchWithTimeout, GITHUB_API, ApiError } from "./rest-core";
 import type { GitHubUser } from "./rest-core";
 
 // ===== M3 写操作 API（需 token）=====
@@ -131,6 +131,12 @@ export interface PullRequest {
   body: string | null;
   merged_at: string | null;
   comments: number;
+  /** 行内评审评论数（REST 详情原生 review_comments；GraphQL 详情不映射，Conversation 计数降级用） */
+  review_comments?: number;
+  /** 总评论数（GraphQL totalCommentsCount 官方字段；REST 降级 = comments + review_comments） */
+  total_comments?: number;
+  /** CI check-runs 汇总（GraphQL 列表批量内联 statusCheckRollup 携带；REST/search 列表无此字段 = undefined，行组件回退单查） */
+  checks?: CheckRunsSummary | null;
   commits: number;
   /** 关联 issue 数（GraphQL closingIssuesReferences；REST 原生无此字段，undefined 时列表不渲染） */
   linked_issues?: number;
@@ -168,6 +174,34 @@ export interface CheckRunsSummary {
   pending: number;
 }
 
+/** check-run 归一化输入（GraphQL statusCheckRollup CheckRun / REST check_runs 共用；状态枚举大小写统一转大写比较） */
+export interface CheckRunLike {
+  status: string | null;
+  conclusion: string | null;
+}
+
+/**
+ * check-run 列表 → 汇总（空列表 → null）。
+ * GraphQL（statusCheckRollup.contexts）与 REST（check_runs）两通道共用：
+ * 状态枚举大小写不同（COMPLETED vs completed）→ 统一 toUpperCase 比较。
+ */
+export function toCheckRunsSummary(
+  nodes: CheckRunLike[] | undefined | null,
+): CheckRunsSummary | null {
+  if (!nodes || nodes.length === 0) return null;
+  const summary: CheckRunsSummary = { total: nodes.length, success: 0, failure: 0, pending: 0 };
+  for (const r of nodes) {
+    const status = (r.status ?? "").toUpperCase();
+    const conclusion = (r.conclusion ?? "").toUpperCase();
+    if (status !== "COMPLETED") summary.pending++;
+    else if (conclusion === "SUCCESS") summary.success++;
+    else if (conclusion === "FAILURE" || conclusion === "CANCELLED" || conclusion === "TIMED_OUT")
+      summary.failure++;
+    else summary.pending++; // neutral/skipped/stale/action_required 视为非失败
+  }
+  return summary;
+}
+
 /**
  * 获取 PR head commit 的 check-runs（CI 状态；GET /repos/{o}/{r}/commits/{sha}/check-runs）。
  * 无 checks / 404 返回 null（官方显示无 checks）。
@@ -191,20 +225,7 @@ export async function fetchPullCheckRuns(
       }),
     );
     const runs = resp.check_runs ?? [];
-    if (runs.length === 0) return null;
-    const summary: CheckRunsSummary = { total: runs.length, success: 0, failure: 0, pending: 0 };
-    for (const r of runs) {
-      if (r.status !== "completed") summary.pending++;
-      else if (r.conclusion === "success") summary.success++;
-      else if (
-        r.conclusion === "failure" ||
-        r.conclusion === "cancelled" ||
-        r.conclusion === "timed_out"
-      )
-        summary.failure++;
-      else summary.pending++; // neutral/skipped/stale 视为非失败
-    }
-    return summary;
+    return toCheckRunsSummary(runs);
   } catch {
     return null; // 404（无 checks）/ 网络错误 → 不显示
   }
@@ -437,6 +458,8 @@ export async function addIssueComment(
 /** PR 行内评审评论（GET /repos/{o}/{r}/pulls/{n}/comments） */
 export interface ReviewComment {
   id: number;
+  /** GraphQL node id（REST 通道无此字段；GraphQL 评论无 REST database id、id 固定 -1 → 唯一 key 用 nodeId） */
+  nodeId?: string;
   body: string;
   user: { login: string; avatar_url: string };
   created_at: string;
@@ -667,9 +690,15 @@ export async function fetchPullDetail(
   number: number,
   token?: string | null,
 ): Promise<PullRequest> {
-  return typedRequest<PullRequest>(token, (octokit) =>
+  // REST 原生 comments 仅计 issue 评论、review_comments 计行内评审评论 → 合计为总评论数
+  // （对齐 GraphQL totalCommentsCount；Conversation tab 计数统一用 total_comments）
+  const pr = await typedRequest<PullRequest>(token, (octokit) =>
     octokit.rest.pulls.get({ owner, repo, pull_number: number }),
   );
+  return {
+    ...pr,
+    total_comments: (pr.comments ?? 0) + (pr.review_comments ?? 0),
+  };
 }
 
 // ===== 用户级导航（Issues/Pulls/Notifications/Feed）=====
@@ -690,18 +719,38 @@ export interface PullFile {
 }
 
 /**
- * 获取 PR 变更文件列表。
+ * 分页获取 PR 变更文件列表（每页默认 5 个，Files changed tab 用「加载更多」逐步加载，
+ * 避免大 PR 一次全量拉取卡死——unified diff patch 是大体积数据）。
  * 注：GraphQL pullRequest.files 不返回 unified diff patch → 仅 REST（双端降级不适用）。
+ * hasMore 用 Link 头 `rel="next"` 精确判断（页满判断在恰好整页时误报多一次空请求）——
+ * Link 头解析属特殊语义端点，走 fetchWithTimeout 底层通道（开发规范 8 豁免项）。
  */
 export async function fetchPullFiles(
   owner: string,
   repo: string,
   number: number,
   token?: string | null,
-): Promise<PullFile[]> {
-  return typedRequest<PullFile[]>(token, (octokit) =>
-    octokit.rest.pulls.listFiles({ owner, repo, pull_number: number, per_page: 100 }),
+  page = 1,
+  perPage = 5,
+): Promise<{ items: PullFile[]; hasMore: boolean }> {
+  const res = await fetchWithTimeout(
+    `${GITHUB_API}/repos/${encodeURIComponent(owner)}/${encodeURIComponent(repo)}/pulls/${number}/files?per_page=${perPage}&page=${page}`,
+    {
+      headers: token ? { Authorization: `Bearer ${token}` } : {},
+    },
   );
+  if (!res.ok) {
+    let detail = "";
+    try {
+      detail = await res.text();
+    } catch {
+      /* ignore */
+    }
+    throw new ApiError(res.status, detail);
+  }
+  const items = (await res.json()) as PullFile[];
+  const link = res.headers.get("link");
+  return { items, hasMore: link?.includes('rel="next"') ?? false };
 }
 
 // ===== PR commits（GET /pulls/{n}/commits）=====

@@ -61,6 +61,7 @@ import type {
   RepoLabel,
   RepoMilestone,
 } from "../restapi";
+import { toCheckRunsSummary } from "../restapi";
 import { searchIssuesSmart, searchIssueId } from "./api-search";
 import { toRelease } from "./api-repo";
 import type { GraphQLReleaseNode } from "./api-repo";
@@ -139,9 +140,21 @@ export interface GraphQLPullNode {
   baseRefOid: string;
   headRepositoryOwner: { login: string } | null;
   baseRepository: { owner: { login: string } } | null;
+  /** 批量 CI 状态（列表查询内联 statusCheckRollup；详情查询无此字段 = undefined） */
+  headRef?: {
+    target: {
+      statusCheckRollup?: {
+        contexts: {
+          nodes: { status: string; conclusion: string | null }[];
+        } | null;
+      } | null;
+    } | null;
+  } | null;
   labels?: { nodes: { name: string; color: string }[] };
   assignees?: { nodes: { login: string; avatarUrl?: string }[] } | null;
   milestone?: { title: string; number?: number } | null;
+  /** 总评论数（官方 totalCommentsCount：issue 评论 + 行内评审评论合计；Conversation tab 计数） */
+  totalCommentsCount?: number;
   /** PR 详情完整查询（PULL_DETAIL_FULL_QUERY）附加：评审摘要字段（Reviewers 栏 / 合并判定 / merge 操作 node id） */
   id?: string;
   reviewDecision?: string | null;
@@ -177,6 +190,13 @@ export function toPull(g: GraphQLPullNode): PullRequest {
       (g.comments?.totalCount ?? 0) +
       (g.reviews?.totalCount ?? 0) +
       (g.reviewThreads?.totalCount ?? 0),
+    // 总评论数（官方 totalCommentsCount 精确字段；列表查询无此字段时回退 comments 合计）
+    total_comments: g.totalCommentsCount ?? g.comments?.totalCount ?? 0,
+    // CI 汇总：列表查询内联了 headRef.statusCheckRollup → 转换（无 rollup/无 contexts = 无 CI → null）；
+    // 查询未内联 headRef（详情等）→ undefined（未携带，行组件回退单查）
+    checks: g.headRef
+      ? toCheckRunsSummary(g.headRef.target?.statusCheckRollup?.contexts?.nodes ?? null)
+      : undefined,
     /** 关联 issue 数（PR 描述中引用、可关闭的 issues） */
     linked_issues: g.closingIssuesReferences?.totalCount ?? 0,
     commits: g.commits?.totalCount ?? 0,
@@ -1087,7 +1107,8 @@ function toReviewComment(
   const side: "LEFT" | "RIGHT" =
     g.originalPosition != null && g.position == null ? "LEFT" : "RIGHT";
   return {
-    id: -1,
+    id: -1, // GraphQL 无 REST database id；唯一 key 走 nodeId
+    nodeId: g.id,
     body: g.body,
     user: { login: g.author?.login ?? "ghost", avatar_url: g.author?.avatarUrl ?? "" },
     created_at: g.createdAt,
@@ -1199,7 +1220,8 @@ export async function addPullReviewCommentSmart(
       const c = mutResp.data?.addPullRequestReviewComment?.comment;
       if (c && !hasGraphQLErrors(mutResp)) {
         return {
-          id: -1,
+          id: -1, // GraphQL 无 REST database id；唯一 key 走 nodeId
+          nodeId: c.id,
           body: c.body,
           user: { login: c.author?.login ?? "ghost", avatar_url: c.author?.avatarUrl ?? "" },
           created_at: c.createdAt,

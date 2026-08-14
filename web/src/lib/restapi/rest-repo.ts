@@ -233,9 +233,11 @@ export async function forkRepository(
   token: string,
   owner: string,
   repo: string,
+  /** fork 目标（默认本人；传组织名 → fork 到组织，POST /repos/{o}/{r}/forks organization 参数） */
+  organization?: string,
 ): Promise<Repository> {
   return typedRequest<Repository>(token, (octokit) =>
-    octokit.rest.repos.createFork({ owner, repo }),
+    octokit.rest.repos.createFork({ owner, repo, organization }),
   );
 }
 

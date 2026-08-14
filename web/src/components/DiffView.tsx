@@ -406,7 +406,8 @@ function CommentRows({
     <td colSpan={4} className="border-t bg-muted/10 p-3">
       <div className="space-y-2">
         {comments.map((c) => (
-          <div key={c.id} className="flex items-start gap-2">
+          // key 优先 nodeId（GraphQL 唯一；id 恒 -1），REST 通道回退数字 id
+          <div key={c.nodeId ?? c.id} className="flex items-start gap-2">
             <img
               src={c.user.avatar_url}
               alt={c.user.login}

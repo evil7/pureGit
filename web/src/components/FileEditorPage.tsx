@@ -16,6 +16,7 @@
 import { useEffect, useMemo, useState, Fragment } from "react";
 import { useNavigate, useParams, useLocation, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { NeedFork } from "@/components/NeedFork";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import {
@@ -274,6 +275,10 @@ export function FileEditorPage() {
     setFileName((prevName) => `${dirs[dirs.length - 1]}/${prevName}`);
   };
 
+  // 仓库归属判断：非本人管理的仓库（owner ≠ 登录用户）不能直接编辑/新建/删除文件，
+  // 右栏渲染 fork 引导卡（官方语义：先 fork 到本人副本再修改，改动经 PR 提交回原仓库）
+  const isOwnRepo = !token || owner?.toLowerCase() === user?.login?.toLowerCase();
+
   return (
     <div className={PAGE_SHELL}>
       {/* 屏幕阅读器标题（官方 sr-only） */}
@@ -286,84 +291,90 @@ export function FileEditorPage() {
         {/* 左栏：文件树（共享 FileTreeSidebar） */}
         <FileTreeSidebar branch={branch} currentPath={treeCurrentPath} treeRoot={treeNode} />
 
-        {/* 右栏：编辑区 */}
+        {/* 右栏：编辑区（非本人仓库 → NeedFork 占位引导页替代：fork 目标下拉 + fork 按钮） */}
         <div className={cn("min-w-0", CONTENT_FILL)}>
-          {treeError && (
-            <InlineError message={treeError} variant="warning" size="sm" className="mb-2" />
-          )}
+          {!isOwnRepo ? (
+            <NeedFork owner={owner} action={isNew ? "新建" : "编辑"} />
+          ) : (
+            <>
+              {treeError && (
+                <InlineError message={treeError} variant="warning" size="sm" className="mb-2" />
+              )}
 
-          {/* 面包屑 + 文件名输入框 + 右上角操作按钮（官方 Create/Edit file 头部：同一行，面包屑左、按钮右） */}
-          <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
-            {/* 左：面包屑（仓库名 + 目录段 + 文件名输入框 in branch） */}
-            <div className="flex flex-wrap items-center gap-1">
-              {/* 仓库名（不带 owner，官方同款） */}
-              <Link
-                to={`/${owner}/${repo}`}
-                className="font-medium text-foreground hover:underline"
-              >
-                {repo}
-              </Link>
-              {/* 目录段（可点击跳 tree 页） */}
-              {dirs.map((d, i) => (
-                <Fragment key={`${i}-${d}`}>
-                  <span aria-hidden>/</span>
+              {/* 面包屑 + 文件名输入框 + 右上角操作按钮（官方 Create/Edit file 头部：同一行，面包屑左、按钮右） */}
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-2 text-sm text-muted-foreground">
+                {/* 左：面包屑（仓库名 + 目录段 + 文件名输入框 in branch） */}
+                <div className="flex flex-wrap items-center gap-1">
+                  {/* 仓库名（不带 owner，官方同款） */}
                   <Link
-                    to={`/${owner}/${repo}/tree/${branch}/${dirs.slice(0, i + 1).join("/")}`}
-                    className="hover:text-foreground hover:underline"
+                    to={`/${owner}/${repo}`}
+                    className="font-medium text-foreground hover:underline"
                   >
-                    {d}
+                    {repo}
                   </Link>
-                </Fragment>
-              ))}
-              <span aria-hidden>/</span>
-              {/* 文件名输入框（最前 Backspace 合并目录段） */}
-              <Input
-                value={fileName}
-                onChange={(e) => handleFileNameChange(e.target.value)}
-                onKeyDown={handleFileNameKeyDown}
-                placeholder="Name your file…"
-                className="h-7 w-40 rounded-md border px-2 font-mono text-sm"
-                autoFocus={isNew}
-                aria-label="File name"
-              />
-              <span className="mx-1">in</span>
-              <Link
-                to={`/${owner}/${repo}/tree/${branch}`}
-                className="font-medium text-foreground hover:underline"
-              >
-                {branch}
-              </Link>
-            </div>
-            {/* 右：Cancel changes + Commit changes…（官方右上角） */}
-            <div className="flex flex-wrap items-center gap-2">
-              <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
-                Cancel changes
-              </Button>
-              <Button
-                size="sm"
-                disabled={!token || !fullPath.trim()}
-                onClick={() => {
-                  setError(null);
-                  setCommitMode("direct");
-                  setNewBranch(defaultNewBranch);
-                  setCommitOpen(true);
-                }}
-              >
-                Commit changes…
-              </Button>
-            </div>
-          </div>
+                  {/* 目录段（可点击跳 tree 页） */}
+                  {dirs.map((d, i) => (
+                    <Fragment key={`${i}-${d}`}>
+                      <span aria-hidden>/</span>
+                      <Link
+                        to={`/${owner}/${repo}/tree/${branch}/${dirs.slice(0, i + 1).join("/")}`}
+                        className="hover:text-foreground hover:underline"
+                      >
+                        {d}
+                      </Link>
+                    </Fragment>
+                  ))}
+                  <span aria-hidden>/</span>
+                  {/* 文件名输入框（最前 Backspace 合并目录段） */}
+                  <Input
+                    value={fileName}
+                    onChange={(e) => handleFileNameChange(e.target.value)}
+                    onKeyDown={handleFileNameKeyDown}
+                    placeholder="Name your file…"
+                    className="h-7 w-40 rounded-md border px-2 font-mono text-sm"
+                    autoFocus={isNew}
+                    aria-label="File name"
+                  />
+                  <span className="mx-1">in</span>
+                  <Link
+                    to={`/${owner}/${repo}/tree/${branch}`}
+                    className="font-medium text-foreground hover:underline"
+                  >
+                    {branch}
+                  </Link>
+                </div>
+                {/* 右：Cancel changes + Commit changes…（官方右上角） */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <Button variant="ghost" size="sm" onClick={() => navigate(-1)}>
+                    Cancel changes
+                  </Button>
+                  <Button
+                    size="sm"
+                    disabled={!token || !fullPath.trim()}
+                    onClick={() => {
+                      setError(null);
+                      setCommitMode("direct");
+                      setNewBranch(defaultNewBranch);
+                      setCommitOpen(true);
+                    }}
+                  >
+                    Commit changes…
+                  </Button>
+                </div>
+              </div>
 
-          {/* 编辑区：CodeEditor（行号 + 编辑/预览 + 高亮，撑满右栏高度） */}
-          <div className="flex flex-col gap-2">
-            <CodeEditor
-              value={content}
-              onChange={setContent}
-              path={fullPath}
-              placeholder="文件内容…"
-              minHeight="min-h-[calc(100svh-10rem)]"
-            />
-          </div>
+              {/* 编辑区：CodeEditor（行号 + 编辑/预览 + 高亮，撑满右栏高度） */}
+              <div className="flex flex-col gap-2">
+                <CodeEditor
+                  value={content}
+                  onChange={setContent}
+                  path={fullPath}
+                  placeholder="文件内容…"
+                  minHeight="min-h-[calc(100svh-10rem)]"
+                />
+              </div>
+            </>
+          )}
         </div>
       </div>
       {/* 编辑区 / 右栏 / 两栏 grid */}

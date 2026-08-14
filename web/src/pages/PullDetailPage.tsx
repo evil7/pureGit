@@ -129,11 +129,15 @@ export default function PullDetailPage() {
     repo: string;
     number: string;
   }>();
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const { fmt } = useDateFormat();
   const [pr, setPr] = useState<PullRequest | null>(null);
   const [comments, setComments] = useState<IssueComment[] | null>(null);
-  const [files, setFiles] = useState<PullFile[] | null>(null);
+  /** Files changed 分页状态：items 已加载文件 / page 当前页 / hasMore 是否还有（每次 5 个，大 PR 防卡死） */
+  const [files, setFiles] = useState<{ items: PullFile[]; page: number; hasMore: boolean } | null>(
+    null,
+  );
+  const [filesLoadingMore, setFilesLoadingMore] = useState(false);
   const [commits, setCommits] = useState<PullCommit[] | null>(null);
   const [checks, setChecks] = useState<CheckRunsSummary | null | undefined>(undefined); // undefined=加载中 null=无checks
   const [reviewSummary, setReviewSummary] = useState<PullReviewSummary | null | undefined>(
@@ -202,17 +206,40 @@ export default function PullDetailPage() {
     };
   }, [tab, checks, pr?.head?.sha, owner, repo, token]);
 
-  // Files changed：切到该 tab 时懒加载
+  // Files changed：切到该 tab 时懒加载第一页（每页 5 个；大 PR 避免一次全量拉取卡死）
   useEffect(() => {
     if (tab !== "files" || files !== null) return;
     let cancelled = false;
-    fetchPullFiles(owner!, repo!, Number(number), token)
-      .then((list) => !cancelled && setFiles(list))
-      .catch(() => !cancelled && setFiles([]));
+    fetchPullFiles(owner!, repo!, Number(number), token, 1, 5)
+      .then(({ items, hasMore }) => !cancelled && setFiles({ items, page: 1, hasMore }))
+      .catch(() => !cancelled && setFiles({ items: [], page: 1, hasMore: false }));
     return () => {
       cancelled = true;
     };
   }, [tab, files, owner, repo, number, token]);
+
+  // Files changed：加载更多（追加下一页文件到列表）
+  const loadMoreFiles = async () => {
+    if (!files || !files.hasMore || filesLoadingMore) return;
+    setFilesLoadingMore(true);
+    try {
+      const { items, hasMore } = await fetchPullFiles(
+        owner!,
+        repo!,
+        Number(number),
+        token,
+        files.page + 1,
+        5,
+      );
+      setFiles((prev) =>
+        prev ? { items: [...prev.items, ...items], page: prev.page + 1, hasMore } : prev,
+      );
+    } catch (e) {
+      toastError(apiErrorMessage(e, "加载更多文件失败"));
+    } finally {
+      setFilesLoadingMore(false);
+    }
+  };
 
   // 新评论即时追加：评论列表计数 + 时间线事件（官方发表评论后立即出现在 Conversation）
   const appendTimelineComment = (c: IssueComment) => {
@@ -298,6 +325,13 @@ export default function PullDetailPage() {
   // 整页级致命错误（PR 不存在/限流/5xx）→ 路由 errorElement 全局错误页
   if (error || !pr) throw error ?? new ApiError(404);
 
+  // 操作区可见性：仅「本人管理的仓库（base owner = 登录用户）或本人参与的 PR（作者 = 自己）」
+  // 显示 Merge / Review changes / 关闭 操作框——非本人项目不出现操作框（2026-08-14 用户要求；
+  // 官方：无 base 仓库写权限即无 merge/review 入口，作者可关闭自己的 PR）
+  const isOwnRepo = owner?.toLowerCase() === user?.login?.toLowerCase();
+  const isMyPr = pr.user.login?.toLowerCase() === user?.login?.toLowerCase();
+  const showOps = Boolean(token) && (isOwnRepo || isMyPr);
+
   // 参与者 = 作者 + 指派人 + 评论者 + 评审作者（去重，官方同源聚合——Copilot 评审也计入）
   const participants = Array.from(
     new Map(
@@ -380,8 +414,9 @@ export default function PullDetailPage() {
           </div>
         </header>
 
-        {/* 评审操作区：Merge + Review changes + 关闭/重新打开（open PR 且有权限时） */}
-        {(pr.state === "open" || pr.merged_at) && (
+        {/* 评审操作区：Merge + Review changes + 关闭/重新打开（本人管理/参与的 PR 才显示；
+            非本人项目无操作框） */}
+        {(pr.state === "open" || pr.merged_at) && showOps && (
           <div className="mt-4 space-y-3">
             {pr.state === "open" && !pr.merged_at && (
               <MergePanel
@@ -452,7 +487,10 @@ export default function PullDetailPage() {
             <TabsTrigger value="conversation">
               <MessageSquare className="size-3.5" />
               Conversation
-              {comments && <span className="text-muted-foreground">{comments.length}</span>}
+              {/* 总评论数（含行内评审评论，详情查询一次拿到；官方 totalCommentsCount 语义） */}
+              {(pr.total_comments ?? 0) > 0 && (
+                <span className="text-muted-foreground">{pr.total_comments}</span>
+              )}
             </TabsTrigger>
             <TabsTrigger value="commits">
               <GitCommit className="size-3.5" />
@@ -467,7 +505,10 @@ export default function PullDetailPage() {
             <TabsTrigger value="files">
               <FileDiff className="size-3.5" />
               Files changed
-              {files && <span className="text-muted-foreground">{files.length}</span>}
+              {/* 文件总数（详情查询一次拿到；不再依赖 files 分页加载进度） */}
+              {pr.changed_files > 0 && (
+                <span className="text-muted-foreground">{pr.changed_files}</span>
+              )}
             </TabsTrigger>
           </TabsList>
         </Tabs>
@@ -719,7 +760,7 @@ export default function PullDetailPage() {
             </div>
           )}
 
-          {/* Files changed：diff 视图 */}
+          {/* Files changed：diff 视图（分页加载，每次 5 个 + 加载更多） */}
           {tab === "files" && (
             <div className="mt-4">
               {files === null ? (
@@ -729,14 +770,28 @@ export default function PullDetailPage() {
                   ))}
                 </div>
               ) : (
-                <DiffView
-                  files={files}
-                  owner={owner}
-                  repo={repo}
-                  number={Number(number)}
-                  baseSha={pr.base?.sha}
-                  headSha={pr.head?.sha}
-                />
+                <div className="flex flex-col gap-3">
+                  <DiffView
+                    files={files.items}
+                    owner={owner}
+                    repo={repo}
+                    number={Number(number)}
+                    baseSha={pr.base?.sha}
+                    headSha={pr.head?.sha}
+                  />
+                  {files.hasMore && (
+                    <div className="flex justify-center pt-1">
+                      <Button
+                        variant="outline"
+                        size="sm"
+                        onClick={loadMoreFiles}
+                        disabled={filesLoadingMore}
+                      >
+                        {filesLoadingMore ? "加载中…" : "加载更多文件"}
+                      </Button>
+                    </div>
+                  )}
+                </div>
               )}
             </div>
           )}

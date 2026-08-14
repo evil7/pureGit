@@ -20,7 +20,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Logo } from "@/components/Logo";
 import { NotFoundSceneLayout } from "@/components/NotFoundScene";
-import { triggerLoginSpotlight } from "@/lib/auth/login-spotlight";
+import { triggerRippleSpotlight } from "@/lib/ui/ripple-spotlight";
 import { useI18n } from "@/i18n";
 import { ApiError, normalizeApiError } from "@/lib/restapi";
 import { getPrefsToken } from "@/lib/auth/prefs-sync";
@@ -102,7 +102,7 @@ export function RateLimitPage({ err }: { err?: ApiError }) {
   // 未登录 → 聚光灯引导右上角登录按钮（与 LoginPrompt 同机制）
   useEffect(() => {
     if (isAuthed) return;
-    const timer = setTimeout(() => triggerLoginSpotlight(), 350);
+    const timer = setTimeout(() => triggerRippleSpotlight(), 350);
     return () => clearTimeout(timer);
   }, [isAuthed]);
 

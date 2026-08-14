@@ -98,7 +98,7 @@ const OrgProfileRedirect = lazy(() =>
 );
 import { useTheme } from "@/hooks/useTheme";
 import { Toaster } from "@/components/ui/sonner";
-import { LoginSpotlight } from "@/components/LoginSpotlight";
+import { RippleSpotlight } from "@/components/RippleSpotlight";
 import Nav from "@/components/Nav";
 import AppFooter from "@/components/AppFooter";
 import ScopeWarningBanner from "@/components/ScopeWarningBanner";
@@ -327,8 +327,8 @@ function App() {
     <>
       {/* 全局统一操作提醒（右下角；success/error/warning/info 按类型着色） */}
       <Toaster richColors position="bottom-right" closeButton />
-      {/* 登录聚光灯动画（监听全局事件；需登录场景指引视线到右上角登录按钮） */}
-      <LoginSpotlight />
+      {/* 涟漪聚光灯动画（监听全局事件；需聚焦场景指引视线到目标元素） */}
+      <RippleSpotlight />
       <RouterProvider router={router} />
     </>
   );

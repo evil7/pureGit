@@ -666,13 +666,15 @@ export async function setStarredSmart(
   return null;
 }
 
-/** fork 仓库（GraphQL 无 mutation，直接 REST POST /forks），返回 fork 后的完整名称 */
+/** fork 仓库（GraphQL 无 mutation，直接 REST POST /forks），返回 fork 后的完整名称。
+ * organization 可选：默认 fork 到本人；传组织名 → fork 到该组织 */
 export async function forkRepositorySmart(
   token: string,
   owner: string,
   repo: string,
+  organization?: string,
 ): Promise<string> {
-  const forked = await forkRepository(token, owner, repo);
+  const forked = await forkRepository(token, owner, repo, organization);
   return forked.full_name;
 }
 

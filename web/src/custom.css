@@ -150,7 +150,7 @@ main > * {
 /* ===== 登录聚光灯动画 =====
  * 遮罩视为有内外径的环形（pie/donut），圆心固定在目标元素（如右上角登录按钮）：
  * 变暗聚拢 → 收缩聚焦环 → 目标摇头 + 聚焦环匀速淡出。
- * mask radial-gradient 环形由 JS（LoginSpotlight.tsx）rAF 驱动。
+ * mask radial-gradient 环形由 JS（RippleSpotlight.tsx）rAF 驱动。
  * 元素固定半透明遮罩背景，仅环形区域可见。
  * 遮罩色（2026-08-09）：用主题前景色 color-mix——light 前景黑→黑遮罩（暗化）；
  * dark 前景白→白遮罩（亮化），明暗主题自动反转，不再硬编码黑。 */

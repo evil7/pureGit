@@ -18,7 +18,7 @@
 import { createRestClient, type ApiErrorLike, getApiUsage } from "../api/octokit";
 import { notifyRateLimit } from "../ui/toast";
 import { getPrefsToken } from "../auth/prefs-sync";
-import { triggerLoginSpotlight } from "@/lib/auth/login-spotlight";
+import { triggerRippleSpotlight } from "@/lib/ui/ripple-spotlight";
 import type { Octokit } from "@octokit/rest";
 
 export const GITHUB_API = "https://api.github.com";
@@ -219,7 +219,7 @@ function triggerSpotlightThrottled(): void {
   const now = Date.now();
   if (now - lastSpotlightAt < 30_000) return;
   lastSpotlightAt = now;
-  triggerLoginSpotlight();
+  triggerRippleSpotlight();
 }
 
 export interface GitHubUser {

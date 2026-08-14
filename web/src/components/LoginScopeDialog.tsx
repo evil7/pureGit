@@ -26,7 +26,7 @@ import { useI18n } from "@/i18n";
 import { KeyRound, ShieldCheck, Eye, PencilLine } from "lucide-react";
 import { SegmentedControl, type SegmentedOption } from "@/components/SegmentedControl";
 import { InlineError } from "@/components/InlineError";
-import { LOGIN_TRIGGER_ID } from "@/lib/auth/login-trigger";
+import { LOGIN_TRIGGER_ID } from "@/lib/ui/ripple-spotlight";
 
 /** 登录按钮 + 权限选择对话框 */
 export function LoginScopeDialog({
@@ -83,7 +83,7 @@ export function LoginScopeDialog({
         <DialogTrigger asChild>{children}</DialogTrigger>
       ) : (
         <DialogTrigger asChild>
-          {/* id=聚光灯目标定位（topbar 登录按钮，LoginSpotlight 动画落点） */}
+          {/* id=涟漪聚光灯目标定位（topbar 登录按钮，RippleSpotlight 动画落点） */}
           <Button id={LOGIN_TRIGGER_ID} size="sm">
             {t("login.button")}
           </Button>

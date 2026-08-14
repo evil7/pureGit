@@ -496,6 +496,61 @@ describe("fetchPullsSmart（三级决策：分页 REST / 过滤 search / GraphQL
     expect(p.additions).toBe(100);
     expect(p.labels).toEqual([{ name: "enhancement", color: "a2eeef" }]);
     expect(p.assignees).toEqual([]);
+    // 列表 fixture 未内联 headRef → checks 未携带（undefined，行组件回退单查）
+    expect(p.checks).toBeUndefined();
+  });
+
+  it("GraphQL 列表批量内联 statusCheckRollup → checks 汇总（一次查询携带全部 PR CI 状态）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          openCount: { totalCount: 2 },
+          closedCount: { totalCount: 0 },
+          pullRequests: {
+            nodes: [
+              {
+                ...gqlPull,
+                state: "OPEN",
+                headRef: {
+                  target: {
+                    statusCheckRollup: {
+                      contexts: {
+                        nodes: [
+                          { status: "COMPLETED", conclusion: "SUCCESS" },
+                          { status: "COMPLETED", conclusion: "FAILURE" },
+                          { status: "IN_PROGRESS", conclusion: null },
+                          { status: "COMPLETED", conclusion: "NEUTRAL" },
+                        ],
+                      },
+                    },
+                  },
+                },
+              },
+            ],
+          },
+        },
+      },
+    } as never);
+    const r = await fetchPullsSmart("evil7", "puregit", "open", "gho_x");
+    expect(r.items[0].checks).toEqual({ total: 4, success: 1, failure: 1, pending: 2 });
+  });
+
+  it("GraphQL 列表 headRef 存在但无 rollup（无 CI）→ checks=null", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        repository: {
+          openCount: { totalCount: 1 },
+          closedCount: { totalCount: 0 },
+          pullRequests: {
+            nodes: [
+              { ...gqlPull, state: "OPEN", headRef: { target: { statusCheckRollup: null } } },
+            ],
+          },
+        },
+      },
+    } as never);
+    const r = await fetchPullsSmart("evil7", "puregit", "open", "gho_x");
+    expect(r.items[0].checks).toBeNull();
   });
 
   it("GraphQL errors / 异常 → 熔断降级 REST（withRestFallback 统一降级链）", async () => {

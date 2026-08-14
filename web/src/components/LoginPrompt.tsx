@@ -3,7 +3,7 @@
  *
  * 用于所有「因权限问题需登录操作」的页面/区块：
  * - 只提醒 + 指引右上角登录，**不做登录按钮**（登录入口统一在 topbar 右上角）
- * - 挂载时自动触发聚光灯动画（LoginSpotlight）：遮罩圆从大缩小移向右上角登录按钮，2s 淡出
+ * - 挂载时自动触发涟漪聚光灯动画（RippleSpotlight）：遮罩圆从大缩小移向目标元素，2s 淡出
  *
  * 用法：<LoginPrompt title={...} desc={...} />
  * 页面需登录分支统一替换为本组件（NewIssue/NewPR/NewRepo/设置页/我的维度列表等）。
@@ -14,10 +14,10 @@ import { Logo } from "@/components/Logo";
 import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import {
-  triggerLoginSpotlight,
-  type SpotlightTarget,
-  type SpotlightOptions,
-} from "@/lib/auth/login-spotlight";
+  triggerRippleSpotlight,
+  type RippleTarget,
+  type RippleOptions,
+} from "@/lib/ui/ripple-spotlight";
 
 export function LoginPrompt({
   title,
@@ -31,16 +31,16 @@ export function LoginPrompt({
   /** 副描述（如「登录后可提交 issue，请求由你的 GitHub 账号发出」） */
   desc?: string;
   className?: string;
-  /** 聚光灯目标（默认右上角登录按钮；可指定任意元素/选择器） */
-  spotlightTarget?: SpotlightTarget;
-  /** 聚光灯动画参数（restoreAt 提前还原 / duration / 阶段比例） */
-  spotlightOptions?: SpotlightOptions;
+  /** 涟漪聚光灯目标（默认右上角登录按钮；可指定任意元素/选择器） */
+  spotlightTarget?: RippleTarget;
+  /** 涟漪聚光灯动画参数（restoreAt 提前还原 / duration / 阶段比例 / scrollToTarget 先滚动） */
+  spotlightOptions?: RippleOptions;
 }) {
   const { t } = useI18n();
 
   // 挂载后稍延迟触发聚光灯（等待渲染稳定，动画从页面中心平滑过渡到右上角登录按钮）
   useEffect(() => {
-    const timer = setTimeout(() => triggerLoginSpotlight(spotlightTarget, spotlightOptions), 350);
+    const timer = setTimeout(() => triggerRippleSpotlight(spotlightTarget, spotlightOptions), 350);
     return () => clearTimeout(timer);
   }, [spotlightTarget, spotlightOptions]);
 

@@ -23,12 +23,3 @@ export const REVIEW_STATE_BADGE_TINTED: Record<string, string> = {
   DISMISSED: "bg-muted text-muted-foreground",
   PENDING: "bg-muted text-muted-foreground",
 };
-
-/** 评审状态图标色（审计者栏紧凑图标；COMMENTED 保持中性灰——官方审计者图标不随状态变色） */
-export const REVIEW_STATE_ICON: Record<string, string> = {
-  APPROVED: "text-emerald-600",
-  CHANGES_REQUESTED: "text-red-600",
-  COMMENTED: "text-muted-foreground",
-  DISMISSED: "text-muted-foreground",
-  PENDING: "text-muted-foreground",
-};

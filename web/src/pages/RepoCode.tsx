@@ -44,6 +44,7 @@ import { useRepoData } from "@/lib/repo/repo-context";
 import { FileTree } from "@/components/FileTree";
 import { useRepoTree, type TreeNode } from "@/lib/repo/file-tree";
 import { WriteGate } from "@/components/WriteGate";
+import { ForkGate } from "@/components/ForkGate";
 import { cn } from "@/lib/utils";
 import { SIDEBAR_STICKY_SCROLL } from "@/lib/ui/layout";
 import PageLayout from "@/components/PageLayout";
@@ -227,13 +228,16 @@ export function RepoActionBar({ branch }: { branch: string }) {
       <div className="ml-auto flex shrink-0 items-center gap-2">
         {token && (
           <WriteGate>
-            <Tip label="新增文件">
-              <Button variant="ghost" size="icon" className="size-8" asChild>
-                <Link to={`/${owner}/${repo}/new/${branch}`}>
-                  <Plus className="size-4" />
-                </Link>
-              </Button>
-            </Tip>
+            {/* ForkGate：非本人仓库点击新增文件 → fork 引导（官方语义：编辑他人仓库前必须 fork） */}
+            <ForkGate owner={owner}>
+              <Tip label="新增文件">
+                <Button variant="ghost" size="icon" className="size-8" asChild>
+                  <Link to={`/${owner}/${repo}/new/${branch}`}>
+                    <Plus className="size-4" />
+                  </Link>
+                </Button>
+              </Tip>
+            </ForkGate>
           </WriteGate>
         )}
 

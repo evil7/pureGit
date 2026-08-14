@@ -8,7 +8,7 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Star, GitFork, Loader2, Eye } from "lucide-react";
+import { Star, Loader2, Eye } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
@@ -29,10 +29,10 @@ import { LoginPrompt } from "@/components/LoginPrompt";
 import {
   isStarredSmart,
   setStarredSmart,
-  forkRepositorySmart,
   fetchRepoSubscriptionSmart,
   setRepoSubscriptionSmart,
 } from "@/lib/api";
+import { ForkTargetMenu } from "@/components/ForkTargetMenu";
 import { type RepoSubscription } from "@/lib/restapi";
 import { useRepoData } from "@/lib/repo/repo-context";
 import { cn } from "@/lib/utils";
@@ -136,23 +136,6 @@ export function StarForkButtons({
     }
   };
 
-  const doFork = async () => {
-    if (!token) {
-      setShowLogin(true);
-      return;
-    }
-    setBusy("fork");
-    try {
-      const fullName = await forkRepositorySmart(token, owner, repo);
-      setForkedUrl(fullName);
-      onUpdated?.(stars, forks + 1);
-    } catch {
-      /* 静默失败 */
-    } finally {
-      setBusy(null);
-    }
-  };
-
   // Watch 按钮文案（官方：Watch / Watching / Ignoring）
   const watchLabel = sub?.ignored ? "Ignoring" : sub?.subscribed ? "Watching" : "Watch";
 
@@ -196,16 +179,17 @@ export function StarForkButtons({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Fork（无状态态，保持 outline） */}
-      <Button size="sm" variant="outline" onClick={() => void doFork()} disabled={busy !== null}>
-        {busy === "fork" ? (
-          <Loader2 className="size-4 animate-spin" />
-        ) : (
-          <GitFork className="size-4" />
-        )}
-        Fork
-        <span className="text-muted-foreground">{formatCount(forks)}</span>
-      </Button>
+      {/* Fork（下拉选择目标：本人/组织——官方 fork 弹窗轻量版；id 供非本人仓库写操作聚光灯引导定位） */}
+      <ForkTargetMenu
+        id="repo-fork-btn"
+        owner={owner}
+        repo={repo}
+        forks={forks}
+        onForked={(fullName) => {
+          setForkedUrl(fullName);
+          onUpdated?.(stars, forks + 1);
+        }}
+      />
 
       {/* Star（已 star：星形图标变黄填充，按钮保持 outline） */}
       <Button
