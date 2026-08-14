@@ -16,8 +16,6 @@ import { Monitor, Moon, Sun, Plug, Zap, AlertTriangle, Lock, PencilLine } from "
 import { useTheme, type Theme } from "@/hooks/useTheme";
 import { useCodeTheme } from "@/hooks/useCodeTheme";
 import { useDateFormat, type DateFormat } from "@/hooks/useDateFormat";
-import { useFeedFilter, FEED_TYPES, isAllFeedTypes } from "@/hooks/useFeedFilter";
-import { Checkbox } from "@/components/ui/checkbox";
 import { CODE_THEMES } from "@/lib/code/code-theme";
 import { useI18n, type Lang, type I18nKey } from "@/i18n";
 import { cn } from "@/lib/utils";
@@ -171,7 +169,6 @@ export default function PreferencesSettings() {
   const { codeThemeId, setCodeTheme } = useCodeTheme();
   const { t, lang, setLang } = useI18n();
   const { format: dateFormat, setFormat: setDateFormat } = useDateFormat();
-  const { types: feedTypes, setFilter: setFeedTypes } = useFeedFilter();
   const { token } = useAuth();
   const [usage, setUsage] = useState<ApiUsage | null>(null);
 
@@ -305,29 +302,6 @@ export default function PreferencesSettings() {
         <SegmentedControl options={themeOptions} value={theme} onValueChange={(v) => setTheme(v)} />
       </section>
 
-      {/* 6. 动态类型过滤（首页动态按事件类型勾选，默认全量勾选；与首页下拉联动） */}
-      <section className="flex flex-col gap-3">
-        <div>
-          <h2 className="text-lg font-semibold">{t("settings.feedFilter")}</h2>
-        </div>
-        <div className="flex flex-wrap gap-x-6 gap-y-2 rounded-lg border bg-muted/40 p-4">
-          {FEED_TYPES.map((type) => (
-            <label key={type} className="flex cursor-pointer items-center gap-2 text-sm">
-              <Checkbox
-                checked={isAllFeedTypes(feedTypes) || feedTypes.includes(type)}
-                onCheckedChange={(c) => {
-                  const next = c
-                    ? [...feedTypes.filter((x) => x !== type), type]
-                    : feedTypes.filter((x) => x !== type);
-                  setFeedTypes(next);
-                }}
-              />
-              {t(`feed.filter.${type}` as I18nKey)}
-            </label>
-          ))}
-        </div>
-      </section>
-
       {/* 7. 代码配色（选项卡 + 示例代码卡 1:2 同行） */}
       <section className="flex flex-col gap-3">
         <div>
@@ -372,9 +346,9 @@ export default function PreferencesSettings() {
                 <span className="font-mono">sample.ts</span>
                 <span className="ml-auto">{t("settings.codeTheme.sample")}</span>
               </div>
-              {/* fill：接上外层 flex 高度链（min-h-0 flex-1），CM6 撑满无底部空白 */}
+              {/* 高度自适应：flex-col + grow 撑满外层 flex 链，minHeight 兜底（内容 1 行也撑满） */}
               <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-                <CodeView code={SAMPLE_CODE} path="sample.ts" fill />
+                <CodeView code={SAMPLE_CODE} path="sample.ts" />
               </div>
             </div>
           </div>

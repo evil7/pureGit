@@ -267,19 +267,29 @@ export interface ReceivedEvent {
     before?: string;
     commits?: { message: string; sha: string; url: string }[];
     size?: number;
-    /** 评论内容（IssueCommentEvent / PullRequestReviewCommentEvent） */
-    comment?: { body?: string; html_url?: string };
-    /** 评审内容（PullRequestReviewEvent） */
-    review?: { body?: string; html_url?: string; state?: string };
-    /** 评论所属 issue（IssueCommentEvent）；state 供 issue 动态卡片（IssuesEvent 同构） */
-    issue?: { title?: string; html_url?: string; number?: number; state?: string };
-    /** 评论所属 PR（PullRequestReviewEvent / PullRequestReviewCommentEvent）；state/merged 供 PR 动态卡片 */
+    /** CommitCommentEvent：commit 行内评论定位（无 issue/PR，标题栏降级 commit short_sha） */
+    commit_id?: string;
+    /** 评论内容（IssueCommentEvent / PullRequestReviewCommentEvent）；path/line = 行内评论定位（File#L123） */
+    comment?: { body?: string; html_url?: string; path?: string; line?: number };
+    /** 评审内容（PullRequestReviewEvent）；state 供标题栏适配（APPROVED/CHANGES_REQUESTED/COMMENTED） */
+    review?: { body?: string; html_url?: string; state?: string; commit_id?: string };
+    /** 评论所属 issue（IssueCommentEvent / IssuesEvent）；body 为完整 issue 正文；comments 供右列计数 */
+    issue?: {
+      title?: string;
+      html_url?: string;
+      number?: number;
+      state?: string;
+      body?: string;
+      comments?: number;
+    };
+    /** 评论所属 PR（PullRequestReviewEvent 仅 url/id/number/head/base 无 title；ReviewCommentEvent 完整）；comments 供右列计数 */
     pull_request?: {
       title?: string;
       html_url?: string;
       number?: number;
       state?: string;
       merged?: boolean;
+      comments?: number;
     };
     /** Release 动态（ReleaseEvent）：版本信息 + 正文预览 */
     release?: { tag_name?: string; name?: string; html_url?: string; body?: string };
@@ -290,25 +300,29 @@ export interface ReceivedEvent {
  * 好友动态：GET /users/{login}/received_events（该用户关注对象的动态）
  * 注：无 /user/received_events 端点（404），必须带 login；带 token 可见私有事件。
  * GraphQL 无 events 查询 → 仅 REST；失败由调用方降级处理。
+ * @param page 分页（首页 1）；动态类型选择 = 分页式发起搜索（每页请求，翻页续拉不限制总量）
  */
 export async function fetchReceivedEvents(
   login: string,
   token: string,
   perPage = 20,
+  page = 1,
 ): Promise<ReceivedEvent[]> {
   return typedRequest<ReceivedEvent[]>(token, (octokit) =>
     octokit.rest.activity.listReceivedEventsForUser({
       username: login,
       per_page: perPage,
+      page,
     }),
   );
 }
 
-/** 热门/趋势仓库（无官方 API，用搜索按 star 排序模拟，取近 30 天创建） */
+/** 热门/趋势仓库（无官方 API，用搜索按 star 排序模拟，取近 days 天创建；分页式发起搜索） */
 export async function fetchTrendingRepositories(
   days = 30,
   perPage = 20,
   token?: string | null,
+  page = 1,
 ): Promise<Repository[]> {
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
   const data = await typedRequest<SearchResponse<Repository>>(token, (octokit) =>
@@ -317,6 +331,7 @@ export async function fetchTrendingRepositories(
       sort: "stars",
       order: "desc",
       per_page: perPage,
+      page,
     }),
   );
   return data.items;

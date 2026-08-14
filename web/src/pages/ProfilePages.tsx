@@ -263,13 +263,18 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  // Repositories/Stars 分页总页数（org 仓库数 = totalRepos；用户公开数 = publicRepos）
+  // Repositories/Stars 分页总页数（org 仓库数 = totalRepos；用户公开数 = publicRepos；全站翻页上限 999 页）
   const repoTotalPages =
     data && kind
-      ? Math.max(1, Math.ceil((kind === "org" ? data.totalRepos : data.publicRepos) / 20))
+      ? Math.min(
+          999,
+          Math.max(1, Math.ceil((kind === "org" ? data.totalRepos : data.publicRepos) / 20)),
+        )
       : 1;
   const starTotalPages =
-    data && kind ? Math.max(1, Math.ceil((data.starCount ?? stars?.totalCount ?? 0) / 20)) : 1;
+    data && kind
+      ? Math.min(999, Math.max(1, Math.ceil((data.starCount ?? stars?.totalCount ?? 0) / 20)))
+      : 1;
 
   const toggleFollow = async () => {
     if (!token || followBusy || following === null) return;

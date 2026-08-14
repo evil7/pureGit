@@ -4,13 +4,14 @@
  * 能力（与官方 GitHub blob 页同源）：
  * - CodeMirror 6 只读模式：行号、语法高亮（Lezer）、选择/复制、搜索
  * - 默认 No wrap（横向滚动，代码浏览不自动换行）；需要软换行传 wrap
- * - 高度自适应：minHeight 下 flex 撑满（无底部空白）；fill 撑满父容器高度
+ * - 高度自适应：flex-col + grow 撑满父容器（父 flex 时），minHeight 兜底（父无高度/内容 1 行时
+ *   撑满设定高度，无底部空白）；内容多时内部滚动
  * - 跟随代码配色（code-theme）与页面明暗，与编辑器 CodeEditor 完全同引擎
  * - 支持 diff 行背景装饰（add 绿 / del 红，官方 PR Files changed 同款）
  *
  * 用法：
  * <CodeView code={rawContent} path="src/a.ts" minHeight="min-h-96" />
- * <CodeView code={content} path="a.ts" diffLines={[{from,to,type}]} fill />
+ * <CodeView code={content} path="a.ts" diffLines={[{from,to,type}]} />
  */
 import { useEffect, useRef } from "react";
 import type { EditorView } from "@codemirror/view";
@@ -28,8 +29,6 @@ interface Props {
   path: string;
   /** 最小高度（flex 撑满 min-height，内容少时无底部空白） */
   minHeight?: string;
-  /** 撑满父容器高度（flex 布局、内部滚动；替代 minHeight） */
-  fill?: boolean;
   /** 软换行（默认 false：横向滚动，代码浏览不自动 wrap line） */
   wrap?: boolean;
   /** diff 行背景装饰（行号 → add/del） */
@@ -44,7 +43,6 @@ export function CodeView({
   code,
   path,
   minHeight = "min-h-64",
-  fill,
   wrap = false,
   diffLines,
   onSymbolsChange,
@@ -100,9 +98,9 @@ export function CodeView({
     <div
       ref={hostRef}
       className={cn(
-        "cm-host cm-view overflow-hidden",
+        "cm-host cm-view flex min-h-0 grow flex-col overflow-hidden",
+        // grow：父 flex 时撑满父剩余高度；minHeight 兜底（父非 flex/内容 1 行时撑满设定高度）
         // flex-col：cm-editor flex:1 撑满容器高度（内容少时无底部空白；内容多时内部滚动）
-        fill ? "min-h-0 flex-1" : "flex min-h-0 flex-col",
         minHeight,
       )}
       style={{ backgroundColor: bg }}

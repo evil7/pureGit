@@ -621,10 +621,9 @@ export function RequestEditor({
           </div>
         )}
         {reqTab === "body" && req.protocol === "rest" && (
-          /* Body：类型选项栏在 tabs 右侧；none 提示；form 表格；json/text 编辑器（fill 撑满）
+          /* Body：类型选项栏在 tabs 右侧；none 提示；form 表格；json/text 编辑器（默认撑满）
              h-full min-h-0（非 min-h-full）：外层 scroll 容器高度确定 → 本容器 height:100% 确定 →
-             CodeEditor 外层 flex-1 → cm-host flex-1 → cm-editor height:100% 才能解析撑满
-             （min-h-full 只给 min-height 不给 height，flex 高度链 indeterminate → cm-editor 塌陷成内容高） */
+             CodeEditor 外层 h-full → 内容区 grow → cm-editor flex:1 撑满（minHeight 兜底防塌陷） */
           <div className="flex h-full min-h-0 flex-col p-2">
             {req.bodyType === "none" ? (
               <p className="px-1 py-2 text-[11px] text-muted-foreground">{t("body.noneHint")}</p>
@@ -654,7 +653,7 @@ export function RequestEditor({
                 onChange={(v) => set({ body: v })}
               />
             ) : (
-              /* json/text 编辑器：直接作为外层 flex 子项（fill 撑满，与 GraphQL query 同构）
+              /* json/text 编辑器：直接作为外层 flex 子项（默认撑满，与 GraphQL query 同构）
                  overflow-visible：补全 tooltip 溢出编辑器底部/右侧不被裁剪
                  relative z-10：lint 诊断框向上溢出编辑器顶部时盖过 tabs 行/sticky 请求行 */
               <CodeEditor
@@ -662,7 +661,6 @@ export function RequestEditor({
                 onChange={(v) => set({ body: v })}
                 path={`body.${req.bodyType === "json" ? "json" : "txt"}`}
                 placeholder={t("bodyPlaceholder")}
-                fill
                 toolbar={false}
                 className="relative z-10 flex-1 overflow-visible rounded-md"
                 jsonSchema={bodySchema}
@@ -680,7 +678,6 @@ export function RequestEditor({
               onChange={(v) => set({ query: v })}
               path="query.graphql"
               placeholder={t("queryPlaceholder")}
-              fill
               toolbar={false}
               className="relative z-10 flex-1 overflow-visible rounded-md"
               graphqlSchema={gqlSchema}

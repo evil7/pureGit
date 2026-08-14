@@ -1085,3 +1085,19 @@ export async function fetchCommits(
     }),
   );
 }
+
+/** 单个 commit 详情（GET /repos/{owner}/{repo}/commits/{ref}）；feed push 卡片补拉 commit message 用 */
+export async function fetchCommitDetail(
+  owner: string,
+  repo: string,
+  sha: string,
+  token?: string | null,
+): Promise<RepoCommit | null> {
+  try {
+    return await typedRequest<RepoCommit>(token, (octokit) =>
+      octokit.rest.repos.getCommit({ owner, repo, ref: sha }),
+    );
+  } catch {
+    return null;
+  }
+}

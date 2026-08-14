@@ -251,8 +251,8 @@
 - **工厂**：`lib/codemirror.ts` 的 `createCmEditor`（扩展组装：行号/语法高亮/缩进/换行/只读/diff 装饰）
 - **语言检测**：`lib/languages.ts` `inferLang(path)`——**文件名 > 扩展名（linguist-languages 全量映射）> 冲突默认**（.h→c、.m→objective-c 等），回退 `text` 纯文本；友好显示名 `languageDisplayName`；已装 16 种 CM6 语言包（js/ts/jsx/tsx/json/md/yaml/css/html/python/sql/java/cpp/rust/go/php）。**官方实测：编辑器工具栏无语言徽章**（无高亮时也不显示），语言仅由路径隐式推断（对齐 github.com blob 编辑器）。
 - **组件**：
-  - `CodeEditor`：编辑态 CM6（可写）+ 预览态 CM6 只读；头部官方同款三下拉 **Indent mode**（Spaces/Tabs）、**Indent size**（2/4/8）、**Line wrap**（No wrap/Soft wrap），切换即时重建
-  - `CodeView`：只读展示（`readOnly` + `editable:false`，保留选择/复制/搜索）；支持 `diffLines` 行背景装饰（add 绿 / del 红）
+  - `CodeEditor`：编辑态 CM6（可写）+ 预览态 CM6 只读；头部官方同款三下拉 **Indent mode**（Spaces/Tabs）、**Indent size**（2/4/8）、**Line wrap**（No wrap/Soft wrap），切换即时重建。**高度默认撑满**（外层 `h-full` + 内容区 `grow` + `minHeight` 兜底——父 flex 有高度时撑满父、内容 1 行时撑满设定 minHeight、内容多时内部滚动）
+  - `CodeView`：只读展示（`readOnly` + `editable:false`，保留选择/复制/搜索）；支持 `diffLines` 行背景装饰（add 绿 / del 红）。**高度默认撑满**（`flex grow flex-col` + `minHeight` 兜底，语义同 CodeEditor）
 - **主题（修复「仅两色」+ 扩至 9 套）**：code-theme `preview.tokens` **完整 token 调色板**（每主题明/暗各一套 `HighlightTokens`：keyword/string/number/function/type/comment/property 7 色，与各主题真实配色一致）→ `EditorView.theme` + `buildHighlightStyle`（HighlightStyle 逐一映射 tag）。**9 套主题**：GitHub / VS Code / One Dark / Solarized / Material / Catppuccin / Gruvbox / **Dracula** / **Tokyo Night**（调研流行配色新增，shiki 内置 id 配对：dracula↔min-light、tokyo-night↔tokyo-night-light）。**此前缺陷**：`buildHighlightStyle` 只收 accent/fg 二色，所有 token 堆叠 → 视觉仅 2 色；现已按每主题真实 token 色修复（github-dark 实测 7 色）
 - **使用场景**：blob 页（CodeView）、Gist 详情（CodeView）、Preferences 示例卡（CodeView）、PR Files changed diff（CodeView + diffLines）、文件编辑/新建（CodeEditor）
 - 工具栏：Raw 查看/复制/下载（ButtonGroup 紧凑图标）；`overflow-x-auto` 防长行溢出。
@@ -269,7 +269,11 @@
 ### 4.4 列表与翻页
 
 - **列表加载**：列表页统一 `per_page=30`（参数化）；加载中 `Skeleton`，失败显示错误条 + 重试，空数据显示 empty 文案（i18n）。
-- **翻页（定稿）**：**共享 `Pager` 组件**（`web/src/components/Pager.tsx`，shadcn Pagination + 页码窗口 ±2 + 省略号，仅 >1 页渲染）——核心页（搜索结果/仓库 Issues/Pulls/Profile 仓库·Star）页码分页；我的列表（Issues/Pulls/Gists/通知/Releases 左栏）「加载更多」按钮（批次拉满判断 hasMore + 追加去重）；Top 仓库 8→20→全部展开（满 100 追加 REST page=2）；数量统计（Releases/Contributors）用 `per_page=1` 读 Link header 末页，避免全量拉取。
+- **翻页（定稿）**：翻页器分两类互补——
+  - **`Pager`**（`web/src/components/Pager.tsx`，shadcn Pagination + 页码窗口 ±2 + 省略号，仅 >1 页渲染）：**总数已知**的页码分页——核心页（搜索结果/仓库 Issues/Pulls/Profile 仓库·Star/Actions）；全站翻页上限 **999 页**（与官方 REST 1000 页一致，`Math.min(999, …)`）
+  - **`InfinitePager`**（`web/src/components/InfinitePager.tsx`，`[<上一页] [下一页>] …… 第 [输入] 页`，justify-between；样式对齐 Pager——ghost 按钮 + 默认尺寸 + 图标内联 + 输入框 h-8 对等按钮）：**总数未知 / 无法预测体量**的页码跳转（全站搜索）——上一页 disabled = page≤1，下一页 disabled = endReached（末页探测：返回空页/不足一页即止）；输入框 1~999 Enter/失焦跳页，非法回退当前页；不显示假总页数。有真实总数（官方计数）的页面保持 `Pager` 页码窗口
+  - **`LoadMoreButton`**（`web/src/components/LoadMoreButton.tsx`）：**加载更多**（瀑布流 append）——首页动态/热点：点击后按当前条件从 API 游标续拉一页 append 到列表；loading spinner 防重复点击；endReached（空页/不足一页）隐藏按钮。动态请求方向单一（Events API 无类型过滤 → 全量列出 + 分页续拉）→ 无重发/竞态 bug
+  - 我的列表（Issues/Pulls/Gists/通知/Releases 左栏）「加载更多」按钮（批次拉满判断 hasMore + 追加去重）；Top 仓库 8→20→全部展开（满 100 追加 REST page=2）；数量统计（Releases/Contributors）用 `per_page=1` 读 Link header 末页，避免全量拉取。
 - **搜索框（定稿）**：`SearchInput`（`web/src/components/SearchInput.tsx`）——左搜索图标 + 输入框 + Clear，`size="md|lg"`；**去语法高亮**（用户拍板「保持纯粹」）；`RepoSearchInput` 委托它（仓库 Issues/Pulls/Discussions 列表搜索框）；搜索页大框 lg。
 - **相对时间**：`relativeTime()` 函数（刚刚/分钟/小时/天前）；日期用 `toLocaleDateString()`。
 

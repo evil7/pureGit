@@ -12,9 +12,7 @@
  *
  * 安全：prefs 仅 UI 偏好（theme/lang/codeTheme/apiMode/dateFormat），绝不含 token/密钥；
  * Worker 端白名单校验，未知键丢弃。
- */
-
-/** 偏好同步完成事件名（各偏好模块监听此事件重读 localStorage） */
+ */ /** 偏好同步完成事件名（各偏好模块监听此事件重读 localStorage） */
 export const PREFS_SYNC_EVENT = "puregit:prefs-synced";
 
 // 与 useAuth 同源（独立模块避免循环依赖）
@@ -26,7 +24,6 @@ const LANG_KEY = "pg_lang";
 const CODE_THEME_KEY = "pg-code-theme";
 const API_MODE_KEY = "puregit_api_mode";
 const DATE_FORMAT_KEY = "pg-date-format";
-const FEED_FILTER_KEY = "pg-feed-filter";
 
 /** 当前登录 token（由 AuthProvider 注册；登出置 null） */
 let authToken: string | null = null;
@@ -60,9 +57,6 @@ export function collectLocalPrefs(): Record<string, string> {
     if (m === "graphql" || m === "rest") out.apiMode = m;
     const df = localStorage.getItem(DATE_FORMAT_KEY);
     if (df === "absolute" || df === "iso" || df === "relative") out.dateFormat = df;
-    const ff = localStorage.getItem(FEED_FILTER_KEY);
-    // feedFilter 合法值：逗号分隔类型子集（白名单在 useFeedFilter parseFeedTypes 校验；此处仅长度/字符粗校验）
-    if (ff && ff.length <= 64 && /^[a-z,]*$/.test(ff)) out.feedFilter = ff;
   } catch {
     /* localStorage 不可用 → 空 */
   }
@@ -150,10 +144,6 @@ function applyCloudPrefs(p: Record<string, string>): void {
     }
     if (p.dateFormat === "absolute" || p.dateFormat === "iso" || p.dateFormat === "relative") {
       localStorage.setItem(DATE_FORMAT_KEY, p.dateFormat);
-      changed = true;
-    }
-    if (typeof p.feedFilter === "string" && p.feedFilter.length > 0 && p.feedFilter.length <= 64) {
-      localStorage.setItem(FEED_FILTER_KEY, p.feedFilter);
       changed = true;
     }
   } catch {

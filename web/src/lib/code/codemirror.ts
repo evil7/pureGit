@@ -281,7 +281,7 @@ export function createCmEditor(
         backgroundColor: colors.bg,
         color: colors.fg,
         fontSize: "13px",
-        // 高度自适应外部容器：flex 父下 flex:1 撑满（min-h 或 fill 链，避免底部空白）；
+        // 高度自适应外部容器：flex 父下 flex:1 撑满（minHeight 兜底，避免底部空白/塌陷）；
         // 独立高度容器由 height:100% 兜底（custom.css .cm-view .cm-editor）
         flex: "1 1 auto",
         minHeight: "0",
@@ -292,6 +292,14 @@ export function createCmEditor(
         lineHeight: "1.5rem",
       },
       ".cm-scroller": {
+        // 撑满编辑器高度：flex-grow 相对 cm-editor（flex column）——不依赖 height:100% 百分比解析
+        // （父 computed height auto 时百分比失败 → scroller 塌陷成内容高；flex-grow 任何高度链都稳）
+        flex: "1 1 auto",
+        minHeight: "0",
+        // 交叉轴（垂直）stretch：content/行号 gutter 拉伸到 scroller 全高——
+        // 绕开 CM6 默认 .cm-content{min-height:100%} 的百分比链（scroller computed height auto 时
+        // 百分比解析失败 → content 塌陷成内容高；stretch 由 flex 布局拉伸，任何高度链都稳）
+        alignItems: "stretch !important",
         // 横竖滚动条默认允许（内容超出即出现；代码浏览默认 no wrap 依赖横向滚动）
         overflow: "auto",
       },

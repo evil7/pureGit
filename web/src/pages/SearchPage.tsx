@@ -5,7 +5,7 @@
  * - 第一行：搜索框 + 搜索按钮
  * - 过滤 chips 行紧挨 input 下方（shadcn Popover + Command，按当前 tab 显示对应 qualifier）
  * - 结果面板 tabs（仿主页手写下划线：border-b 容器 + border-b-2 高亮）+ 排序下拉最右
- * - 分页最多 99 页；去语法高亮；qualifier 全部原生传给 API
+ * - 分页：InfinitePager 无限翻页（翻页式搜索每页重新请求、空页探测，不预测总体量）；去语法高亮；qualifier 全部原生传给 API
  *
  * 状态模型：URL 唯一真源 `q`（完整查询串含全部 qualifier）+ `type`（tab 类型）。
  * 搜索策略（官方同一 search 端点 + 按类型独立路由，全部 GraphQL）：
@@ -41,7 +41,7 @@ import {
 import { RepositoryCard } from "@/components/RepositoryCard";
 import { UserAvatar } from "@/components/UserAvatar";
 import { SearchInput } from "@/components/SearchInput";
-import { Pager } from "@/components/Pager";
+import { InfinitePager } from "@/components/InfinitePager";
 import { useAuth } from "@/hooks/useAuth";
 import { useIsDark } from "@/hooks/useIsDark";
 import { useDateFormat } from "@/hooks/useDateFormat";
@@ -67,10 +67,8 @@ import type {
   SearchResponse,
 } from "@/lib/restapi";
 
-/** 搜索结果每页条数 */
+/** 搜索结果每页条数（翻页式搜索：每页按条件重新请求，单次请求少量） */
 const PAGE_SIZE = 20;
-/** 分页页数上限（GitHub 官方搜索仅开放前 100 页；用户要求最多 99 页） */
-const MAX_PAGES = 99;
 
 /** 搜索页 i18n key（t 需要 I18nKey 具体联合） */
 type SearchLabelKey =
@@ -391,6 +389,9 @@ export default function SearchPage() {
   const [openChip, setOpenChip] = useState<string | null>(null);
   // 搜索竞态防护
   const searchSeq = useRef(0);
+  // 末页探测：空页 → endReached + 回退最近有效页（InfinitePager 不再预测体量）
+  const [endReached, setEndReached] = useState(false);
+  const lastValidRef = useRef(1);
 
   /** 更新 URL q（提交 / chips / 排序统一入口） */
   const setQ = (next: string) => {
@@ -449,6 +450,17 @@ export default function SearchPage() {
       if (seq === searchSeq.current) {
         set(d.items);
         setTotal(d.total_count);
+        // 末页探测（每次搜索自洽重算）：空页 → 回退最近有效页 + endReached；非空 → 记录有效页
+        if (d.items.length > 0) {
+          lastValidRef.current = page;
+          setEndReached(d.items.length < PAGE_SIZE);
+        } else if (page > 1) {
+          setEndReached(true);
+          if (lastValidRef.current < page) setPage(lastValidRef.current);
+        } else {
+          // page===1 且空 → 无结果（EmptyHint 展示）
+          setEndReached(true);
+        }
       }
     };
     (async () => {
@@ -482,19 +494,14 @@ export default function SearchPage() {
     window.scrollTo({ top: 0, behavior: "smooth" });
   };
 
-  /** 渲染当前 tab 结果列表（空态 + 列表 + 分页） */
+  /** 渲染当前 tab 结果列表（空态 + 列表 + 无限翻页） */
   function renderResults<T>(items: T[], render: (item: T) => ReactNode): ReactNode {
     if (items.length === 0) return <EmptyHint />;
     return (
       <>
         <div className="flex flex-col gap-3">{items.map(render)}</div>
-        {total != null && total > PAGE_SIZE && (
-          <Pager
-            page={page}
-            totalPages={Math.min(MAX_PAGES, Math.ceil(total / PAGE_SIZE))}
-            onChange={goPage}
-          />
-        )}
+        {/* 无限翻页：翻页重新请求对应页；空页探测后 endReached（下一页禁用），不预测总体量 */}
+        <InfinitePager page={page} endReached={endReached} onChange={goPage} />
       </>
     );
   }

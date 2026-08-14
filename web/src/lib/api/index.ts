@@ -22,6 +22,7 @@ export * from "./api-issue";
 export * from "./api-review";
 export * from "./api-discussions";
 export * from "./api-search";
+export * from "./api-feed-batch";
 export * from "./api-insights";
 export * from "../restapi";
 // 注：graphql 模板不在此 re-export（api-core 已 re-export hasGraphQLErrors/GraphQLResponse；

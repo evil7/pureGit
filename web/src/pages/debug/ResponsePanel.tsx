@@ -168,7 +168,6 @@ export function ResponsePanel({
                     value={result.networkError ? result.networkError : prettyJson(result.bodyText)}
                     onChange={() => {}}
                     path="body.json"
-                    fill
                     readOnly
                     toolbar={false}
                     className="rounded-md"

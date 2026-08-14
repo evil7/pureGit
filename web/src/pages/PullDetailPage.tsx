@@ -445,8 +445,10 @@ export default function PullDetailPage() {
 
         {/* 四 tab（官方 Conversation / Commits / Checks / Files changed；line 型 = ghost 风格：
             宽度自适应内容（参考 repo 页 tabs nav）+ 底部 border-b 分割线 + 活动下划线） */}
-        <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)}>
-          <TabsList variant="line" className="border-b">
+        {/* 四 tab：TabsList 为 inline-flex w-fit（宽度自适应内容）——全宽分割线画在最外层 Tabs
+            （flex 容器撑满父宽）底部 border-b，TabsList 自身不再画线，与内容区分区 */}
+        <Tabs value={tab} onValueChange={(v) => setTab(v as typeof tab)} className="border-b">
+          <TabsList variant="line">
             <TabsTrigger value="conversation">
               <MessageSquare className="size-3.5" />
               Conversation

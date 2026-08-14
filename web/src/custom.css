@@ -389,6 +389,21 @@ main > * {
   line-height: 1.5rem;
   overflow: auto;
 }
+/* 高度链修复（2026-08-14）：CM6 默认 scroller/gutters/gutter 高度用百分比
+   （.cm-scroller{height:100%} / .cm-gutters{height:100%} / .cm-gutter{min-height:100%}），
+   父容器为 flex 撑满（computed height 无确定属性值）时百分比解析失败 → 塌缩成内容高
+   （gutter 分割线不到底 / content 只显一行）。统一改为 flex 布局拉伸，不依赖百分比：
+   - scroller 已由 theme 加 flex:1 1 auto + align-items:stretch（content 交叉轴拉伸）
+   - gutters：去掉 height:100%（stretch 只作用于 height:auto 的子项）→ align-self:stretch 由 scroller 拉伸
+   - gutter：去掉 min-height:100% → align-self:stretch 由 gutters 拉伸（sticky 定位不影响交叉轴 stretch） */
+.cm-host .cm-gutters {
+  height: auto !important;
+  align-self: stretch !important;
+}
+.cm-host .cm-gutter {
+  min-height: 0 !important;
+  align-self: stretch !important;
+}
 /* 行号列：右对齐，宽 2.5rem（官方 GitHub 视觉；CM6 默认 1rem 偏窄） */
 .cm-host .cm-lineNumbers .cm-gutterElement {
   min-width: 2.5rem;

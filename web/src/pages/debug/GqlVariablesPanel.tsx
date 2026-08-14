@@ -368,7 +368,6 @@ export function GqlVariablesPanel({
           onChange={onChange}
           path="variables.json"
           placeholder='{ "owner": "evil7" }'
-          fill
           toolbar={false}
           className="relative z-10 flex-1 overflow-visible rounded-md"
         />

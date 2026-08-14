@@ -325,14 +325,20 @@ export async function searchDiscussionsSmart(
 }
 
 /** 智能获取趋势仓库（热点）：GraphQL search 首选（`created:>since sort:stars`）+ REST 降级。
- * 趋势本身无官方 API，用 search 按 star 排序模拟（近 days 天创建）；登录态走 GraphQL，匿名/降级走 REST。 */
+ * 趋势本身无官方 API，用 search 按 star 排序模拟（近 days 天创建）；登录态走 GraphQL，匿名/降级走 REST。
+ * @param page 分页（首页 1）；page>1 直走 REST（GraphQL search 分页需 after 游标，与 searchRepositoriesSmart 同模式） */
 export async function fetchTrendingRepositoriesSmart(
   days = 30,
   perPage = 20,
   token?: string | null,
+  page = 1,
 ): Promise<Repository[]> {
   const since = new Date(Date.now() - days * 86400000).toISOString().slice(0, 10);
   const q = `created:>${since} sort:stars`;
+  // 分页请求（page>1）→ 直接 REST（GraphQL search 分页需 after 游标）
+  if (page > 1) {
+    return fetchTrendingRepositories(days, perPage, token, page);
+  }
   if (token) {
     try {
       const resp: GraphQLResponse<{ search: { nodes: GraphQLSearchRepo[] } }> =

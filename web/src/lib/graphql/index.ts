@@ -63,6 +63,7 @@ export * from "./queries-common";
 export * from "./issue-pr";
 export * from "./discussions";
 export * from "./search";
+export * from "./feed";
 export * from "./account";
 export * from "./review";
 export * from "./meta";

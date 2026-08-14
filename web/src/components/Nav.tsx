@@ -48,7 +48,15 @@ export default function Nav() {
 
         {/* 中：搜索栏（官方 pill，居中） */}
         <form onSubmit={submitSearch} className="relative mx-auto w-full max-w-md flex-1">
-          <Search className="absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          {/* 最左侧搜索 icon 按钮：点击进入搜索页（不提交查询）；占 pl-9 区域，悬停高亮 */}
+          <button
+            type="button"
+            aria-label={t("nav.searchGo")}
+            onClick={() => navigate("/search")}
+            className="absolute left-0 top-0 flex h-full w-9 cursor-pointer items-center justify-center text-muted-foreground transition-colors hover:text-foreground"
+          >
+            <Search className="size-4" />
+          </button>
           <Input
             value={q}
             onChange={(e) => setQ(e.target.value)}

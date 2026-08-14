@@ -174,6 +174,8 @@ worker/src/ ── OAuth2（/$auth/*）+ git 代理 + /$wiki /$raw 代理
 | 通知/邀请（`fetchNotifications`/`markNotificationThreadRead`/`fetchRepoInvitations`/`acceptRepoInvitation`/`declineRepoInvitation`） | ✗ | ✅ | — | — | ❌ | 4.8 GraphQL 无对应 |
 | `updateDefaultBranch`（PATCH /user master_branch） | ✗ | ✅ | — | — | ❌ | 4.8 专属字段 |
 | `fetchRateLimit` | ✗ | ✅ | — | — | ❌ | 4.8 专属端点 |
+| `fetchTrendingRepositoriesSmart`（热点：无官方 API，GraphQL search `created:>since sort:stars` 模拟 + REST 降级；**分页式搜索**——每次翻页按当前周期重新请求对应页，page>1 直走 REST 分页，末页探测空页/不足一页） | ✅ | ✅ | — | — | ✅ | |
+| `scheduleFeedPr` / `scheduleFeedCommit`（`api-feed-batch`：feed 卡片详情**批量补拉调度**——同帧注册的 PR/commit 合并 1 次 GraphQL aliases 瘦身查询（PR 取 number/title/state/mergedAt/url/comments + headRefName/baseRefName/headRepositoryOwner，~7 点/alias，供统一 PR 卡「base ← head 来源分支」badge，fork PR head 显 owner:branch），模块级缓存翻页回访零请求，单节点 null / 整体 errors / 网络异常 / 匿名 → resolve(null) 降级不阻塞；防 feed 单页 N 次详情请求风暴） | ✅ | — | — | — | ✅ | 模板 `graphql/feed.ts`（动态 aliases 生成器） |
 | `fetchPullFiles`/`fetchPullReviewComments`(REST 版) | ✗ | ✅ | — | — | ❌ | 4.5/4.6 无 GraphQL 等价（fetchPullFiles 缺 patch；fetchPullCommits/fetchPullCheckRuns 已迁 smart，见 §2.1） |
 | `transferRepository`/`leaveOrganization` | ✗ | ✅ | — | — | ❌ | 4.9 GraphQL 无 transferRepository/leaveOrganization mutation |
 | **组织管理（读已迁 smart、写维持 REST）** | | | | | | |
@@ -277,7 +279,7 @@ export async function fetchXxxSmart(
 | Teams | teams / team / 团队 | `Organization.teams` → `Team.members` / `Team.repositories` | 🧩 读可迁、写无 mutation → 写维持 REST |
 | Orgs | org member / member role / 成员 / 角色 / 2fa | `Organization.membersWithRole` → `OrganizationMemberEdge.role` / `hasTwoFactorEnabled` | ✅ 成员含角色/2FA 可迁 |
 | Git | git / branch / ref / 分支 / 写文件 / commit | `createRef` / `updateRef` / `deleteRef` / `createCommitOnBranch` | ⚠️ 建分支/写文件有 mutation 但复杂（需 FileChanges 树） |
-| Activity | notification / 通知 / feed / 动态 | — | ✗ `Viewer.notifications` 不存在 → 维持 REST（feed：`fetchReceivedEvents` 事件类型过滤——`?feed=star,fork,push,comment,release,issue,pr` 逗号分隔多选，`all`/缺省全选；follow 无事件类型（Events API 无 FollowEvent）不提供；过滤偏好键 `pg-feed-filter` 云同步） |
+| Activity | notification / 通知 / feed / 动态 | — | ✗ `Viewer.notifications` 不存在 → 维持 REST（feed：`fetchReceivedEvents` 全量列出 + 分页加载更多（Events API **无官方类型过滤选项** → 不做前端伪过滤，按页拉 `per_page=10` append，每批不足一页视为末页；`received_events` 只保留最近 300 条，拉到上限 422 静默视为末页）+ `?feed` 无值仅作 tab 路由标记；follow 无事件类型（Events API 无 FollowEvent）不提供；**详情补拉走 `api-feed-batch` 批量调度**（见 §2 表格：同帧 PR/commit 合并 1 次 GraphQL aliases 瘦身查询，防单页 N 次详情请求）） |
 | Users | gpg / ssh key / 公钥 | — | ✗ 无 `gpgKeys` 字段 / `GpgKey` 类型 → 维持 REST |
 | Security Advisories | security advisory / ghsa / 漏洞 | `SecurityAdvisory`（ghsaId/databaseId/cvss/cwes） | ⚠️ 类型存在但 `Repository.securityAdvisories` 入口不存在 → 维持 REST |
 | Checks | check run / check suite / ci status | `CheckSuite` / `CheckRun`（`Commit.statusCheckRollup`） | ✅ 有入口（项目当前走 REST check-runs） |

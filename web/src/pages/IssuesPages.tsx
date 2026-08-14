@@ -121,7 +121,9 @@ export default function IssuesPage() {
           ? closedCount
           : openCount + closedCount
       : null;
-  const totalPages = baseTotal != null && !q ? Math.max(1, Math.ceil(baseTotal / 30)) : 1;
+  // 全站翻页上限 999 页（官方 REST 1000 页上限内；页码窗口 Pager 折叠省略号）
+  const totalPages =
+    baseTotal != null && !q ? Math.min(999, Math.max(1, Math.ceil(baseTotal / 30))) : 1;
   const goPage = (p: number) => {
     updateParams({ page: p > 1 ? String(p) : null });
     window.scrollTo({ top: 0, behavior: "smooth" });

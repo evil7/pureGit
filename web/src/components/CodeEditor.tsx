@@ -4,6 +4,8 @@
  * 编辑态：CodeMirror 6（行号、语法高亮、自动缩进、括号匹配、软换行等原生能力）
  * 预览态：CodeMirror 6 只读（同引擎，官方 edit 页 Preview 同款）
  * 语言：按文件名推断（inferLang），编辑/预览自适应
+ * 高度：默认撑满（外层 h-full + 内容区 grow + minHeight 兜底——内容 1 行也撑满设定高度，
+ *       父容器 flex 有高度时撑满父；内容多时内部滚动）
  *
  * 用法：
  * <CodeEditor value={code} onChange={setCode} path="src/a.ts" placeholder="…" />
@@ -37,8 +39,6 @@ interface Props {
   toolbar?: boolean;
   /** 附加到最外层容器（如 rounded-none 覆盖嵌套圆角） */
   className?: string;
-  /** 撑满父容器高度（flex 布局、内部滚动；替代 minHeight） */
-  fill?: boolean;
   /** 只读（调试面板返回体展示等；编辑态亦不可编辑、无光标） */
   readOnly?: boolean;
   /** GraphQL 语言专属：运行时 schema（调试面板 GraphQL 编辑器传 debug-graphql 的 schema，驱动智能补全/诊断） */
@@ -55,7 +55,6 @@ export function CodeEditor({
   minHeight = "min-h-64",
   toolbar = true,
   className,
-  fill,
   readOnly,
   graphqlSchema,
   jsonSchema,
@@ -172,8 +171,9 @@ export function CodeEditor({
   return (
     <div
       className={cn(
-        "overflow-hidden rounded-lg border",
-        fill && "flex h-full min-h-0 flex-col",
+        // 高度自适应（默认撑满）：外层 flex-col + h-full（父有高度时撑满父）；
+        // 内容区 grow + minHeight 兜底（父非 flex/内容 1 行时撑满设定高度，无底部空白）
+        "flex h-full min-h-0 flex-col overflow-hidden rounded-lg border",
         className,
       )}
     >
@@ -249,24 +249,14 @@ export function CodeEditor({
         /* 预览：CodeMirror 6 只读（同引擎；无光标/无输入，保留选择复制） */
         <div
           ref={previewRef}
-          className={cn(
-            "cm-host cm-view",
-            // flex-col：cm-editor flex:1 撑满（min-h 或 fill 链，内容少时无底部空白）
-            fill ? "min-h-0 flex-1" : "flex min-h-0 flex-col",
-            minHeight,
-          )}
+          className={cn("cm-host cm-view flex min-h-0 grow flex-col", minHeight)}
           style={{ backgroundColor: colors.bg }}
         />
       ) : (
         /* 编辑态：CodeMirror 6（行号 + 语法高亮 + 缩进 + 括号匹配；readOnly 时无光标/无输入） */
         <div
           ref={editRef}
-          className={cn(
-            "cm-host",
-            readOnly && "cm-view",
-            fill ? "min-h-0 flex-1" : "flex min-h-0 flex-col",
-            minHeight,
-          )}
+          className={cn("cm-host flex min-h-0 grow flex-col", readOnly && "cm-view", minHeight)}
           style={{ backgroundColor: colors.bg }}
         />
       )}

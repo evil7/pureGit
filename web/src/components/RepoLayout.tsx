@@ -70,6 +70,9 @@ export default function RepoLayout() {
   const isSettingsPage = /\/settings$/.test(pathname);
   const isIssuesPage = /\/issues(\/|$)/.test(pathname);
   const isPullsPage = /\/pulls(\/|$)/.test(pathname);
+  // PR 详情页单数路径 pull/:number（官方 /:owner/:repo/pull/:id）——自身已是 F 型右 metadata
+  // 布局，外层不得叠加 About 右栏（此前漏覆盖：仅 isPullsPage 复数列表，详情页 About 误显）
+  const isPullDetailPage = /\/pull(\/|$)/.test(pathname);
   // 官方 Discussions 页：左分类栏 + 右内容两栏（无 About 右栏 对齐官方实测）
   const isDiscussionsPage = /\/discussions(\/|$)/.test(pathname);
   // 全站审计：官方仅 Code 首页 + tree 根 保留 About；
@@ -92,6 +95,7 @@ export default function RepoLayout() {
     isSettingsPage ||
     isIssuesPage ||
     isPullsPage ||
+    isPullDetailPage ||
     isDiscussionsPage ||
     isActionsPage ||
     isProjectsPage ||

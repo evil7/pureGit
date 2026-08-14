@@ -355,10 +355,10 @@ export default function ActionsPage() {
             </ul>
           )}
 
-          {/* 分页（复用通用 Pager；官方 Previous/Next 语义） */}
+          {/* 分页（复用通用 Pager；官方 Previous/Next 语义；全站翻页上限 999 页） */}
           <Pager
             page={page}
-            totalPages={Math.ceil(totalCount / PER_PAGE)}
+            totalPages={Math.min(999, Math.ceil(totalCount / PER_PAGE))}
             onChange={(p) => {
               setPage(p);
               window.scrollTo({ top: 0, behavior: "smooth" });

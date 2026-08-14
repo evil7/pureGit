@@ -64,7 +64,7 @@ export async function getSessionToken(request: Request, env: Env): Promise<strin
 }
 
 /** 偏好同步白名单键（仅 UI 偏好；绝不含 token/密钥） */
-const PREFS_KEYS = ["theme", "lang", "codeTheme", "apiMode", "dateFormat", "feedFilter"] as const;
+const PREFS_KEYS = ["theme", "lang", "codeTheme", "apiMode", "dateFormat"] as const;
 
 interface Env {
   GITHUB_CLIENT_ID: string;
