@@ -21,6 +21,26 @@ export const VIEWER_ORGS_QUERY = /* GraphQL */ `
   }
 `;
 
+/** 检测当前用户是否已 fork 某仓库（viewer 的 fork 仓库列表，按 parent.nameWithOwner 匹配）。
+ * isFork: true 过滤仅取 fork；parent 取上游 full_name 精确匹配（支持改名 fork 后仍能识别）。 */
+export const VIEWER_FORK_DETECT_QUERY = /* GraphQL */ `
+  query ViewerForkDetect {
+    viewer {
+      repositories(first: 100, isFork: true) {
+        nodes {
+          nameWithOwner
+          parent {
+            nameWithOwner
+          }
+        }
+        pageInfo {
+          hasNextPage
+        }
+      }
+    }
+  }
+`;
+
 /** 当前用户仓库（需 token，按最近更新时间排序，含私有仓库） */
 export const VIEWER_REPOS_QUERY = /* GraphQL */ `
   query ViewerRepos($after: String) {

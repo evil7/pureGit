@@ -513,6 +513,105 @@ export function FileList({
   );
 }
 
+/** 命令块（标题 + 复制按钮 + 代码行），EmptyRepoSetup 复用 */
+function CmdBlock({
+  title,
+  cmds,
+  copyKey,
+  copied,
+  onCopy,
+}: {
+  title: string;
+  cmds: string[];
+  copyKey: string;
+  copied: string | null;
+  onCopy: (key: string, text: string) => void;
+}) {
+  return (
+    <div>
+      <div className="flex items-center justify-between gap-2 px-4 pt-3">
+        <p className="text-sm font-medium">{title}</p>
+        <Button
+          size="icon"
+          variant="ghost"
+          className="size-7"
+          onClick={() => onCopy(copyKey, cmds.join("\n"))}
+          aria-label={`${title}（复制）`}
+        >
+          {copied === copyKey ? (
+            <Check className="size-3.5 text-chart-1" />
+          ) : (
+            <Copy className="size-3.5" />
+          )}
+        </Button>
+      </div>
+      <pre className="m-3 overflow-x-auto rounded-lg bg-muted p-3 font-mono text-xs leading-relaxed">
+        {cmds.map((c) => (
+          <div key={c}>{c}</div>
+        ))}
+      </pre>
+    </div>
+  );
+}
+
+/**
+ * 空仓库本地初始化提示（官方 Quick setup 卡片：无 commit 的空仓库展示本地 git 命令）。
+ * 命令随仓库/默认分支动态生成，逐块可一键复制；clone URL 与 RepoActionBar 的 HTTPS 一致。
+ */
+function EmptyRepoSetup({ branch }: { branch: string }) {
+  const { owner = "", repo = "" } = useParams();
+  const [copied, setCopied] = useState<string | null>(null);
+
+  const cloneUrl = `https://github.com/${owner}/${repo}.git`;
+  const createCmds = [
+    `echo "# ${repo}" >> README.md`,
+    "git init",
+    "git add README.md",
+    'git commit -m "first commit"',
+    `git branch -M ${branch}`,
+    `git remote add origin ${cloneUrl}`,
+    `git push -u origin ${branch}`,
+  ];
+  const pushCmds = [
+    `git remote add origin ${cloneUrl}`,
+    `git branch -M ${branch}`,
+    `git push -u origin ${branch}`,
+  ];
+
+  const copy = async (key: string, text: string) => {
+    try {
+      await navigator.clipboard.writeText(text);
+      setCopied(key);
+      setTimeout(() => setCopied(null), 1500);
+    } catch {
+      /* ignore */
+    }
+  };
+
+  return (
+    <div className="overflow-hidden rounded-lg border bg-card">
+      <div className="border-b bg-muted/50 px-4 py-2 text-sm font-medium">
+        {tStatic("emptyRepo.quickSetup")}
+      </div>
+      <CmdBlock
+        title={tStatic("emptyRepo.createOnCmd")}
+        cmds={createCmds}
+        copyKey="create"
+        copied={copied}
+        onCopy={copy}
+      />
+      <div className="border-t" />
+      <CmdBlock
+        title={tStatic("emptyRepo.pushExisting")}
+        cmds={pushCmds}
+        copyKey="push"
+        copied={copied}
+        onCopy={copy}
+      />
+    </div>
+  );
+}
+
 /**
  * 仓库「根目录」视图（分支根 = repo 根目录，等价 /:owner/:repo 但指定 branch）。
  * 操作栏（分支切换/Go to file/新增文件/Code 克隆）+ 根文件列表 + 根 README。
@@ -562,6 +661,9 @@ export function RepoRootView({ branch }: { branch: string }) {
       <RepoActionBar branch={branch} branches={repoHeader?.branches ?? []} />
       {entries === null ? (
         <Skeleton className="h-64 w-full" />
+      ) : entries.length === 0 && !readme ? (
+        // 空仓库（无提交 + 无 README）→ 本地初始化命令提醒（官方 Quick setup）
+        <EmptyRepoSetup branch={branch} />
       ) : (
         <FileList
           entries={entries}

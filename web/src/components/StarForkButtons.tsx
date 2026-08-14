@@ -8,12 +8,11 @@
  */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
-import { Star, Loader2, Eye } from "lucide-react";
+import { Star, Loader2, Eye, GitFork } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import {
   Dialog,
   DialogContent,
-  DialogDescription,
   DialogFooter,
   DialogHeader,
   DialogTitle,
@@ -32,7 +31,6 @@ import {
   fetchRepoSubscriptionSmart,
   setRepoSubscriptionSmart,
 } from "@/lib/api";
-import { ForkTargetMenu } from "@/components/ForkTargetMenu";
 import { type RepoSubscription } from "@/lib/restapi";
 import { useRepoData } from "@/lib/repo/repo-context";
 import { cn } from "@/lib/utils";
@@ -63,10 +61,7 @@ export function StarForkButtons({
 
   const [starred, setStarred] = useState<boolean | null>(null);
   const [sub, setSub] = useState<RepoSubscription | null>(null);
-  const [busy, setBusy] = useState<
-    "star" | "unstar" | "fork" | "watch" | "unwatch" | "ignore" | null
-  >(null);
-  const [forkedUrl, setForkedUrl] = useState<string | null>(null);
+  const [busy, setBusy] = useState<"star" | "unstar" | "watch" | "unwatch" | "ignore" | null>(null);
   const [showLogin, setShowLogin] = useState(false);
 
   // 登录后检测 star + watch 状态（context 有 viewer 字段则直接用，省 2 个 REST 请求）
@@ -179,17 +174,23 @@ export function StarForkButtons({
         </DropdownMenuContent>
       </DropdownMenu>
 
-      {/* Fork（下拉选择目标：本人/组织——官方 fork 弹窗轻量版；id 供非本人仓库写操作聚光灯引导定位） */}
-      <ForkTargetMenu
+      {/* Fork（进入 /fork 官方复刻页：选择本人/组织、改名、是否仅复制默认分支） */}
+      <Button
         id="repo-fork-btn"
-        owner={owner}
-        repo={repo}
-        forks={forks}
-        onForked={(fullName) => {
-          setForkedUrl(fullName);
-          onUpdated?.(stars, forks + 1);
+        variant="outline"
+        disabled={busy !== null}
+        onClick={() => {
+          if (!token) {
+            setShowLogin(true);
+            return;
+          }
+          navigate(`/${owner}/${repo}/fork`);
         }}
-      />
+      >
+        <GitFork className="size-4" />
+        Fork
+        <span className="text-muted-foreground">{formatCount(forks)}</span>
+      </Button>
 
       {/* Star（已 star：星形图标变黄填充，按钮保持 outline） */}
       <Button variant="outline" onClick={() => void toggleStar()} disabled={busy !== null}>
@@ -215,29 +216,6 @@ export function StarForkButtons({
           <DialogFooter>
             <Button variant="outline" onClick={() => setShowLogin(false)}>
               {t("common.cancel")}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
-
-      {/* fork 成功提示 */}
-      <Dialog open={!!forkedUrl} onOpenChange={(v) => !v && setForkedUrl(null)}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Fork 成功</DialogTitle>
-            <DialogDescription>已创建 {forkedUrl}。是否立即前往查看？</DialogDescription>
-          </DialogHeader>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setForkedUrl(null)}>
-              关闭
-            </Button>
-            <Button
-              onClick={() => {
-                if (forkedUrl) navigate(`/${forkedUrl}`);
-                setForkedUrl(null);
-              }}
-            >
-              前往查看
             </Button>
           </DialogFooter>
         </DialogContent>

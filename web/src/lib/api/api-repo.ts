@@ -24,6 +24,7 @@ import {
   ADD_STAR_MUTATION,
   REMOVE_STAR_MUTATION,
   RELEASES_COUNT_QUERY,
+  VIEWER_FORK_DETECT_QUERY,
 } from "../graphql";
 import {
   createRepository,
@@ -43,7 +44,7 @@ import {
   fetchFileCommit,
   fetchBranches,
 } from "../restapi";
-import type { Repository, Release, RepoStats } from "../restapi";
+import type { Repository, Release, RepoStats, CreateRepoInput } from "../restapi";
 
 // ===== 仓库创建/管理 + 文件写操作 =====
 
@@ -178,6 +179,78 @@ export async function fetchFileCommitSmart(
   return fetchFileCommit(owner, name, path, branch, token);
 }
 
+/** 创建仓库（smart 层入参，camelCase；GraphQL 无适配字段由 post-create PATCH 承担） */
+export interface CreateRepoSmartInput {
+  name: string;
+  description?: string;
+  homepage?: string;
+  private?: boolean;
+  hasIssues?: boolean;
+  hasDiscussions?: boolean;
+  hasWiki?: boolean;
+  hasProjects?: boolean;
+  autoInit?: boolean;
+  gitignoreTemplate?: string;
+  licenseTemplate?: string;
+  allowSquashMerge?: boolean;
+  allowMergeCommit?: boolean;
+  allowRebaseMerge?: boolean;
+  allowAutoMerge?: boolean;
+  deleteBranchOnMerge?: boolean;
+  isTemplate?: boolean;
+  /** 目标 owner：不传/个人登录名 → 个人仓库；组织名 → 组织仓库 */
+  owner?: string;
+}
+
+/** camelCase smart 入参 → REST snake_case CreateRepoInput */
+function toCreateRepoInput(opts: CreateRepoSmartInput): CreateRepoInput {
+  return {
+    name: opts.name,
+    description: opts.description,
+    homepage: opts.homepage,
+    private: opts.private,
+    has_issues: opts.hasIssues,
+    has_discussions: opts.hasDiscussions,
+    has_wiki: opts.hasWiki,
+    has_projects: opts.hasProjects,
+    auto_init: opts.autoInit,
+    gitignore_template: opts.gitignoreTemplate,
+    license_template: opts.licenseTemplate,
+    allow_squash_merge: opts.allowSquashMerge,
+    allow_merge_commit: opts.allowMergeCommit,
+    allow_rebase_merge: opts.allowRebaseMerge,
+    allow_auto_merge: opts.allowAutoMerge,
+    delete_branch_on_merge: opts.deleteBranchOnMerge,
+    is_template: opts.isTemplate,
+    owner: opts.owner,
+  };
+}
+
+/** GraphQL createRepository 无适配字段（homepage/merge/is_template）→ post-create PATCH 补写 */
+async function patchGapFields(
+  token: string,
+  fullName: string,
+  opts: CreateRepoSmartInput,
+): Promise<void> {
+  const [o, r] = fullName.split("/");
+  if (!o || !r) return;
+  const patch: UpdateRepositoryFields = {};
+  if (opts.homepage !== undefined) patch.homepage = opts.homepage;
+  if (opts.allowSquashMerge !== undefined) patch.allow_squash_merge = opts.allowSquashMerge;
+  if (opts.allowMergeCommit !== undefined) patch.allow_merge_commit = opts.allowMergeCommit;
+  if (opts.allowRebaseMerge !== undefined) patch.allow_rebase_merge = opts.allowRebaseMerge;
+  if (opts.allowAutoMerge !== undefined) patch.allow_auto_merge = opts.allowAutoMerge;
+  if (opts.deleteBranchOnMerge !== undefined)
+    patch.delete_branch_on_merge = opts.deleteBranchOnMerge;
+  if (opts.isTemplate !== undefined) patch.is_template = opts.isTemplate;
+  if (Object.keys(patch).length === 0) return;
+  try {
+    await updateRepositorySmart(o, r, token, patch);
+  } catch {
+    /* 增补失败不阻断创建跳转 */
+  }
+}
+
 /**
  * 智能创建仓库：个人 GraphQL createRepository 首选 + REST 降级；
  * 组织（owner 非当前登录名）直接 REST POST /orgs/{org}/repos（GraphQL 需 ownerId 复杂）。
@@ -185,30 +258,13 @@ export async function fetchFileCommitSmart(
  */
 export async function createRepositorySmart(
   token: string,
-  opts: {
-    name: string;
-    description?: string;
-    private?: boolean;
-    autoInit?: boolean;
-    /** 目标 owner：不传/个人登录名 → 个人仓库；组织名 → 组织仓库 */
-    owner?: string;
-  },
+  opts: CreateRepoSmartInput,
   login?: string,
 ): Promise<{ name: string; full_name: string }> {
   const isOrg = Boolean(opts.owner && opts.owner !== login);
-  // 组织仓库：REST 直接创建（GraphQL 需组织 node id，不引入复杂度）
+  // 组织仓库：REST 直接创建（全字段支持；GraphQL 需组织 node id，不引入复杂度）
   if (isOrg) {
-    const r = await createRepository(
-      token,
-      {
-        name: opts.name,
-        description: opts.description,
-        private: opts.private,
-        auto_init: opts.autoInit,
-        owner: opts.owner,
-      },
-      login,
-    );
+    const r = await createRepository(token, toCreateRepoInput(opts), login);
     return { name: r.name, full_name: r.full_name };
   }
   try {
@@ -226,29 +282,26 @@ export async function createRepositorySmart(
           name: opts.name,
           description: opts.description ?? "",
           visibility: opts.private ? "PRIVATE" : "PUBLIC",
+          hasIssuesEnabled: opts.hasIssues,
+          hasProjectsEnabled: opts.hasProjects,
+          hasWikiEnabled: opts.hasWiki,
+          hasDiscussionsEnabled: opts.hasDiscussions,
           autoInit: opts.autoInit ?? false,
+          gitignoreTemplate: opts.gitignoreTemplate,
+          licenseTemplate: opts.licenseTemplate,
         },
       },
       token,
     );
     if (!hasGraphQLErrors(resp) && resp.data?.createRepository?.repository) {
       const r = resp.data.createRepository.repository;
+      await patchGapFields(token, r.nameWithOwner, opts);
       return { name: r.name, full_name: r.nameWithOwner };
     }
     // GraphQL 失败 → 熔断降级 REST（复用 rest 层 createRepository；日志自动 ↪ 前缀）
     return withRestFallback(
       async () => {
-        const r = await createRepository(
-          token,
-          {
-            name: opts.name,
-            description: opts.description,
-            private: opts.private,
-            auto_init: opts.autoInit,
-            owner: opts.owner,
-          },
-          login,
-        );
+        const r = await createRepository(token, toCreateRepoInput(opts), login);
         return { name: r.name, full_name: r.full_name };
       },
       "createRepositorySmart",
@@ -258,17 +311,7 @@ export async function createRepositorySmart(
     // 网络层错误 → 熔断降级 REST
     return withRestFallback(
       async () => {
-        const r = await createRepository(
-          token,
-          {
-            name: opts.name,
-            description: opts.description,
-            private: opts.private,
-            auto_init: opts.autoInit,
-            owner: opts.owner,
-          },
-          login,
-        );
+        const r = await createRepository(token, toCreateRepoInput(opts), login);
         return { name: r.name, full_name: r.full_name };
       },
       "createRepositorySmart",
@@ -731,15 +774,58 @@ export async function setStarredSmart(
 }
 
 /** fork 仓库（GraphQL 无 mutation，直接 REST POST /forks），返回 fork 后的完整名称。
- * organization 可选：默认 fork 到本人；传组织名 → fork 到该组织 */
+ * organization 可选：默认 fork 到本人；传组织名 → fork 到该组织；
+ * name 可选：改名 fork；defaultBranchOnly 可选：仅复制默认分支。 */
 export async function forkRepositorySmart(
   token: string,
   owner: string,
   repo: string,
   organization?: string,
+  name?: string,
+  defaultBranchOnly?: boolean,
 ): Promise<string> {
-  const forked = await forkRepository(token, owner, repo, organization);
+  const forked = await forkRepository(token, owner, repo, organization, name, defaultBranchOnly);
   return forked.full_name;
+}
+
+/**
+ * 检测当前用户是否已 fork 指定仓库（精确支持改名 fork）。
+ * - GraphQL 首选：viewer.repositories(isFork:true) 按 parent.nameWithOwner 精确匹配（改名后仍可识别）
+ * - 失败降级 REST：同名检测 GET /repos/{login}/{repo}（改名 fork 会漏 → 页面实际 fork 时 422 由 sonner 报错）
+ * 返回已 fork 的 full_name（null = 未 fork）。
+ */
+export async function detectExistingForkSmart(
+  token: string,
+  owner: string,
+  repo: string,
+  login: string,
+): Promise<string | null> {
+  const sourceFull = `${owner}/${repo}`.toLowerCase();
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      () => fetchRepository(login, repo, token).then((r) => r.full_name),
+      "detectExistingForkSmart",
+      gqlResp,
+    ).catch(() => null);
+  try {
+    const resp: GraphQLResponse<{
+      viewer: {
+        repositories: {
+          nodes: Array<{ nameWithOwner: string; parent: { nameWithOwner: string } | null }>;
+          pageInfo: { hasNextPage: boolean };
+        };
+      };
+    }> = await graphqlRequest(VIEWER_FORK_DETECT_QUERY, {}, token);
+    if (!hasGraphQLErrors(resp) && resp.data?.viewer?.repositories) {
+      const match = resp.data.viewer.repositories.nodes.find(
+        (n) => n.parent?.nameWithOwner.toLowerCase() === sourceFull,
+      );
+      return match?.nameWithOwner ?? null;
+    }
+    return fromRest(resp);
+  } catch {
+    return fromRest(undefined);
+  }
 }
 
 /** 创建 PR（GraphQL createPullRequest 主通道 + REST 熔断）——
@@ -855,7 +941,26 @@ export async function updateRepositorySmart(
   const restOnly: UpdateRepositoryFields = {};
   if (fields.private !== undefined) restOnly.private = fields.private;
   if (fields.default_branch !== undefined) restOnly.default_branch = fields.default_branch;
-  const hasRestOnly = fields.private !== undefined || fields.default_branch !== undefined;
+  // merge options / template 仅 REST（GraphQL updateRepository mutation 无这些字段）
+  if (fields.allow_squash_merge !== undefined)
+    restOnly.allow_squash_merge = fields.allow_squash_merge;
+  if (fields.allow_merge_commit !== undefined)
+    restOnly.allow_merge_commit = fields.allow_merge_commit;
+  if (fields.allow_rebase_merge !== undefined)
+    restOnly.allow_rebase_merge = fields.allow_rebase_merge;
+  if (fields.allow_auto_merge !== undefined) restOnly.allow_auto_merge = fields.allow_auto_merge;
+  if (fields.delete_branch_on_merge !== undefined)
+    restOnly.delete_branch_on_merge = fields.delete_branch_on_merge;
+  if (fields.is_template !== undefined) restOnly.is_template = fields.is_template;
+  const hasRestOnly =
+    fields.private !== undefined ||
+    fields.default_branch !== undefined ||
+    fields.allow_squash_merge !== undefined ||
+    fields.allow_merge_commit !== undefined ||
+    fields.allow_rebase_merge !== undefined ||
+    fields.allow_auto_merge !== undefined ||
+    fields.delete_branch_on_merge !== undefined ||
+    fields.is_template !== undefined;
 
   const graphVars: Record<string, unknown> = {};
   // name 未变化时不传（避免触发 no-op rename——GitHub 后端对同名 rename 偶发 500「Something went wrong」）

@@ -10,42 +10,90 @@ import { repoPermissionFromRest } from "./rest-issue-pr";
 
 // ===== 仓库创建/管理（需 token）=====
 
+/** 创建仓库可传字段（对齐官方 /new；GraphQL 无适配字段由 REST/PATCH 承担） */
+export interface CreateRepoInput {
+  name: string;
+  description?: string;
+  homepage?: string;
+  private?: boolean;
+  has_issues?: boolean;
+  has_discussions?: boolean;
+  has_wiki?: boolean;
+  has_projects?: boolean;
+  auto_init?: boolean;
+  gitignore_template?: string;
+  license_template?: string;
+  allow_squash_merge?: boolean;
+  allow_merge_commit?: boolean;
+  allow_rebase_merge?: boolean;
+  allow_auto_merge?: boolean;
+  delete_branch_on_merge?: boolean;
+  is_template?: boolean;
+  /** 目标 owner：不传/个人登录名 → /user/repos；组织名 → /orgs/{org}/repos */
+  owner?: string;
+}
+
 /**
  * 创建仓库（REST POST /user/repos 或 /orgs/{org}/repos）
  * @param owner 未传或等于当前登录名 → 个人仓库；否则为组织名（需该组织写权限）
  */
 export async function createRepository(
   token: string,
-  opts: {
-    name: string;
-    description?: string;
-    private?: boolean;
-    auto_init?: boolean;
-    /** 目标 owner：不传/个人登录名 → /user/repos；组织名 → /orgs/{org}/repos */
-    owner?: string;
-  },
+  opts: CreateRepoInput,
   login?: string,
 ): Promise<Repository> {
   const path = opts.owner && opts.owner !== login ? opts.owner : null;
+  const body = {
+    name: opts.name,
+    description: opts.description,
+    homepage: opts.homepage,
+    private: opts.private,
+    has_issues: opts.has_issues,
+    has_discussions: opts.has_discussions,
+    has_wiki: opts.has_wiki,
+    has_projects: opts.has_projects,
+    auto_init: opts.auto_init,
+    gitignore_template: opts.gitignore_template,
+    license_template: opts.license_template,
+    allow_squash_merge: opts.allow_squash_merge,
+    allow_merge_commit: opts.allow_merge_commit,
+    allow_rebase_merge: opts.allow_rebase_merge,
+    allow_auto_merge: opts.allow_auto_merge,
+    delete_branch_on_merge: opts.delete_branch_on_merge,
+    is_template: opts.is_template,
+  };
   if (path) {
     return typedRequest<Repository>(token, (octokit) =>
-      octokit.rest.repos.createInOrg({
-        org: path,
-        name: opts.name,
-        description: opts.description,
-        private: opts.private,
-        auto_init: opts.auto_init,
-      }),
+      octokit.rest.repos.createInOrg({ org: path, ...body }),
     );
   }
   return typedRequest<Repository>(token, (octokit) =>
-    octokit.rest.repos.createForAuthenticatedUser({
-      name: opts.name,
-      description: opts.description,
-      private: opts.private,
-      auto_init: opts.auto_init,
-    }),
+    octokit.rest.repos.createForAuthenticatedUser(body),
   );
+}
+
+/** 更新仓库可传字段（对齐官方 settings；GraphQL 无适配字段由 REST/PATCH 承担） */
+export interface UpdateRepoFields {
+  /** 变更仓库名（官方支持 PATCH name，会生成重定向；改名后 URL 变更） */
+  name?: string;
+  description?: string;
+  homepage?: string;
+  default_branch?: string;
+  private?: boolean;
+  archived?: boolean;
+  /** Features 开关（官方 has_issues/has_discussions/has_wiki/has_projects） */
+  has_issues?: boolean;
+  has_discussions?: boolean;
+  has_wiki?: boolean;
+  has_projects?: boolean;
+  /** merge options（官方 Merge 区） */
+  allow_squash_merge?: boolean;
+  allow_merge_commit?: boolean;
+  allow_rebase_merge?: boolean;
+  allow_auto_merge?: boolean;
+  delete_branch_on_merge?: boolean;
+  /** 模板仓库 */
+  is_template?: boolean;
 }
 
 /** 更新仓库基本信息（REST PATCH /repos/{owner}/{repo}） */
@@ -53,20 +101,7 @@ export async function updateRepository(
   owner: string,
   repo: string,
   token: string,
-  fields: {
-    /** 变更仓库名（官方支持 PATCH name，会生成重定向；改名后 URL 变更） */
-    name?: string;
-    description?: string;
-    homepage?: string;
-    default_branch?: string;
-    private?: boolean;
-    archived?: boolean;
-    /** Features 开关（官方 has_issues/has_discussions/has_wiki/has_projects） */
-    has_issues?: boolean;
-    has_discussions?: boolean;
-    has_wiki?: boolean;
-    has_projects?: boolean;
-  },
+  fields: UpdateRepoFields,
 ): Promise<Repository> {
   return typedRequest<Repository>(token, (octokit) =>
     octokit.rest.repos.update({ owner, repo, ...fields }),
@@ -96,6 +131,51 @@ export async function replaceRepoTopics(
     octokit.rest.repos.replaceAllTopics({ owner, repo, names }),
   );
   return data.names ?? [];
+}
+
+/** topic 搜索联想结果项（GET /search/topics；GraphQL 无此端点 → 仅 REST） */
+export interface TopicSearchItem {
+  name: string;
+  display_name: string | null;
+  description: string | null;
+  short_description: string | null;
+  featured: boolean;
+  curated: boolean;
+  score: number;
+}
+
+/** 搜索 topic 联想（REST 唯一通道：GraphQL 无 topic 搜索适配） */
+export async function searchRepoTopics(
+  token: string | null | undefined,
+  query: string,
+): Promise<TopicSearchItem[]> {
+  const data = await typedRequest<{ items: TopicSearchItem[] }>(token, (octokit) =>
+    octokit.rest.search.topics({ q: query, per_page: 10 }),
+  );
+  return data.items ?? [];
+}
+
+/** gitignore 模板列表（GET /gitignore/templates；匿名可拉；GraphQL 无适配 → 仅 REST） */
+export async function fetchGitignoreTemplates(token?: string | null): Promise<string[]> {
+  const data = await typedRequest<string[]>(token, (octokit) =>
+    octokit.rest.gitignore.getAllTemplates(),
+  );
+  return data ?? [];
+}
+
+/** license 模板（GET /licenses 常用 SPDX 列表；匿名可拉；GraphQL 无适配 → 仅 REST） */
+export interface LicenseTemplate {
+  key: string;
+  name: string;
+  spdx_id: string | null;
+  url: string | null;
+}
+
+export async function fetchLicenseTemplates(token?: string | null): Promise<LicenseTemplate[]> {
+  const data = await typedRequest<LicenseTemplate[]>(token, (octokit) =>
+    octokit.rest.licenses.getAllCommonlyUsed(),
+  );
+  return data ?? [];
 }
 
 export async function fetchBranches(
@@ -237,9 +317,19 @@ export async function forkRepository(
   repo: string,
   /** fork 目标（默认本人；传组织名 → fork 到组织，POST /repos/{o}/{r}/forks organization 参数） */
   organization?: string,
+  /** 新仓库名（默认 = 源仓库名，官方支持改名 fork） */
+  name?: string,
+  /** 仅复制默认分支（默认 false；大仓库勾选可省体积与时间） */
+  defaultBranchOnly?: boolean,
 ): Promise<Repository> {
   return typedRequest<Repository>(token, (octokit) =>
-    octokit.rest.repos.createFork({ owner, repo, organization }),
+    octokit.rest.repos.createFork({
+      owner,
+      repo,
+      ...(organization ? { organization } : {}),
+      ...(name ? { name } : {}),
+      ...(defaultBranchOnly ? { default_branch_only: defaultBranchOnly } : {}),
+    }),
   );
 }
 

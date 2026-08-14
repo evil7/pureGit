@@ -3,7 +3,7 @@
  *
  * 独立文件原因：RippleSpotlight.tsx 是组件文件，fast refresh 要求只导出组件；
  * triggerRippleSpotlight/类型/常量移到此处，LoginPrompt / ErrorPages / rest-core /
- * ForkGate / NeedFork / ForkTargetMenu / LoginScopeDialog 等跨文件引用。
+ * ForkGate / NeedFork / StarForkButtons / LoginScopeDialog 等跨文件引用。
  *
  * 2026-08-14 重命名：LoginSpotlight → RippleSpotlight（登录聚光灯 → 通用涟漪聚光灯）；
  * 并从 lib/auth/ 迁至 lib/ui/（不再局限于登录场景）。

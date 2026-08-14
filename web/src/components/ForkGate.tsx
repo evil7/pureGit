@@ -12,7 +12,7 @@
  * <ForkGate><Button onClick={...}>删除</Button></ForkGate>
  *
  * 与 WriteGate（scope 权限）互补：WriteGate 管令牌写 scope，ForkGate 管仓库级写权限。
- * fork 按钮定位 id 见 ForkTargetMenu（repo-fork-btn）。
+ * fork 按钮定位 id 见 StarForkButtons（repo-fork-btn，点击跳官方 fork 复刻页 /fork）。
  */
 import { type ReactNode } from "react";
 import { triggerRippleSpotlight } from "@/lib/ui/ripple-spotlight";
@@ -36,7 +36,7 @@ export function ForkGate({ children, className }: { children: ReactNode; classNa
       "请 Fork 项目或成为本管理者、协作者后进行操作",
       "Fork 后可在副本中编辑文件，经 Pull Request 提交回原仓库",
     );
-    // 聚焦遮罩引导点击页面头部 Fork 按钮（StarForkButtons → ForkTargetMenu id）
+    // 聚焦遮罩引导点击页面头部 Fork 按钮（StarForkButtons → 跳 /fork 页）
     triggerRippleSpotlight("#repo-fork-btn", { duration: 2000 });
   };
 

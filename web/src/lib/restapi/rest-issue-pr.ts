@@ -116,6 +116,14 @@ export interface Repository {
   has_discussions?: boolean;
   has_wiki?: boolean;
   has_projects?: boolean;
+  /** merge options（设置页 Merge 区；REST 有 allow_* 字段） */
+  allow_squash_merge?: boolean;
+  allow_merge_commit?: boolean;
+  allow_rebase_merge?: boolean;
+  allow_auto_merge?: boolean;
+  delete_branch_on_merge?: boolean;
+  /** 模板仓库（REST is_template） */
+  is_template?: boolean;
 }
 
 export interface SearchResponse<T> {

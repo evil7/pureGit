@@ -87,6 +87,8 @@ export default function RepoLayout() {
   const isBranchesPage = /\/branches(\/|$)/.test(pathname);
   // 文件上传页（官方全宽单列，无 About 右栏，同 blob/new/edit）
   const isUploadPage = /\/upload(\/|$)/.test(pathname);
+  // Fork 页（官方全宽单列卡片，无 About 右栏）
+  const isForkPage = /\/fork(\/|$)/.test(pathname);
   // 未登录 + 非 Code 段（登录墙页）→ About 侧栏隐藏，避免白发匿名请求
   const isCodePath = (() => {
     const base = `/${owner}/${repo}`;
@@ -109,6 +111,7 @@ export default function RepoLayout() {
     isReleasesPage ||
     isBranchesPage ||
     isUploadPage ||
+    isForkPage ||
     (!token && !isCodePath);
   const [data, setData] = useState<Repository | null>(null);
   const [languages, setLanguages] = useState<Record<string, number>>({});

@@ -32,6 +32,7 @@ const TreePage = lazy(() => import("@/pages/TreePage"));
 const BlobPage = lazy(() => import("@/pages/BlobPage"));
 const BranchesPage = lazy(() => import("@/pages/BranchesPage"));
 const UploadPage = lazy(() => import("@/pages/UploadPage"));
+const ForkPage = lazy(() => import("@/pages/ForkPage"));
 const FileEditorPage = lazy(() =>
   import("@/components/FileEditorPage").then((m) => ({ default: m.FileEditorPage })),
 );
@@ -283,6 +284,7 @@ const router = createBrowserRouter([
           { path: "new/:branch/*", element: <FileEditorPage /> },
           { path: "edit/:branch/*", element: <FileEditorPage /> },
           { path: "upload/:branch/*", element: <UploadPage /> },
+          { path: "fork", element: <ForkPage /> },
           { path: "branches", element: <BranchesPage /> },
           { path: "branches/:filter", element: <BranchesPage /> },
           { path: "issues", element: <IssuesPage /> },

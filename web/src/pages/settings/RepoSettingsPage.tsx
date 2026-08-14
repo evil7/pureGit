@@ -37,11 +37,13 @@ import {
 } from "@/components/ui/alert-dialog";
 import { updateRepositorySmart, deleteRepositorySmart, apiErrorMessage } from "@/lib/api";
 import {
+  fetchRepository,
   fetchRepoTopicsSmart,
   replaceRepoTopicsSmart,
   transferRepository,
   type Repository,
 } from "@/lib/api";
+import { TopicsInput } from "@/components/TopicsInput";
 import { useRepoData, useRepoUpdate } from "@/lib/repo/repo-context";
 import { WriteGate } from "@/components/WriteGate";
 
@@ -75,8 +77,8 @@ export default function RepoSettingsPage() {
   const [description, setDescription] = useState("");
   const [homepage, setHomepage] = useState("");
   const [defaultBranch, setDefaultBranch] = useState("");
-  // topics（逗号分隔输入）；归档状态（危险区）
-  const [topicsText, setTopicsText] = useState("");
+  // topics（标签数组）；归档状态（危险区）
+  const [topics, setTopics] = useState<string[]>([]);
   const [archived, setArchived] = useState(false);
   // 私有化/公开（危险区第一项，官方 Change repository visibility；3 步确认 dialog）
   const [isPrivate, setIsPrivate] = useState(false);
@@ -98,6 +100,16 @@ export default function RepoSettingsPage() {
     projects: true,
   });
   const [featuresBusy, setFeaturesBusy] = useState(false);
+  // merge options（设置页 Merge 区，仅 REST 字段）+ 模板仓库
+  const [merge, setMerge] = useState({
+    squash: true,
+    mergeCommit: true,
+    rebase: true,
+    autoMerge: false,
+    deleteOnMerge: false,
+  });
+  const [isTemplate, setIsTemplate] = useState(false);
+  const [mergeBusy, setMergeBusy] = useState(false);
   // 迁移仓库（危险区）
   const [transferOpen, setTransferOpen] = useState(false);
   const [transferNewOwner, setTransferNewOwner] = useState("");
@@ -138,7 +150,21 @@ export default function RepoSettingsPage() {
     }
     // topics（单独端点）
     fetchRepoTopicsSmart(owner, repoName, token)
-      .then((names) => !cancelled && setTopicsText(names.join(", ")))
+      .then((names) => !cancelled && setTopics(names))
+      .catch(() => undefined);
+    // merge options / template（GraphQL 查询未含，REST 单独拉取）
+    fetchRepository(owner, repoName, token)
+      .then((r) => {
+        if (cancelled) return;
+        setMerge({
+          squash: r.allow_squash_merge ?? true,
+          mergeCommit: r.allow_merge_commit ?? true,
+          rebase: r.allow_rebase_merge ?? true,
+          autoMerge: r.allow_auto_merge ?? false,
+          deleteOnMerge: r.delete_branch_on_merge ?? false,
+        });
+        setIsTemplate(Boolean(r.is_template));
+      })
       .catch(() => undefined);
     return () => {
       cancelled = true;
@@ -159,12 +185,7 @@ export default function RepoSettingsPage() {
         archived,
       });
       // topics 单独端点（PUT /repos/{owner}/{repo}/topics，最多 20 个）
-      const topics = topicsText
-        .split(/[,\s]+/)
-        .map((topic) => topic.trim())
-        .filter(Boolean)
-        .slice(0, 20);
-      await replaceRepoTopicsSmart(owner, repoName, token, topics);
+      await replaceRepoTopicsSmart(owner, repoName, token, topics.slice(0, 20));
       setRepo({
         name: updated.name,
         full_name: updated.full_name,
@@ -243,6 +264,52 @@ export default function RepoSettingsPage() {
       setError(apiErrorMessage(e, t("repoSettings.features.failed")));
     } finally {
       setFeaturesBusy(false);
+    }
+  };
+
+  // Merge options 开关（官方勾选即改：乐观更新 + PATCH allow_*；失败回滚）
+  const toggleMerge = async (key: keyof typeof merge) => {
+    if (!token || !owner || mergeBusy) return;
+    setMergeBusy(true);
+    setError(null);
+    const prev = merge[key];
+    setMerge((m) => ({ ...m, [key]: !m[key] }));
+    try {
+      const field = {
+        squash: "allow_squash_merge",
+        mergeCommit: "allow_merge_commit",
+        rebase: "allow_rebase_merge",
+        autoMerge: "allow_auto_merge",
+        deleteOnMerge: "delete_branch_on_merge",
+      }[key] as
+        | "allow_squash_merge"
+        | "allow_merge_commit"
+        | "allow_rebase_merge"
+        | "allow_auto_merge"
+        | "delete_branch_on_merge";
+      await updateRepositorySmart(owner, repoName, token, { [field]: !prev });
+    } catch (e) {
+      setMerge((m) => ({ ...m, [key]: prev }));
+      setError(apiErrorMessage(e, t("repoSettings.merge.failed")));
+    } finally {
+      setMergeBusy(false);
+    }
+  };
+
+  // 模板仓库开关（官方 Template repository：乐观更新 + PATCH is_template；失败回滚）
+  const toggleTemplate = async () => {
+    if (!token || !owner || mergeBusy) return;
+    setMergeBusy(true);
+    setError(null);
+    const prev = isTemplate;
+    setIsTemplate(!prev);
+    try {
+      await updateRepositorySmart(owner, repoName, token, { is_template: !prev });
+    } catch (e) {
+      setIsTemplate(prev);
+      setError(apiErrorMessage(e, t("repoSettings.merge.failed")));
+    } finally {
+      setMergeBusy(false);
     }
   };
 
@@ -362,15 +429,13 @@ export default function RepoSettingsPage() {
                   disabled={!canWrite}
                 />
               </div>
-              {/* Topics（官方 topics 区；逗号分隔，最多 20 个） */}
+              {/* Topics（官方 topics 区：输入联想 + 胶囊 badge） */}
               <div>
-                <Label htmlFor="topics" className="mb-1.5 block">
-                  Topics
-                </Label>
-                <Input
-                  id="topics"
-                  value={topicsText}
-                  onChange={(e) => setTopicsText(e.target.value)}
+                <Label className="mb-1.5 block">Topics</Label>
+                <TopicsInput
+                  value={topics}
+                  onChange={setTopics}
+                  token={token}
                   placeholder={t("repoSettings.topics.placeholder")}
                   disabled={!canWrite}
                 />
@@ -426,6 +491,58 @@ export default function RepoSettingsPage() {
             checked={features.projects}
             disabled={featuresBusy || !canWrite}
             onToggle={() => void toggleFeature("projects")}
+          />
+        </section>
+      )}
+
+      {/* Merge options（官方 Merge 区：勾选即改）+ 模板仓库 */}
+      {repo && (
+        <section className="flex flex-col gap-4 rounded-lg border p-4">
+          <div>
+            <h2 className="text-lg font-semibold">{t("repoSettings.merge.title")}</h2>
+            <p className="text-sm text-muted-foreground">{t("repoSettings.merge.desc")}</p>
+          </div>
+          <FeatureSwitch
+            label={t("repoSettings.merge.squash")}
+            desc={t("repoSettings.merge.squash.desc")}
+            checked={merge.squash}
+            disabled={mergeBusy || !canWrite}
+            onToggle={() => void toggleMerge("squash")}
+          />
+          <FeatureSwitch
+            label={t("repoSettings.merge.commit")}
+            desc={t("repoSettings.merge.commit.desc")}
+            checked={merge.mergeCommit}
+            disabled={mergeBusy || !canWrite}
+            onToggle={() => void toggleMerge("mergeCommit")}
+          />
+          <FeatureSwitch
+            label={t("repoSettings.merge.rebase")}
+            desc={t("repoSettings.merge.rebase.desc")}
+            checked={merge.rebase}
+            disabled={mergeBusy || !canWrite}
+            onToggle={() => void toggleMerge("rebase")}
+          />
+          <FeatureSwitch
+            label={t("repoSettings.merge.auto")}
+            desc={t("repoSettings.merge.auto.desc")}
+            checked={merge.autoMerge}
+            disabled={mergeBusy || !canWrite}
+            onToggle={() => void toggleMerge("autoMerge")}
+          />
+          <FeatureSwitch
+            label={t("repoSettings.merge.deleteOnMerge")}
+            desc={t("repoSettings.merge.deleteOnMerge.desc")}
+            checked={merge.deleteOnMerge}
+            disabled={mergeBusy || !canWrite}
+            onToggle={() => void toggleMerge("deleteOnMerge")}
+          />
+          <FeatureSwitch
+            label={t("repoSettings.template")}
+            desc={t("repoSettings.template.desc")}
+            checked={isTemplate}
+            disabled={mergeBusy || !canWrite}
+            onToggle={() => void toggleTemplate()}
           />
         </section>
       )}
