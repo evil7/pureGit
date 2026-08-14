@@ -4,7 +4,7 @@
  * ============================================================================
  *
  * 【本文件针对的验收基线（第一性原理，勿降断言）】
- * smart 层核心架构承诺（api-compat.md §2）：双端点 API 一律「GraphQL 首选 + REST 自动降级」。
+ * smart 层核心架构承诺：双端点 API 一律「GraphQL 首选 + REST 自动降级」。
  * 本次覆盖 api-repo 的三个代表性决策函数：
  * - fetchRepositorySmart：token 空 → 直 REST；GraphQL 成功 → GraphQL 结果（REST 不调）；
  *   GraphQL errors / 异常 / repository=null → 降级 REST

@@ -5,7 +5,7 @@
  * - 创建：POST /orgs/{org}/teams（admin:org）
  * - 编辑/删除：PATCH/DELETE /orgs/{org}/teams/{slug}（owner 或 team maintainer）
  * - 团队成员：GET .../members + PUT/DELETE .../memberships/{username}
- * 全部固定 REST（GraphQL 无团队查询/mutation 等价，见 api-compat.md）。
+ * 全部固定 REST（GraphQL 无团队查询/mutation 等价）。
  */
 import { useEffect, useRef, useState } from "react";
 import { PencilLine, Plus, Trash2, UserPlus, Users, X } from "lucide-react";

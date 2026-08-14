@@ -1,6 +1,6 @@
 /**
  * GitHub REST API - issue-pr（拆分 + 改名；原 github.ts 板块）
- * Board file. See rest.ts barrel for full export surface & docs/api-compat.md.
+ * Board file. See rest.ts barrel for full export surface.
  */
 
 import { typedRequest, fetchWithTimeout, GITHUB_API, ApiError } from "./rest-core";

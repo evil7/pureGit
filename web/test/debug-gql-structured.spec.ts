@@ -4,7 +4,7 @@
  * ============================================================================
  *
  * 【本文件针对的任务 / 要求 / 目的】
- * M5.5：StructuredTable 复合数组编辑器（debug-graphql-redesign.md §0.3 自研方案，
+ * M5.5：StructuredTable 复合数组编辑器（自研方案，
  * 仅服务 GraphQL variables）——input/列表变量由「JSON 字面量手写」改为
  * **结构驱动递归表格**。本文件覆盖 lib/debug-gql-structured.ts 三个纯函数：
  * - `inputTypeToStructured`：GraphQLInputType → StructuredField 递归模型

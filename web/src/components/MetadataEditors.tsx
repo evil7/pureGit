@@ -7,7 +7,7 @@
  * 详情侧栏（IssuesPages）的共用编辑逻辑，消除两处重复：
  *   - SectionHeading：标题文字 + 右侧齿轮图标（canWrite 才显示）
  *   - AssigneesEditor / LabelsEditor / MilestoneEditor：完整 section（标题+内容+编辑 Dialog）
- * 写操作走 REST（issues.* 端点，issue/PR 通用），数据源 smart 双通道，见 api-compat.md §2.1。
+ * 写操作走 REST（issues.* 端点，issue/PR 通用），数据源 smart 双通道。
  */
 import { useState } from "react";
 import { Link } from "react-router-dom";

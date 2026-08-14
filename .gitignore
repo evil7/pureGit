@@ -38,7 +38,3 @@ tmp/
 
 # 开发工具 GraphQL 实时 schema 缓存（apiidx gql 子命令生成，含实时 introspection 结果，不提交）
 scripts/data/graphql-live.json
-
-# 内部开发记录（不公开；本地保留）
-docs/tasks.md
-docs/plan.md

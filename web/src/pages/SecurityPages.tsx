@@ -1,14 +1,14 @@
 /**
  * 仓库 Security 页（阶段 D1；方案 B：仅 Security 核心）
  *
- * 官方 /security 结构（research/30）：
+ * 官方 /security 结构：
  * - SECURITY.md 渲染区（仓库根 SECURITY.md，MarkdownView）
  * - 安全公告列表（Published advisories：标题 + GHSA id + published 日期 + severity 徽标）
- * 详情 /security/advisories/GHSA-{id}（research/30b）：
+ * 详情 /security/advisories/GHSA-{id}：
  * - H1 标题 + severity 徽标 + 发布者/日期
  * - 左列元数据（Package/Affected versions/Patched versions/CWEs）+ 右列 markdown（Description/Patches/Workarounds/References）
  *
- * 数据通道：REST only（GraphQL 无 security advisory 通道，api-compat.md §4.14）；
+ * 数据通道：REST only（GraphQL 无 security advisory 通道）；
  * Dependabot / Code scanning / Secret scanning tab 去杂项（scope 不可抗力）。
  */
 import { useEffect, useRef, useState } from "react";

@@ -1,6 +1,6 @@
 /**
  * GitHub API smart layer - org (split from api.ts,)
- * Board file. See api.ts barrel & docs/api-compat.md.
+ * Board file. See api.ts barrel.
  */
 
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
@@ -636,7 +636,7 @@ export async function updateOrganizationSmart(
 }
 
 // ===== A 类整改 smart 包装（双端点 API 全部接入 smart 层） =====
-// 原则（见 docs/api-compat.md）：页面一律从本模块调用；GraphQL 首选 + REST 自动降级。
+// 原则：页面一律从本模块调用；GraphQL 首选 + REST 自动降级。
 // 不可抗力保持 REST-only 的 API（compare/updateRepository/GPG/block/notifications 等）见文档清单。
 
 /** 组织成员列表查询结果（含总数；totalCount 用于侧栏成员数展示，REST 降级以列表长度兜底） */

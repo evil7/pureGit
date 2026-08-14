@@ -1,6 +1,6 @@
 /**
  * GitHub API smart layer - user (split from api.ts,)
- * Board file. See api.ts barrel & docs/api-compat.md.
+ * Board file. See api.ts barrel.
  */
 
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
@@ -395,7 +395,7 @@ export async function updateUserProfileSmart(
 
 export async function fetchSshKeysSmart(token: string): Promise<SSHKey[]> {
   // SSH key 删除依赖 REST 数字 id（DELETE /user/keys/{id}）；GraphQL key 类型（PublicKey）无
-  // databaseId 字段、node id 不可靠解码为数字 id → 列表强制 REST（「GraphQL 无适配」特例，见 api-compat.md）。
+  // databaseId 字段、node id 不可靠解码为数字 id → 列表强制 REST（「GraphQL 无适配」特例）。
   return fetchSSHKeys(token);
 }
 

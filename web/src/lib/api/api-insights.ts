@@ -1,6 +1,6 @@
 /**
  * GitHub API smart layer - insights（Insights Pulse）
- * Board file. See api.ts barrel & docs/api-compat.md.
+ * Board file. See api.ts barrel.
  *
  * Pulse 统计：GraphQL PULSE_STATS_QUERY 一次请求 6 个 issueCount 首选，失败降级 REST /search/issues 并行 6 个。
  * Top committers：GraphQL Commit.history 主通道（history first:100 since 抽样）+ REST 熔断降级（匿名强制 REST 分页 2 页）。

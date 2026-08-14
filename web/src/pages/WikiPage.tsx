@@ -1,7 +1,7 @@
 /**
  * Wiki 页面（用户决策：加 tab + 实现页面功能）
  *
- * 官方结构（research/29）：左侧 Pages 列表（_Sidebar 解析）+ 右侧 markdown 内容。
+ * 官方结构：左侧 Pages 列表（_Sidebar 解析）+ 右侧 markdown 内容。
  * 数据源：Worker /$wiki 代理（无官方 API，raw 通道被墙）。
  * 首页 Home（/wiki）+ 子页（/wiki/{page}，支持多级目录）。
  */

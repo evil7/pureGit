@@ -10,7 +10,7 @@
  *   - Development：closingIssuesReferences + linkedBranches 只读展示（GraphQL-only）
  *   - participants：官方「{n} participants」计数 + AvatarStack（最多 5 个头像，超出 +n）
  *   - 底部操作组（用户指定）：分割线 + 无框按钮「取消订阅 / 锁定会话」（不单独设通知/锁定板块）
- * 数据源 smart 双通道，详见 api-compat.md §2.1。
+ * 数据源 smart 双通道。
  */
 import { useEffect, useState } from "react";
 import { GitPullRequest, Lock, LockOpen } from "lucide-react";

@@ -90,7 +90,7 @@ const LANG_SUPPORT: Record<string, (graphqlSchema?: GraphQLSchema | null) => Ext
   php: () => php(),
   graphql: (schema) => [
     cmGraphql(schema ?? undefined, { showErrorOnInvalidSchema: false }),
-    // 语法/语义诊断（非法字段/参数）：仅 hover tooltip + 行内标记展示（docs/debug-page.md §10.2）；
+    // 语法/语义诊断（非法字段/参数）：仅 hover tooltip + 行内标记展示；
     // **不挂 lintGutter()**——调试面板 GraphQL 编辑框与 JSON/Raw 编辑框视觉一致
     // （行号 + 折叠 gutter 两列，不多出诊断 gutter 列）；诊断信息 hover 时可见不占布局
     cmGraphqlLint,

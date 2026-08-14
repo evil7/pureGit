@@ -1,6 +1,6 @@
 /**
  * GitHub API smart layer - search（自 api-issue 拆出）
- * Board file. See api.ts barrel & docs/api-compat.md.
+ * Board file. See api.ts barrel.
  */
 
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";

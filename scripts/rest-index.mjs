@@ -6,7 +6,7 @@
  *
  * **不再聚拢 GraphQL**——本文件只负责 REST 一侧的权威转录。双端点「graph→rest 熔断对等」
  * 关系改由人主观判断：先用 `apiidx rest` 定位 REST 端点，再用 `apiidx gql type/field` 递进
- * GraphQL 类型树，确认有无嵌套 / Connection 等价；结论沉淀于 `docs/api-compat.md`（单一权威来源）。
+ * GraphQL 类型树，确认有无嵌套 / Connection 等价。
  * 这替代了旧版「红黑树启发式自动配对」——不再强制返回可能不全面的对等兼容路径提示。
  *
  * 产出 `scripts/data/rest-index.json`，供 `scripts/apiidx.mjs` 查询。

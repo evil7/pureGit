@@ -1,7 +1,7 @@
 /**
  * PageLayout —— 全站统一三栏布局（布局体系重构，替代散落 GRID_2COL_* 常量与手写 grid）
  *
- * 设计依据：GitHub 官方 PageLayout 分型（docs/research/32 + 三份实测审计）——
+ * 设计依据：GitHub 官方 PageLayout 分型——
  * 官方全部页面 ≤ 三栏：左栏（可选）+ 主内容 + 右栏（可选），任一栏不传即不渲染。
  *
  * 用法：

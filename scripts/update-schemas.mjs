@@ -169,7 +169,7 @@ function transcribeRest() {
 function transcribeGql() {
   const mod = require("../node_modules/@octokit/graphql-schema/index.js");
   // 官方完整 introspection 原数据（含全部 description），不转义不精简直接输出；
-  // 前端 buildClientSchema 消费（体积 brotli 117KB，见 docs/debug-page.md §5）
+  // 前端 buildClientSchema 消费（体积 brotli 117KB）
   writeFileSync(join(GQL_DIR, "schema.json"), JSON.stringify(mod.schema.json));
   // 索引：数据源 npm 包名 + 版本（第二行 hover 描述「schema data by pkg@ver」数据源）
   const gqlVersion = require("../node_modules/@octokit/graphql-schema/package.json").version;

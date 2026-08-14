@@ -92,7 +92,7 @@ export default defineConfig({
     chunkSizeWarningLimit: 1050,
     rolldownOptions: {
       output: {
-        // 重依赖分片（/$debug 懒加载触发时并行加载；docs/debug-page.md §12）：
+        // 重依赖分片（/$debug 懒加载触发时并行加载）：
         // - graphql-vendor：graphql-js（schema 解析）+ cm6-graphql（补全/悬停）——
         //   仅 debug 页（补全）使用，独立 chunk 避免打进共享 codemirror chunk
         // - codemirror-vendor：CM6 全站编辑器工厂（CodeEditor）及其语言扩展、

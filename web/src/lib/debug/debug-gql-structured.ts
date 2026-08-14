@@ -1,7 +1,7 @@
 /**
  * GraphQL input/列表结构化纯函数（M5.5：StructuredTable 复合数组编辑器核心）
  *
- * 职责（debug-graphql-redesign.md §0.3 自研 StructuredTable 方案，仅服务 GraphQL variables）：
+ * 职责（自研 StructuredTable 方案，仅服务 GraphQL variables）：
  * - **inputTypeToStructured**：GraphQLInputType → `StructuredField` 递归模型
  *   （剥 NON_NULL → scalar/enum/boolean/input/list 五种 kind；input 展开字段、
  *   list 收 element——嵌套任意深度）

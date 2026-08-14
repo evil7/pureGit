@@ -1,7 +1,7 @@
 /**
  * 仓库 Insights Pulse 页（只做核心 Pulse，图表子页去杂项）
  *
- * 官方 /pulse（research/31）：
+ * 官方 /pulse：
  * - 左栏导航（Pulse/Contributors/Community standards/Commits/Code frequency/Dependency graph/Network/Forks/Actions usage）
  * - 顶部时间段 + Period 下拉
  * - Overview 统计卡：Active PRs / Active issues 大数字 + Merged/Open PRs + Closed/New issues 网格

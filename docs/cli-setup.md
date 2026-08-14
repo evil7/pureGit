@@ -5,13 +5,7 @@
 
 ## 1. 工作原理
 
-```mermaid
-flowchart LR
-    C[git CLI] -->|insteadOf 替换 URL| M[Worker 镜像端点<br/>git 智能 HTTP 自动代理]
-    M -->|原样转发| G[github.com]
-```
-
-git 智能 HTTP 协议的四个请求均被 Worker 自动转发：
+git 智能 HTTP 协议的请求均被 Worker 自动转发：
 
 | 请求 | 用途 |
 |------|------|
@@ -23,14 +17,10 @@ git 智能 HTTP 协议的四个请求均被 Worker 自动转发：
 ## 2. 接入配置（一次性）
 
 ```bash
-git config --global url.https://git.deepwn.io/.insteadOf https://github.com/
+git config --global url.https://<你的worker域名>/.insteadOf https://github.com/
 ```
 
-> 生产域名：`git.deepwn.io`
-> 本地开发：`http://localhost:8787`
-> ⚠️ 他人部署：将下面所有 `git.deepwn.io` 替换为你自己的部署域名。
-
-效果：所有 `https://github.com/...` 地址自动替换为 `https://git.deepwn.io/...`。
+效果：所有 `https://github.com/...` 地址自动替换为 `https://<你的worker域名>/...`。
 之后正常使用 `git clone`、`git pull`、`git push` 即可。
 
 ## 3. 鉴权（push 需要）
@@ -40,15 +30,10 @@ git config --global url.https://git.deepwn.io/.insteadOf https://github.com/
 
 ```bash
 # 方式 A：URL 内嵌（仅对单个远端）
-git clone https://git.deepwn.io/owner/repo.git
-cd repo
-git remote set-url origin https://<user>:<PAT>@git.deepwn.io/owner/repo.git
+git remote set-url origin https://<user>:<PAT>@<你的worker域名>/owner/repo.git
 
 # 方式 B：git 凭据助手（推荐，避免 PAT 明文入 URL）
-# Windows：管理器会在首次 push 时提示输入用户名与密码（密码填 PAT）
 git config --global credential.helper manager
-# Linux/macOS：
-git config --global credential.helper store   # 或 cache
 ```
 
 Worker 将 `Authorization: Basic <user>:<PAT>` **原样透传**给 GitHub，不做存储。
@@ -60,10 +45,10 @@ Worker 将 `Authorization: Basic <user>:<PAT>` **原样透传**给 GitHub，不�
 git config --global --get-regexp 'url\..*\.insteadof'
 
 # 测试连通性（应列出远程分支引用）
-git ls-remote https://git.deepwn.io/octocat/Hello-World.git
+git ls-remote https://<你的worker域名>/octocat/Hello-World.git
 
 # 完整 clone
-git clone https://git.deepwn.io/octocat/Hello-World.git
+git clone https://<你的worker域名>/octocat/Hello-World.git
 ```
 
 ## 5. 安全说明

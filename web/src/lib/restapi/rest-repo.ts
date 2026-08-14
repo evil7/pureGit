@@ -1,6 +1,6 @@
 /**
  * GitHub REST API - repo（拆分 + 改名；原 github.ts 板块）
- * Board file. See rest.ts barrel for full export surface & docs/api-compat.md.
+ * Board file. See rest.ts barrel for full export surface.
  */
 
 import { ApiError, typedRequest, fetchWithTimeout, GITHUB_API } from "./rest-core";
@@ -973,7 +973,7 @@ export async function fetchOpenPullsCount(
   }
 }
 
-// ===== D1 Security 安全公告（REST only；GraphQL 无 security advisory 通道，见 api-compat.md §4.14）=====
+// ===== Security 安全公告（REST only；GraphQL 无 security advisory 通道）=====
 
 /** 安全公告（GET /repos/{owner}/{repo}/security-advisories 结构子集） */
 export interface SecurityAdvisory {

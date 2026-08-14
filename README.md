@@ -48,7 +48,7 @@
 
 - **功能对齐官方**：以官方页面为基准，按依赖层级 L0→L5 分批复刻——核心闭环（浏览/协作/账户/CLI）已完成，深度功能（评审工作流 / Webhooks / Packages / Pages / 深度安全子页）分批纳入路线图
 - 页面干净整洁：统一布局系统（Design System）、组件优先 shadcn/ui、信息密度适中——**简约仅限前端呈现，不限功能范围**
-- 技术化简：**Octokit SDK 统一封装 + 用户可选主模式**（GraphQL 优先 / REST 优先，双额度自动冗余，页面不感知协议）
+- 技术化简：**Octokit SDK 统一封装 + GraphQL 唯一主通道**（GraphQL 失败自动熔断降级 REST，页面不感知协议）
 - 开发辅助：**API 对照索引 / 页面分类索引**内部工具（`scripts/` + `scripts/data/*.json`）——查接口、查页面、查双端点冗余候选用工具，不靠记忆
 
 ---
@@ -58,7 +58,7 @@
 | 层     | 技术                                                                                                    |
 | ------ | ------------------------------------------------------------------------------------------------------- |
 | 前端   | React 19 · Vite · TypeScript · Tailwind CSS 4 · shadcn/ui · react-i18next · CodeMirror 6 代码高亮       |
-| 数据源 | GitHub **GraphQL** + **REST**（Octokit SDK 统一封装，用户可选主模式、双额度自动冗余），请求直连官方 API |
+| 数据源 | GitHub **GraphQL** + **REST**（Octokit SDK 统一封装，登录 GraphQL 唯一主通道、匿名 REST），请求直连官方 API |
 | 后端   | Cloudflare Pages Worker（OAuth2 令牌管理 + KV 会话 + 系统代理 wiki/raw + CLI git 镜像代理）             |
 | 工程   | pnpm workspace · vitest · oxlint · oxfmt                                                                |
 
@@ -166,7 +166,6 @@ pnpm deploy
 | [docs/vision.md](./docs/vision.md)             | 中心思想与产品定位（v0.0.1 全量复刻）      |
 | [docs/design.md](./docs/design.md)             | UI/UX 设计规范（Design System） |
 | [docs/architecture.md](./docs/architecture.md) | 架构设计                        |
-| [docs/api-compat.md](./docs/api-compat.md)     | API 兼容性对照表单与实施指导    |
 | [docs/cli-setup.md](./docs/cli-setup.md)       | CLI 镜像接入指南                |
 
 > 完整文档体系（公开/内部划分、每个文档的用意/用法/场景）见 [docs/index.md](./docs/index.md)
@@ -178,7 +177,6 @@ pnpm deploy
 本项目在仓库内固化了一整套「Agent 协作设施」，让 AI 编码助手（Copilot / Cursor / Claude Code 等）直接可上手：
 
 - **`.github/copilot-instructions.md`** —— 全局指令（顶层框架：架构红线 / 开发规范 / 文档体系与规则层级 / 构建命令），会话自动加载
-- **`.github/prompts/puregit.prompt.md`** —— 会话启动总纲（Chat 输入 `/puregit` 调用）
 - **`.github/skills/`** —— 领域技能（OAuth Worker 开发 / git 镜像代理 / shadcn 组件 / UI 布局规范）
 - **`docs/index.md`** —— 文档体系总导航（每个文档的真实用意 / 使用方式 / 适用场景）
 - **`docs/design.md`** —— 完整 UI/UX Design System（框架层级 / 组件定义 / 响应式 / 验收清单）

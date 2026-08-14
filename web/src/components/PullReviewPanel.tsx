@@ -5,7 +5,7 @@
  * - Reviewers 栏（官方 metadata 第一位）：已提交评审状态（approve/request changes 徽标）+ 请求的评审者 + 请求入口
  * - Merge 区（主列 header 下方，open PR 且有权限时）：Merge/Squash/Rebase 三方式 + 确认弹窗
  * - Review changes 弹窗：Comment/Approve/Request changes 三态 + body 编辑器
- * 数据源 smart 双通道（GraphQL 首选 + REST 降级），详见 api-compat.md。
+ * 数据源 smart 双通道（GraphQL 首选 + REST 降级）。
  */
 import { useEffect, useState } from "react";
 import { Check, ChevronDown, GitMerge, GitPullRequest, MessageSquare, X } from "lucide-react";

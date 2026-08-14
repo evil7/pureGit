@@ -277,7 +277,7 @@ export async function deleteRepositorySmart(
 
 /**
  * 智能列出仓库安全公告（published；公开仓库匿名可读）。
- * GraphQL 无对应查询 → 直接 REST（与 api-compat.md §4.14 一致）。
+ * GraphQL 无对应查询 → 直接 REST。
  */
 export async function fetchSecurityAdvisoriesSmart(
   owner: string,
