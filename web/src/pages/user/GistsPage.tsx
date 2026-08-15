@@ -139,7 +139,7 @@ export default function GistsPage() {
               <Button className="gap-1" asChild>
                 <Link to="/gist/new">
                   <Plus className="size-3.5" />
-                  新建 Gist
+                  {t("gist.newGist")}
                 </Link>
               </Button>
             </PermissionGate>

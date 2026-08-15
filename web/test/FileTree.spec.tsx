@@ -162,9 +162,9 @@ describe("FileTree 过滤（Go to file 实时过滤）", () => {
     expect(screen.queryByRole("button", { name: /README\.md/ })).not.toBeInTheDocument();
   });
 
-  it("过滤无匹配 → 空态文案「无匹配文件」", () => {
+  it("过滤无匹配 → 空态文案（i18n：无匹配文件 / No matching files）", () => {
     renderTree({ root: treeData, currentPath: "", filter: "zzz_nothing" });
-    expect(screen.getByText("无匹配文件")).toBeInTheDocument();
+    expect(screen.getByText(/匹配文件|matching files/)).toBeInTheDocument();
   });
 
   it("过滤大小写不敏感", () => {

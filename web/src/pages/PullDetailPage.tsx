@@ -43,6 +43,7 @@ import { cn } from "@/lib/utils";
 import { useAuth } from "@/hooks/useAuth";
 import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { useDateFormat } from "@/hooks/useDateFormat";
+import { useI18n } from "@/i18n";
 import PageLayout from "@/components/PageLayout";
 import { toastError, toastSuccess } from "@/lib/ui/toast";
 import {
@@ -128,6 +129,7 @@ export default function PullDetailPage() {
   const { token, user, canWrite } = useAuth();
   const { canWrite: canWriteRepo } = useRepoPermission();
   const { fmt } = useDateFormat();
+  const { t } = useI18n();
   const [pr, setPr] = useState<PullRequest | null>(null);
   const [comments, setComments] = useState<IssueComment[] | null>(null);
   /** Files changed 分页状态：items 已加载文件 / page 当前页 / hasMore 是否还有（每次 5 个，大 PR 防卡死） */
@@ -356,7 +358,7 @@ export default function PullDetailPage() {
           <Button variant="ghost" asChild className="-ml-2">
             <Link to={`/${owner}/${repo}/pulls`}>
               <ArrowLeft className="size-4" />
-              返回列表
+              {t("pullDetail.backToList")}
             </Link>
           </Button>
         </div>
@@ -394,7 +396,7 @@ export default function PullDetailPage() {
           <div className="flex flex-wrap gap-2">
             <Badge variant="outline" className="gap-1">
               <FileDiff className="size-3" />
-              {pr.changed_files} 文件
+              {t("pullDetail.filesCount", { count: pr.changed_files })}
             </Badge>
             <Badge variant="outline" className="gap-1" style={{ color: "var(--diff-add-fg)" }}>
               <Plus className="size-3" />
@@ -406,7 +408,7 @@ export default function PullDetailPage() {
             </Badge>
             <Badge variant="outline" className="gap-1">
               <MessageSquare className="size-3" />
-              {pr.comments} 评论
+              {t("pullDetail.commentsCount", { count: pr.comments })}
             </Badge>
           </div>
         </header>
@@ -459,14 +461,14 @@ export default function PullDetailPage() {
                           reviewSummary?.pullRequestId,
                         );
                         setPr((p) => (p ? { ...p, state: "closed" } : p));
-                        toastSuccess("已关闭 PR");
+                        toastSuccess(t("pullDetail.closed"));
                       } catch (e) {
                         toastError(apiErrorMessage(e, "关闭失败"));
                       }
                     }}
                   >
                     <CircleX className="size-3.5" />
-                    关闭
+                    {t("pullDetail.close")}
                   </Button>
                 </>
               )}
@@ -646,10 +648,10 @@ export default function PullDetailPage() {
                                 </Link>
                                 <span>
                                   {r.state === "APPROVED"
-                                    ? "批准了这些更改"
+                                    ? t("timeline.approved")
                                     : r.state === "CHANGES_REQUESTED"
-                                      ? "请求更改"
-                                      : "提出了"}
+                                      ? t("timeline.requestedChanges")
+                                      : t("timeline.proposed")}
                                   {r.submitted_at ? ` · ${fmt ? fmt(r.submitted_at) : ""}` : ""}
                                 </span>
                               </span>
@@ -691,7 +693,9 @@ export default function PullDetailPage() {
                   ))}
                 </div>
               ) : commits.length === 0 ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">暂无 commit</p>
+                <p className="py-8 text-center text-sm text-muted-foreground">
+                  {t("pullDetail.noCommits")}
+                </p>
               ) : (
                 commits.map((c) => (
                   <Card key={c.sha}>
@@ -727,7 +731,7 @@ export default function PullDetailPage() {
                 <Skeleton className="h-24 w-full" />
               ) : checks === null ? (
                 <p className="py-8 text-center text-sm text-muted-foreground">
-                  该 commit 无 check-run
+                  {t("pullDetail.noCheckRun")}
                 </p>
               ) : (
                 <Card>
@@ -735,11 +739,15 @@ export default function PullDetailPage() {
                     <div className="flex items-center gap-2">
                       <ChecksBadge summary={checks} />
                       <span className="text-sm text-muted-foreground">
-                        {checks.total} 个 check-run
+                        {t("pullDetail.checkRunCount", { count: checks.total })}
                       </span>
                     </div>
                     <div className="text-xs text-muted-foreground">
-                      {checks.success} 通过 · {checks.failure} 失败 · {checks.pending} 进行中
+                      {t("pullDetail.checkSummary", {
+                        success: checks.success,
+                        failure: checks.failure,
+                        pending: checks.pending,
+                      })}
                     </div>
                   </CardContent>
                 </Card>
@@ -769,7 +777,7 @@ export default function PullDetailPage() {
                   {files.hasMore && (
                     <div className="flex justify-center pt-1">
                       <Button variant="outline" onClick={loadMoreFiles} disabled={filesLoadingMore}>
-                        {filesLoadingMore ? "加载中…" : "加载更多文件"}
+                        {filesLoadingMore ? t("common.loading") : t("pullDetail.loadMoreFiles")}
                       </Button>
                     </div>
                   )}

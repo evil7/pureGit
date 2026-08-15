@@ -437,7 +437,7 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
                 void doUpdate();
               }}
             >
-              {t("orgTeams.save")}
+              {t("common.save")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -462,7 +462,7 @@ export function OrgTeamsSection({ org, token }: { org: string; token: string }) 
                 void doDelete();
               }}
             >
-              {t("orgTeams.deleteConfirm")}
+              {t("common.delete")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

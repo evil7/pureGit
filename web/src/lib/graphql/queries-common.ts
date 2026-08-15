@@ -99,6 +99,45 @@ export const FILE_COMMIT_QUERY = /* GraphQL */ `
   }
 `;
 
+/** 指定文件的提交历史（blob 文件 History 页）
+ * object(expression: branch).history(path, first, after) 分页；等价 REST listCommits(sha, path) 语义。
+ * expression 必须传 branch（非 `branch:path`）——`branch:path` 返回 Blob 而非 Commit（同 FILE_COMMIT_QUERY）。 */
+export const FILE_HISTORY_QUERY = /* GraphQL */ `
+  query FileHistory(
+    $owner: String!
+    $name: String!
+    $expression: String!
+    $path: String!
+    $first: Int!
+    $after: String
+  ) {
+    repository(owner: $owner, name: $name) {
+      object(expression: $expression) {
+        ... on Commit {
+          history(path: $path, first: $first, after: $after) {
+            nodes {
+              oid
+              message
+              committedDate
+              author {
+                name
+                avatarUrl
+                user {
+                  login
+                }
+              }
+            }
+            pageInfo {
+              hasNextPage
+              endCursor
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** 仓库信息（按需字段，优于 REST 全量返回） */
 export const REPOSITORY_QUERY = /* GraphQL */ `
   query Repository($owner: String!, $name: String!) {

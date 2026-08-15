@@ -293,7 +293,7 @@ export default function NotificationsPage() {
                       <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
                         <span className="flex items-center gap-1">
                           <UserPlus className="size-3.5" />
-                          {inv.inviter?.login ?? "未知用户"} {t("invite.invitedYou")}
+                          {inv.inviter?.login ?? t("common.unknownUser")} {t("invite.invitedYou")}
                         </span>
                         <Badge variant="secondary" className="text-xs">
                           {permissionLabel[inv.permissions] ?? inv.permissions}

@@ -202,7 +202,7 @@ function GistEditor({ existing }: { existing?: Gist | null }) {
           <PermissionGate permission="gist" className="inline-flex">
             <Button onClick={() => void submit()} disabled={!canSubmit} className="gap-1">
               {busy
-                ? t("gist.saving")
+                ? t("common.saving")
                 : isEdit
                   ? t("gist.save")
                   : isPublic
@@ -354,11 +354,11 @@ export function GistDetailPage() {
             <Badge variant={gist.public ? "outline" : "secondary"} className="text-xs">
               {gist.public ? (
                 <span className="flex items-center gap-1">
-                  <Globe className="size-3" /> 公开
+                  <Globe className="size-3" /> {t("gist.public")}
                 </span>
               ) : (
                 <span className="flex items-center gap-1">
-                  <Lock className="size-3" /> 私有
+                  <Lock className="size-3" /> {t("gist.secret")}
                 </span>
               )}
             </Badge>
@@ -369,7 +369,7 @@ export function GistDetailPage() {
                 </Link>
               </span>
             )}
-            <span>更新于 {fmt(gist.updated_at)}</span>
+            <span>{t("gist.updated", { date: fmt(gist.updated_at) })}</span>
           </div>
         </div>
         {token && (

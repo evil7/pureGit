@@ -45,6 +45,7 @@ import {
 // 编辑模式数据走 fetchFileEditSmart（一次 GraphQL 拿 blob 内容+sha，
 // 降级链完备；不再单独 REST fetchFileMeta + smart 内容两条通道）
 import { fetchFileEditSmart } from "@/lib/api";
+import { useI18n } from "@/i18n";
 import { PAGE_SHELL, CONTENT_FILL } from "@/lib/ui/layout";
 import { cn } from "@/lib/utils";
 
@@ -52,6 +53,7 @@ export function FileEditorPage() {
   const { owner = "", repo = "", branch = "", "*": rest = "" } = useParams();
   const { token, user } = useAuth();
   const { canWrite: canWriteRepo } = useRepoPermission();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const path = rest; // 编辑：文件路径；新建：可选前缀
@@ -106,10 +108,10 @@ export function FileEditorPage() {
     let cancelled = false;
     setTreeError(null);
     fetchFileTree(owner, repo, branch, token)
-      .then((t) => {
+      .then((tr) => {
         if (cancelled) return;
-        setTree(t);
-        if (t.truncated) setTreeError("文件树过大，GitHub 已截断（仅显示部分文件）");
+        setTree(tr);
+        if (tr.truncated) setTreeError("文件树过大，GitHub 已截断（仅显示部分文件）");
       })
       .catch(() => !cancelled && setTreeError("文件树加载失败"));
     return () => {
@@ -285,7 +287,7 @@ export function FileEditorPage() {
     <div className={PAGE_SHELL}>
       {/* 屏幕阅读器标题（官方 sr-only） */}
       <h1 className="sr-only">
-        {isNew ? "新增文件" : `编辑 ${fileName}`} in {repo}
+        {isNew ? t("editor.newFile") : t("editor.editFile", { file: fileName })} in {repo}
       </h1>
 
       {/* 两栏布局（官方 Create/Edit file：左 Files 文件树 + 右编辑区，同 blob 页断点） */}
@@ -296,7 +298,7 @@ export function FileEditorPage() {
         {/* 右栏：编辑区（非本人仓库 → NeedFork 占位引导页替代：fork 目标下拉 + fork 按钮） */}
         <div className={cn("min-w-0", CONTENT_FILL)}>
           {!isOwnRepo ? (
-            <NeedFork owner={owner} action={isNew ? "新建" : "编辑"} />
+            <NeedFork owner={owner} action={isNew ? t("common.create") : t("common.edit")} />
           ) : (
             <>
               {treeError && (
@@ -332,7 +334,7 @@ export function FileEditorPage() {
                     value={fileName}
                     onChange={(e) => handleFileNameChange(e.target.value)}
                     onKeyDown={handleFileNameKeyDown}
-                    placeholder="Name your file…"
+                    placeholder={t("editor.nameYourFile")}
                     className="w-40 rounded-md border px-2 font-mono text-sm"
                     autoFocus={isNew}
                     aria-label="File name"
@@ -348,7 +350,7 @@ export function FileEditorPage() {
                 {/* 右：Cancel changes + Commit changes…（官方右上角） */}
                 <div className="flex flex-wrap items-center gap-2">
                   <Button variant="ghost" onClick={() => navigate(-1)}>
-                    Cancel changes
+                    {t("editor.cancelChanges")}
                   </Button>
                   <Button
                     disabled={!token || !fullPath.trim()}
@@ -359,7 +361,7 @@ export function FileEditorPage() {
                       setCommitOpen(true);
                     }}
                   >
-                    Commit changes…
+                    {t("editor.commitChangesBtn")}
                   </Button>
                 </div>
               </div>
@@ -370,7 +372,7 @@ export function FileEditorPage() {
                   value={content}
                   onChange={setContent}
                   path={fullPath}
-                  placeholder="文件内容…"
+                  placeholder={t("editor.filePlaceholder")}
                   minHeight="min-h-[calc(100svh-10rem)]"
                 />
               </div>
@@ -384,28 +386,30 @@ export function FileEditorPage() {
       <Dialog open={commitOpen} onOpenChange={setCommitOpen}>
         <DialogContent className="sm:max-w-lg">
           <DialogHeader>
-            <DialogTitle>Commit changes</DialogTitle>
+            <DialogTitle>{t("editor.commitTitle")}</DialogTitle>
             <DialogDescription>
-              {isNew ? `Creating a new file in ${repo}` : `Editing ${fileName} in ${repo}`}
+              {isNew
+                ? t("editor.creatingFileDesc", { repo })
+                : t("editor.editingFileDesc", { repo, file: fileName })}
             </DialogDescription>
           </DialogHeader>
           <div className="grid gap-4">
             <div className="grid gap-1.5">
-              <Label htmlFor="commit-message">Commit message</Label>
+              <Label htmlFor="commit-message">{t("editor.commitMessage")}</Label>
               <Input
                 id="commit-message"
                 value={commitMessage}
                 onChange={(e) => setCommitMessage(e.target.value)}
-                placeholder={isNew ? "Create new file" : "Update file"}
+                placeholder={isNew ? t("editor.createNewFile") : t("editor.updateFile")}
               />
             </div>
             <div className="grid gap-1.5">
-              <Label htmlFor="ext-desc">Extended description</Label>
+              <Label htmlFor="ext-desc">{t("editor.extDescription")}</Label>
               <Textarea
                 id="ext-desc"
                 value={extDesc}
                 onChange={(e) => setExtDesc(e.target.value)}
-                placeholder="Add an optional extended description…"
+                placeholder={t("editor.extPlaceholder")}
                 rows={3}
                 className="text-sm"
               />
@@ -417,27 +421,20 @@ export function FileEditorPage() {
             >
               <Label className="flex items-start gap-2 font-normal">
                 <RadioGroupItem value="direct" className="mt-0.5" />
-                <span className="text-sm">
-                  Commit directly to the{" "}
-                  <span className="font-mono text-xs font-medium">{branch}</span> branch
-                </span>
+                <span className="text-sm">{t("editor.commitDirect", { branch })}</span>
               </Label>
               <div className="flex items-start gap-2">
                 <RadioGroupItem value="pr" className="mt-0.5" />
                 <div className="grid gap-1.5">
-                  <Label className="text-sm font-normal">
-                    Create a new branch for this commit and start a pull request
-                  </Label>
+                  <Label className="text-sm font-normal">{t("editor.createBranchPr")}</Label>
                   {commitMode === "pr" && (
                     <div className="flex flex-wrap items-center gap-2 text-sm">
-                      <span className="text-muted-foreground">
-                        Your new branch will be created:
-                      </span>
+                      <span className="text-muted-foreground">{t("editor.newBranchHint")}</span>
                       <Input
                         value={newBranch}
                         onChange={(e) => setNewBranch(e.target.value)}
                         className="w-52 font-mono"
-                        aria-label="New branch name"
+                        aria-label={t("editor.newBranchName")}
                       />
                     </div>
                   )}
@@ -448,10 +445,10 @@ export function FileEditorPage() {
           {error && <InlineError message={error} size="sm" />}
           <DialogFooter>
             <Button variant="ghost" onClick={() => setCommitOpen(false)}>
-              Cancel
+              {t("common.cancel")}
             </Button>
             <Button onClick={() => void submit()} disabled={!canSubmit || busy}>
-              {busy ? "Committing…" : "Commit changes"}
+              {busy ? t("common.committing") : t("editor.commit")}
             </Button>
           </DialogFooter>
         </DialogContent>

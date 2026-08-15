@@ -15,7 +15,7 @@ import { Input } from "@/components/ui/input";
 import { PermissionGate } from "@/components/WriteGate";
 import { Tip } from "@/components/Tip";
 import { useAuth } from "@/hooks/useAuth";
-import { useI18n } from "@/i18n";
+import { useI18n, tStatic } from "@/i18n";
 import { fetchMyReposSmart, apiErrorMessage, type Repository } from "@/lib/api";
 import { updateDefaultBranch } from "@/lib/restapi";
 
@@ -178,16 +178,16 @@ function RepoCard({
               <Button variant="ghost" className="gap-1" asChild>
                 <Link to={`/${r.owner.login}/${r.name}/settings`}>
                   <Settings className="size-3.5" />
-                  设置
+                  {tStatic("common.settings")}
                 </Link>
               </Button>
             </PermissionGate>
           ) : (
-            <Tip label="仅仓库所有者可设置">
+            <Tip label={tStatic("repo.ownerOnly")}>
               <span className="inline-flex cursor-not-allowed opacity-40">
                 <Button variant="ghost" className="gap-1" disabled>
                   <Settings className="size-3.5" />
-                  设置
+                  {tStatic("common.settings")}
                 </Button>
               </span>
             </Tip>

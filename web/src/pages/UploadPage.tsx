@@ -141,7 +141,7 @@ export default function UploadPage() {
   if (!isOwnRepo) {
     return (
       <div className={PAGE_SHELL}>
-        <NeedFork owner={owner} action="上传" />
+        <NeedFork owner={owner} action={t("common.upload")} />
       </div>
     );
   }
@@ -213,7 +213,7 @@ export default function UploadPage() {
                     type="button"
                     onClick={() => removeFile(i)}
                     className="shrink-0 text-muted-foreground hover:text-foreground"
-                    aria-label={t("upload.remove")}
+                    aria-label={t("common.remove")}
                   >
                     <X className="size-4" />
                   </button>
@@ -273,7 +273,7 @@ export default function UploadPage() {
 
           <div className="flex items-center gap-2">
             <Button disabled={!canSubmit || busy} onClick={() => void submit()}>
-              {busy ? t("upload.committing") : t("upload.commit")}
+              {busy ? t("common.committing") : t("upload.commit")}
             </Button>
             <Button variant="ghost" onClick={() => navigate(-1)}>
               {t("common.cancel")}

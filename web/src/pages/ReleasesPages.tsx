@@ -1,16 +1,34 @@
 /**
- * Releases 列表（重写）
- * 官方两栏布局：左版本列表（sticky 滚动定位）+ 右 release 卡（完整 notes）。
- * 单页合并：去掉独立详情路由（官方无详情页，点击版本号滚动定位）。
+ * Releases 列表
+ * 官方两栏布局：左版本时间线（Stepper vertical，sticky）+ 右 release 卡片（Card）。
+ * 版本号可点击：跳独立详情页 /releases/tag/:tag（官方同路径）。
  * Latest 绿徽标 + Pre-release 黄徽章 + Assets details 折叠。
- * 数据源：REST /releases（GraphQL 无 release 端点，octokit 自动额度跟踪）。
+ * 数据源：fetchReleasesSmart（GraphQL releases 首选 + REST 降级）。
  */
 import { useEffect, useState } from "react";
-import { useParams } from "react-router-dom";
+import { Link, useParams } from "react-router-dom";
 import { Tag, Calendar, Download, ChevronDown } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from "@/components/ui/card";
+import {
+  Stepper,
+  StepperDescription,
+  StepperIndicator,
+  StepperItem,
+  StepperNav,
+  StepperTitle,
+  StepperTrigger,
+} from "@/components/ui/stepper";
+import { UserAvatar } from "@/components/UserAvatar";
 import { useAuth } from "@/hooks/useAuth";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import { fetchReleasesSmart } from "@/lib/api";
@@ -20,7 +38,6 @@ import type { Release } from "@/lib/restapi";
 import { MarkdownView } from "@/components/MarkdownView";
 import { repoRawBase } from "@/lib/repo/repo-raw";
 import PageLayout from "@/components/PageLayout";
-import { cn } from "@/lib/utils";
 
 export default function ReleasesPage() {
   const { owner, repo } = useParams<{ owner: string; repo: string }>();
@@ -128,25 +145,36 @@ export default function ReleasesPage() {
       left={{
         node: (
           <nav aria-label={t("releases.versions")}>
-            <ul className="space-y-0.5">
-              {releases.map((r) => (
-                <li key={r.tag_name}>
-                  <button
-                    type="button"
-                    onClick={() => scrollToRelease(r.tag_name)}
-                    className={cn(
-                      "block w-full truncate rounded-md px-2 py-1 text-left text-sm transition-colors",
-                      activeTag === r.tag_name
-                        ? "bg-accent font-medium text-foreground"
-                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                    )}
-                  >
-                    {r.tag_name}
-                  </button>
-                </li>
-              ))}
-            </ul>
-            {/* 加载更多（追加到左侧版本列表） */}
+            <Stepper
+              steps={releases.map((r) => ({ id: r.tag_name, title: r.tag_name }))}
+              orientation="vertical"
+              value={activeTag ?? undefined}
+              onValueChange={(id) => scrollToRelease(id)}
+            >
+              <StepperNav className="w-full">
+                {releases.map((r) => (
+                  <StepperItem key={r.tag_name} stepId={r.tag_name} className="items-start">
+                    <StepperTrigger className="w-full rounded-md text-left">
+                      <StepperIndicator
+                        variant="plain"
+                        className="size-8 shrink-0 overflow-visible rounded-full bg-transparent"
+                      >
+                        <span className="flex size-8 items-center justify-center rounded-full border bg-card text-muted-foreground ring-2 ring-background">
+                          <Tag className="size-4" />
+                        </span>
+                      </StepperIndicator>
+                      <div className="flex min-w-0 flex-col items-start text-left">
+                        <StepperTitle className="truncate">{r.tag_name}</StepperTitle>
+                        <StepperDescription className="truncate">
+                          {fmt(r.published_at)}
+                        </StepperDescription>
+                      </div>
+                    </StepperTrigger>
+                  </StepperItem>
+                ))}
+              </StepperNav>
+            </Stepper>
+            {/* 加载更多（追加到左侧版本时间线） */}
             {hasMore && (
               <Button
                 variant="link"
@@ -163,71 +191,74 @@ export default function ReleasesPage() {
         sticky: "nav",
       }}
     >
-      {/* 右主区：release 卡列表 */}
-      <div className="space-y-6">
+      {/* 右主区：release 卡片列表 */}
+      <div className="space-y-4">
         {releases.map((r) => (
-          <section
-            key={r.tag_name}
-            id={`release-${r.tag_name}`}
-            className="scroll-mt-20 border-b border-border pb-6 last:border-b-0"
-          >
-            {/* 版本号 + 徽标 */}
-            <header className="flex flex-wrap items-center gap-2">
-              <h3 className="text-xl font-semibold">{r.name ?? r.tag_name}</h3>
-              {r.id === latestId && <Badge className="bg-green-600 text-white">Latest</Badge>}
-              {r.prerelease && (
-                <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300">
-                  Pre-release
-                </Badge>
-              )}
-              {r.draft && <Badge variant="secondary">Draft</Badge>}
-            </header>
-
-            {/* 发布者行 */}
-            <div className="mt-1 flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-              <span>
-                {r.author.login} {t("releases.releasedThis")}
-              </span>
-              <span className="flex items-center gap-1">
-                <Tag className="size-3.5" />
-                {r.tag_name}
-              </span>
-              <span className="flex items-center gap-1">
-                <Calendar className="size-3.5" />
-                {fmt(r.published_at)}
-              </span>
-            </div>
+          <Card key={r.tag_name} id={`release-${r.tag_name}`} className="scroll-mt-20">
+            <CardHeader>
+              <CardTitle className="flex flex-wrap items-center gap-2">
+                <Link
+                  to={`/${owner}/${repo}/releases/tag/${encodeURIComponent(r.tag_name)}`}
+                  className="hover:underline"
+                >
+                  {r.name ?? r.tag_name}
+                </Link>
+                {r.id === latestId && (
+                  <Badge className="bg-green-600 text-white">{t("releases.latest")}</Badge>
+                )}
+                {r.prerelease && (
+                  <Badge className="bg-yellow-100 text-yellow-800 dark:bg-yellow-500/20 dark:text-yellow-300">
+                    {t("releases.prerelease")}
+                  </Badge>
+                )}
+                {r.draft && <Badge variant="secondary">{t("releases.draft")}</Badge>}
+              </CardTitle>
+              {/* 发布者行 */}
+              <CardDescription className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                <span className="flex items-center gap-1.5">
+                  <UserAvatar src={r.author.avatar_url} alt={r.author.login} className="size-4" />
+                  {r.author.login}
+                </span>
+                <span>{t("releases.releasedThis")}</span>
+                <span className="flex items-center gap-1">
+                  <Calendar className="size-3.5" />
+                  {fmt(r.published_at)}
+                </span>
+              </CardDescription>
+            </CardHeader>
 
             {/* Release notes 完整显示 */}
             {r.body && (
-              <div className="pt-3">
+              <CardContent>
                 <MarkdownView rawBase={repoRawBase(owner!, repo!)}>{r.body}</MarkdownView>
-              </div>
+              </CardContent>
             )}
 
             {/* Assets 折叠（details 元素） */}
             {r.assets.length > 0 && (
-              <details className="group mt-3">
-                <summary className="flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
-                  <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
-                  {t("releases.assets")} {r.assets.length}
-                </summary>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {r.assets.map((a) => (
-                    <Button key={a.name} variant="outline" asChild>
-                      <a href={a.browser_download_url} target="_blank" rel="noreferrer">
-                        <Download className="size-3.5" />
-                        {a.name}
-                        <span className="text-xs text-muted-foreground">
-                          ({(a.size / 1024 / 1024).toFixed(1)} MB)
-                        </span>
-                      </a>
-                    </Button>
-                  ))}
-                </div>
-              </details>
+              <CardFooter className="flex-col items-start gap-2">
+                <details className="group w-full">
+                  <summary className="flex cursor-pointer list-none items-center gap-1 text-sm font-medium text-muted-foreground hover:text-foreground">
+                    <ChevronDown className="size-4 transition-transform group-open:rotate-180" />
+                    {t("releases.assets")} {r.assets.length}
+                  </summary>
+                  <div className="mt-2 flex flex-wrap gap-2">
+                    {r.assets.map((a) => (
+                      <Button key={a.name} variant="outline" asChild>
+                        <a href={a.browser_download_url} target="_blank" rel="noreferrer">
+                          <Download className="size-3.5" />
+                          {a.name}
+                          <span className="text-xs text-muted-foreground">
+                            ({(a.size / 1024 / 1024).toFixed(1)} MB)
+                          </span>
+                        </a>
+                      </Button>
+                    ))}
+                  </div>
+                </details>
+              </CardFooter>
             )}
-          </section>
+          </Card>
         ))}
       </div>
     </PageLayout>

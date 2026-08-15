@@ -557,7 +557,7 @@ export default function SearchPage() {
                   />
                   <CommandList>
                     <CommandEmpty className="py-2 text-center text-xs text-muted-foreground">
-                      回车使用输入值
+                      {t("search.useInputValue")}
                     </CommandEmpty>
                     <CommandGroup>
                       {(item.kind === "lang" ? LANG_OPTIONS : LICENSE_OPTIONS).map((opt) => (
@@ -591,7 +591,7 @@ export default function SearchPage() {
                             active === "true" ? "opacity-100" : "opacity-0",
                           )}
                         />
-                        是
+                        {t("search.yes")}
                       </CommandItem>
                       <CommandItem
                         value="false"
@@ -604,7 +604,7 @@ export default function SearchPage() {
                             active === "false" ? "opacity-100" : "opacity-0",
                           )}
                         />
-                        否
+                        {t("search.no")}
                       </CommandItem>
                     </CommandGroup>
                   </CommandList>

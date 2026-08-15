@@ -44,6 +44,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Checkbox } from "@/components/ui/checkbox";
 import { useAuth } from "@/hooks/useAuth";
 import { useRepoPermission } from "@/hooks/useRepoPermission";
+import { useI18n, type I18nKey } from "@/i18n";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
 import { UserAvatar } from "@/components/UserAvatar";
 import { SidebarHeading, EditActionButton } from "@/components/SidebarSection";
@@ -67,9 +68,9 @@ import type { PullReviewSummary } from "@/lib/api";
  * 注意：官方该设置为内部机制（GraphQL/REST 均无公开用户级端点），
  * 本项目以 localStorage 持久化 UX 复刻（切换仅存本地偏好，无真实 API 副作用）。 */
 const COPILOT_EFFORTS = [
-  { value: "Lite", desc: "高效评审，低成本" },
-  { value: "Balanced", desc: "深度分析，中等成本" },
-  { value: "Max", desc: "最彻底，高成本 · 即将推出", comingSoon: true },
+  { value: "Lite", descKey: "review.level.lite" },
+  { value: "Balanced", descKey: "review.level.balanced" },
+  { value: "Max", descKey: "review.level.max", comingSoon: true },
 ] as const;
 type CopilotEffort = (typeof COPILOT_EFFORTS)[number]["value"];
 const EFFORT_KEY = "puregit_copilot_review_effort";
@@ -84,6 +85,7 @@ function setCopilotEffort(e: CopilotEffort) {
 /** Copilot effort 下拉（官方 copilot-review-effort-menu 复刻：当前值 + Lite/Balanced/Max）
  * 触发器 = Copilot 项旁的 AI badge 位置（用户指定），当前值显示在 badge 内。 */
 function CopilotEffortMenu() {
+  const { t } = useI18n();
   const [effort, setEffort] = useState<CopilotEffort>(getCopilotEffort);
   return (
     <DropdownMenu>
@@ -97,7 +99,7 @@ function CopilotEffortMenu() {
         </button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="w-56">
-        <DropdownMenuLabel className="text-xs">Copilot 评审介入程度</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs">{t("review.copilotLevel")}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {COPILOT_EFFORTS.map((e) => (
           <DropdownMenuItem
@@ -114,7 +116,7 @@ function CopilotEffortMenu() {
                 {e.value}
                 {effort === e.value && <Check className="size-3.5" />}
               </span>
-              <span className="text-xs font-normal text-muted-foreground">{e.desc}</span>
+              <span className="text-xs font-normal text-muted-foreground">{t(e.descKey)}</span>
             </span>
           </DropdownMenuItem>
         ))}
@@ -152,25 +154,25 @@ function avatarOf(login: string, avatarUrl?: string | null) {
 
 /* ── 评审状态徽标 ── */
 
-const REVIEW_STATE_META: Record<string, { label: string; className: string }> = {
+const REVIEW_STATE_META: Record<string, { labelKey: I18nKey; className: string }> = {
   APPROVED: {
-    label: "已批准",
+    labelKey: "review.state.approved",
     className: REVIEW_STATE_BADGE_TINTED.APPROVED,
   },
   CHANGES_REQUESTED: {
-    label: "请求修改",
+    labelKey: "review.state.changesRequested",
     className: REVIEW_STATE_BADGE_TINTED.CHANGES_REQUESTED,
   },
   COMMENTED: {
-    label: "已评论",
+    labelKey: "review.state.commented",
     className: REVIEW_STATE_BADGE_TINTED.COMMENTED,
   },
   DISMISSED: {
-    label: "已驳回",
+    labelKey: "review.state.dismissed",
     className: REVIEW_STATE_BADGE_TINTED.DISMISSED,
   },
   PENDING: {
-    label: "待提交",
+    labelKey: "review.state.pending",
     className: REVIEW_STATE_BADGE_TINTED.PENDING,
   },
 };
@@ -183,17 +185,19 @@ export function ReviewStateBadge({
   /** 仅图标模式（审计者栏紧凑显示——官方审计者状态只有图标色点，无文字/胶囊背景） */
   iconOnly?: boolean;
 }) {
+  const { t } = useI18n();
   const meta = REVIEW_STATE_META[state];
   if (!meta) return null;
   const Icon = state === "APPROVED" ? Check : state === "CHANGES_REQUESTED" ? X : MessageSquare;
+  const label = t(meta.labelKey);
   if (iconOnly) {
     // 审计者栏状态胶囊：shadcn Badge（圆形 tinted 底 + 状态色 icon，官方 GitHub 审计者状态胶囊同款）
     // ——不用裸 svg（无组件化/无配色规范）；Check/X 保持 outline 描边，COMMENTED 填色
     return (
       <Badge
         variant="outline"
-        aria-label={meta.label}
-        title={meta.label}
+        aria-label={label}
+        title={label}
         className={`size-5 shrink-0 items-center justify-center rounded-full border-transparent p-0 ${meta.className}`}
       >
         <Icon className="size-3" fill={state === "COMMENTED" ? "currentColor" : undefined} />
@@ -203,7 +207,7 @@ export function ReviewStateBadge({
   return (
     <Badge variant="outline" className={`gap-1 border-transparent text-[11px] ${meta.className}`}>
       <Icon className="size-3" />
-      {meta.label}
+      {label}
     </Badge>
   );
 }
@@ -228,12 +232,13 @@ export function ReviewersSidebar({
 }) {
   const { token, canWrite } = useAuth();
   const { canWrite: canWriteRepo } = useRepoPermission();
+  const { t } = useI18n();
   const [dialogOpen, setDialogOpen] = useState(false);
 
   if (loading) {
     return (
       <section>
-        <SidebarHeading title="审计者" />
+        <SidebarHeading title={t("review.reviewers")} />
         <Skeleton className="h-8 w-full" />
       </section>
     );
@@ -265,19 +270,19 @@ export function ReviewersSidebar({
   return (
     <section>
       <SidebarHeading
-        title="审计者"
+        title={t("review.reviewers")}
         action={
           token && canWrite && canWriteRepo && onRequestReviewers ? (
             <EditActionButton
-              label="审计者"
-              ariaLabel="邀请审计"
+              label={t("review.reviewers")}
+              ariaLabel={t("review.invite")}
               onClick={() => setDialogOpen(true)}
             />
           ) : undefined
         }
       />
       {everyone.length === 0 ? (
-        <p className="text-muted-foreground">暂无审计者</p>
+        <p className="text-muted-foreground">{t("review.noReviewers")}</p>
       ) : (
         <ul className="space-y-1.5">
           {everyone.map((u) => {
@@ -286,7 +291,7 @@ export function ReviewersSidebar({
               <li key={u.login} className="flex items-center gap-2">
                 <ReviewerItem login={u.login} avatarUrl={u.avatarUrl} state={review?.state} />
                 {!review && requestedLogins.has(u.login) && (
-                  <span className="text-xs text-muted-foreground">等待评审</span>
+                  <span className="text-xs text-muted-foreground">{t("review.waiting")}</span>
                 )}
               </li>
             );
@@ -332,6 +337,7 @@ function RequestAuditorsDialog({
   onRequestReviewers?: (logins: string[]) => Promise<void>;
 }) {
   const { token } = useAuth();
+  const { t } = useI18n();
   const [candidates, setCandidates] = useState<Collaborator[] | null>(null);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [busy, setBusy] = useState(false);
@@ -399,10 +405,8 @@ function RequestAuditorsDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>邀请审计</DialogTitle>
-          <DialogDescription>
-            选择对此项目库有权限的用户（协作者与 Copilot），已请求的不可重复添加
-          </DialogDescription>
+          <DialogTitle>{t("review.inviteTitle")}</DialogTitle>
+          <DialogDescription>{t("review.inviteDesc")}</DialogDescription>
         </DialogHeader>
         <div className="max-h-80 space-y-1 overflow-y-auto pr-1">
           {candidates === null ? (
@@ -434,7 +438,7 @@ function RequestAuditorsDialog({
               ))}
               {list.length === 0 && !copilotTaken && (
                 <p className="py-4 text-center text-sm text-muted-foreground">
-                  无其他可邀请的审计者
+                  {t("review.noInviteable")}
                 </p>
               )}
             </>
@@ -443,10 +447,10 @@ function RequestAuditorsDialog({
         {error && <p className="text-sm text-red-500">{error}</p>}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </Button>
           <Button onClick={invite} disabled={busy || selected.size === 0}>
-            {busy ? "邀请中…" : `邀请 ${selected.size} 人`}
+            {busy ? t("review.inviting") : t("review.inviteN", { count: selected.size })}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -468,6 +472,7 @@ function AuditorRow({
   selected: boolean;
   onToggle: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <label
       className={`flex w-full items-center gap-2 rounded-lg px-2 py-1.5 text-sm hover:bg-muted ${
@@ -476,7 +481,7 @@ function AuditorRow({
     >
       <UserAvatar src={avatarUrl} alt={login} className="size-6" />
       <span className="min-w-0 flex-1 truncate">{copilotDisplayName(login)}</span>
-      {disabled && <span className="text-xs text-muted-foreground">已请求</span>}
+      {disabled && <span className="text-xs text-muted-foreground">{t("review.requested")}</span>}
       <Checkbox
         checked={selected}
         disabled={disabled}
@@ -501,6 +506,7 @@ export function ReviewChangesDialog({
   onReviewed?: (review: PullReview) => void;
 }) {
   const { token } = useAuth();
+  const { t } = useI18n();
   const [open, setOpen] = useState(false);
   const [event, setEvent] = useState<ReviewEvent>("COMMENT");
   const [body, setBody] = useState("");
@@ -536,7 +542,7 @@ export function ReviewChangesDialog({
     setError(null);
     try {
       const r = await submit(owner, repo, number, event, body.trim(), token);
-      toastSuccess("评审已提交");
+      toastSuccess(t("review.submitted"));
       onReviewed?.(r);
       setOpen(false);
       setBody("");
@@ -564,21 +570,33 @@ export function ReviewChangesDialog({
       <DialogTrigger asChild>
         <Button variant="outline" onClick={openDialog}>
           <MessageSquare className="size-3.5" />
-          评审
+          {t("review.review")}
         </Button>
       </DialogTrigger>
       <DialogContent className="sm:max-w-lg">
         <DialogHeader>
-          <DialogTitle>提交评审</DialogTitle>
-          <DialogDescription>选择评审结论并填写留言（可选）</DialogDescription>
+          <DialogTitle>{t("review.submitTitle")}</DialogTitle>
+          <DialogDescription>{t("review.submitDesc")}</DialogDescription>
         </DialogHeader>
         <div className="space-y-3">
           <div className="flex gap-2">
             {(
               [
-                { value: "COMMENT", label: "评论", icon: <MessageSquare className="size-3.5" /> },
-                { value: "APPROVE", label: "批准", icon: <Check className="size-3.5" /> },
-                { value: "REQUEST_CHANGES", label: "请求修改", icon: <X className="size-3.5" /> },
+                {
+                  value: "COMMENT",
+                  label: t("review.comment"),
+                  icon: <MessageSquare className="size-3.5" />,
+                },
+                {
+                  value: "APPROVE",
+                  label: t("review.approve"),
+                  icon: <Check className="size-3.5" />,
+                },
+                {
+                  value: "REQUEST_CHANGES",
+                  label: t("review.state.changesRequested"),
+                  icon: <X className="size-3.5" />,
+                },
               ] as const
             ).map((o) => (
               <Button
@@ -593,15 +611,19 @@ export function ReviewChangesDialog({
               </Button>
             ))}
           </div>
-          <MarkdownEditor defaultValue={body} onChange={setBody} placeholder="评审留言（可选）…" />
+          <MarkdownEditor
+            defaultValue={body}
+            onChange={setBody}
+            placeholder={t("review.placeHolder")}
+          />
           {error && <p className="text-sm text-red-500">{error}</p>}
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={busy || !token}>
-            {busy ? "提交中…" : "提交评审"}
+            {busy ? t("common.submitting") : t("review.submit")}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -627,6 +649,7 @@ export function MergePanel({
   onMerged?: () => void;
 }) {
   const { token, canWrite } = useAuth();
+  const { t } = useI18n();
   const [method, setMethod] = useState<"merge" | "squash" | "rebase">("merge");
   const [open, setOpen] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -663,7 +686,7 @@ export function MergePanel({
     try {
       const r = await doMerge(owner, repo, number, method, token, pullRequestId);
       if (r.merged) {
-        toastSuccess("已合并");
+        toastSuccess(t("review.merged"));
         onMerged?.();
         setOpen(false);
       } else {
@@ -684,7 +707,7 @@ export function MergePanel({
         <div className="flex items-center gap-2">
           <GitPullRequest className="size-4 text-emerald-500" />
           <span className="text-sm font-medium">
-            {conflict ? "存在冲突，无法合并" : "合并 Pull Request"}
+            {conflict ? t("review.conflict") : t("review.mergePr")}
           </span>
         </div>
         {mergeable !== "CONFLICTING" && (
@@ -711,21 +734,21 @@ export function MergePanel({
               <AlertDialogTrigger asChild>
                 <Button onClick={openMerge} disabled={busy}>
                   <GitMerge className="size-3.5" />
-                  {busy ? "合并中…" : "合并"}
+                  {busy ? t("review.merging") : t("review.merge")}
                 </Button>
               </AlertDialogTrigger>
               <AlertDialogContent>
                 <AlertDialogHeader>
-                  <AlertDialogTitle>确认合并</AlertDialogTitle>
+                  <AlertDialogTitle>{t("review.confirmMerge")}</AlertDialogTitle>
                   <AlertDialogDescription>
-                    将 PR #{number} 以 {method} 方式合并到 {""}目标分支。
+                    {t("review.mergeDesc", { number, method })}
                     {error && <span className="mt-2 block text-red-500">{error}</span>}
                   </AlertDialogDescription>
                 </AlertDialogHeader>
                 <AlertDialogFooter>
-                  <AlertDialogCancel disabled={busy}>取消</AlertDialogCancel>
+                  <AlertDialogCancel disabled={busy}>{t("common.cancel")}</AlertDialogCancel>
                   <AlertDialogAction onClick={handleMerge} disabled={busy}>
-                    {busy ? "合并中…" : "确认合并"}
+                    {busy ? t("review.merging") : t("review.confirmMerge")}
                   </AlertDialogAction>
                 </AlertDialogFooter>
               </AlertDialogContent>

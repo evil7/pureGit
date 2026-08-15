@@ -696,7 +696,7 @@ export function NewDiscussionPage() {
             {t("common.cancel")}
           </Button>
           <Button type="submit" disabled={!canSubmit}>
-            {submitting ? t("discussions.submitting") : t("discussions.submit")}
+            {submitting ? t("common.creating") : t("discussions.submit")}
           </Button>
         </div>
       </form>

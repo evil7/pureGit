@@ -11,6 +11,7 @@
 import { GitFork } from "lucide-react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/i18n";
 
 export function NeedFork({
   owner,
@@ -23,22 +24,21 @@ export function NeedFork({
 }) {
   const { repo = "" } = useParams();
   const navigate = useNavigate();
+  const { t } = useI18n();
   return (
     <div className="flex flex-col items-center gap-4 rounded-lg border bg-card px-6 py-16 text-center">
       <div className="flex size-14 items-center justify-center rounded-full bg-muted">
         <GitFork className="size-7 text-muted-foreground" />
       </div>
       <div className="space-y-1.5">
-        <h2 className="text-xl font-semibold">需要先 Fork 仓库</h2>
+        <h2 className="text-xl font-semibold">{t("fork.needTitle")}</h2>
         <p className="max-w-md text-sm text-muted-foreground">
-          你正在操作 <span className="font-medium text-foreground">{owner}</span>{" "}
-          的仓库——非本人管理的项目不能直接{action}文件。请先 Fork 该仓库，在 fork 副本中完成{action}
-          后，通过 Pull Request 将改动提交回原仓库。
+          {t("fork.needDesc", { owner, action })}
         </p>
       </div>
       {/* 简单引导：跳转官方 fork 复刻页（选择目标/改名/是否仅复制默认分支） */}
       <Button variant="outline" onClick={() => navigate(`/${owner}/${repo}/fork`)}>
-        如何 Fork？进入 Fork 页面
+        {t("fork.howTo")}
       </Button>
     </div>
   );

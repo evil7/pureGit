@@ -30,6 +30,37 @@ export function loadDateFormat(): DateFormat {
   return "absolute";
 }
 
+/** 英文月份名（absolute/relative 超 30 天回退共用） */
+const EN_MONTHS = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
+
+/** 绝对日期（zh/en 样式） */
+function absoluteDate(d: Date, lang: "zh-CN" | "en-US", hm: string): string {
+  if (lang === "en-US")
+    return `${EN_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${hm}`;
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+}
+
+/** 纯日期（无时间，分组标题/日期徽标用）：absolute 样式随 lang */
+export function formatDay(iso: string, lang: "zh-CN" | "en-US" = "zh-CN"): string {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return iso;
+  if (lang === "en-US") return `${EN_MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()}`;
+  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+}
+
 /** 格式化 ISO 时间为指定格式（absolute 样式随 lang；iso 走 ISO 8601；relative 依赖当前时间差值） */
 export function formatDate(
   iso: string,
@@ -38,7 +69,7 @@ export function formatDate(
 ): string {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return iso;
-  if (format === "relative") return relativeTime(d);
+  if (format === "relative") return relativeTime(d, lang);
   if (format === "iso") {
     // 通用标准：YYYY-MM-DDTHH:mm:ss（本地时区）
     const p = (n: number) => String(n).padStart(2, "0");
@@ -48,38 +79,31 @@ export function formatDate(
   }
   const hh = String(d.getHours()).padStart(2, "0");
   const mm = String(d.getMinutes()).padStart(2, "0");
-  const hm = `${hh}:${mm}`;
-  if (lang === "en-US") {
-    const MONTHS = [
-      "January",
-      "February",
-      "March",
-      "April",
-      "May",
-      "June",
-      "July",
-      "August",
-      "September",
-      "October",
-      "November",
-      "December",
-    ] as const;
-    return `${MONTHS[d.getMonth()]} ${d.getDate()}, ${d.getFullYear()} ${hm}`;
-  }
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 ${hm}`;
+  return absoluteDate(d, lang, `${hh}:${mm}`);
 }
 
-/** 相对时间（官方 relative-time 简化版） */
-function relativeTime(d: Date): string {
+/** 相对时间（官方 relative-time 简化版；随界面语言输出 zh/en） */
+function relativeTime(d: Date, lang: "zh-CN" | "en-US"): string {
   const diff = Date.now() - d.getTime();
   const m = Math.floor(diff / 60000);
+  if (lang === "en-US") {
+    if (m < 1) return "just now";
+    if (m < 60) return `${m} minute${m === 1 ? "" : "s"} ago`;
+    const h = Math.floor(m / 60);
+    if (h < 24) return `${h} hour${h === 1 ? "" : "s"} ago`;
+    const day = Math.floor(h / 24);
+    if (day < 30) return `${day} day${day === 1 ? "" : "s"} ago`;
+    const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+    return absoluteDate(d, lang, hm);
+  }
   if (m < 1) return "刚刚";
   if (m < 60) return `${m} 分钟前`;
   const h = Math.floor(m / 60);
   if (h < 24) return `${h} 小时前`;
   const day = Math.floor(h / 24);
   if (day < 30) return `${day} 天前`;
-  return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日`;
+  const hm = `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
+  return absoluteDate(d, lang, hm);
 }
 
 export function useDateFormat() {
@@ -123,6 +147,8 @@ export function useDateFormat() {
     () => (iso: string) => formatDate(iso, format, effectiveLang),
     [format, effectiveLang],
   );
+  // 纯日期格式化（分组标题/日期徽标用，不随 relative/absolute 偏好变化）
+  const day = useMemo(() => (iso: string) => formatDay(iso, effectiveLang), [effectiveLang]);
 
-  return { format, setFormat: setFormatAndSync, fmt };
+  return { format, setFormat: setFormatAndSync, fmt, day };
 }

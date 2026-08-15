@@ -167,7 +167,7 @@ export default function NewRepositoryPage() {
   if (!token) {
     return (
       <div className={`${PAGE_SHELL} mx-auto max-w-md`}>
-        <LoginPrompt title="新建仓库" desc="登录后可创建仓库，仓库归属你的 GitHub 账号。" />
+        <LoginPrompt title={t("create.repo")} desc={t("newRepo.loginDesc")} />
       </div>
     );
   }
@@ -175,7 +175,7 @@ export default function NewRepositoryPage() {
   if (!canWrite) {
     return (
       <div className={`${PAGE_SHELL} mx-auto max-w-md`}>
-        <LoginPrompt title="新建仓库" desc="只读模式无法创建，请切换完全控制后重试。" />
+        <LoginPrompt title={t("create.repo")} desc={t("newRepo.readonlyDesc")} />
       </div>
     );
   }
@@ -183,10 +183,8 @@ export default function NewRepositoryPage() {
   return (
     <div className={PAGE_SHELL}>
       <div className="mx-auto max-w-2xl">
-        <h1 className="mb-2 text-2xl font-semibold">新建仓库</h1>
-        <p className="mb-6 text-sm text-muted-foreground">
-          创建一个新的仓库，用于存放你的代码与版本历史。
-        </p>
+        <h1 className="mb-2 text-2xl font-semibold">{t("create.repo")}</h1>
+        <p className="mb-6 text-sm text-muted-foreground">{t("newRepo.desc")}</p>
 
         <div className="space-y-6 rounded-lg border bg-card p-6">
           {/* Owner + 仓库名（必填） */}
@@ -232,7 +230,7 @@ export default function NewRepositoryPage() {
             </div>
             <div className="space-y-1.5">
               <Label htmlFor="repo-name">
-                仓库名称
+                {t("newRepo.name")}
                 <span className="ml-0.5 align-super text-xs text-destructive">*</span>
               </Label>
               <Input
@@ -257,7 +255,9 @@ export default function NewRepositoryPage() {
               <Globe className="mt-0.5 size-4 shrink-0" />
               <span>
                 <span className="block text-sm font-medium">Public</span>
-                <span className="block text-xs text-muted-foreground">任何人都能查看此仓库。</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t("newRepo.publicDesc")}
+                </span>
               </span>
             </button>
             <button
@@ -270,23 +270,25 @@ export default function NewRepositoryPage() {
               <Lock className="mt-0.5 size-4 shrink-0" />
               <span>
                 <span className="block text-sm font-medium">Private</span>
-                <span className="block text-xs text-muted-foreground">只有你能查看此仓库。</span>
+                <span className="block text-xs text-muted-foreground">
+                  {t("newRepo.privateDesc")}
+                </span>
               </span>
             </button>
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="repo-desc">描述</Label>
+            <Label htmlFor="repo-desc">{t("newRepo.description")}</Label>
             <Input
               id="repo-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              placeholder="简短描述这个仓库…"
+              placeholder={t("newRepo.descriptionPlaceholder")}
             />
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="repo-homepage">首页</Label>
+            <Label htmlFor="repo-homepage">{t("newRepo.homepage")}</Label>
             <Input
               id="repo-homepage"
               value={homepage}
@@ -302,28 +304,28 @@ export default function NewRepositoryPage() {
               value={topics}
               onChange={setTopics}
               token={token}
-              placeholder="如：ai、typescript、cli"
+              placeholder={t("newRepo.topicsPlaceholder")}
             />
           </div>
 
           {/* 初始化（README/gitignore/license） */}
           <div className="space-y-4">
-            <p className="text-sm font-medium">初始化仓库</p>
+            <p className="text-sm font-medium">{t("newRepo.init")}</p>
             <SwitchRow
-              title="使用 README 初始化"
-              desc="创建后自动生成 README.md（需提交权限）。"
+              title={t("newRepo.initReadme")}
+              desc={t("newRepo.initReadmeDesc")}
               checked={autoInit}
               onChange={setAutoInit}
             />
             <div className="grid gap-4 sm:grid-cols-2">
               <div className="space-y-1.5">
-                <Label>.gitignore 模板</Label>
+                <Label>{t("newRepo.gitignore")}</Label>
                 <Select value={gitignore} onValueChange={setGitignore}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="无" />
+                    <SelectValue placeholder={t("newRepo.none")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">无</SelectItem>
+                    <SelectItem value="">{t("newRepo.none")}</SelectItem>
                     {gitignoreOptions.map((g) => (
                       <SelectItem key={g} value={g}>
                         {g}
@@ -333,13 +335,13 @@ export default function NewRepositoryPage() {
                 </Select>
               </div>
               <div className="space-y-1.5">
-                <Label>许可证</Label>
+                <Label>{t("newRepo.license")}</Label>
                 <Select value={license} onValueChange={setLicense}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="无" />
+                    <SelectValue placeholder={t("newRepo.none")} />
                   </SelectTrigger>
                   <SelectContent>
-                    <SelectItem value="">无</SelectItem>
+                    <SelectItem value="">{t("newRepo.none")}</SelectItem>
                     {licenseOptions.map((l) => (
                       <SelectItem key={l.key} value={l.key}>
                         {l.name}
@@ -353,28 +355,28 @@ export default function NewRepositoryPage() {
 
           {/* Features（对齐官方：创建时一并设定） */}
           <div className="space-y-3">
-            <p className="text-sm font-medium">功能</p>
+            <p className="text-sm font-medium">{t("newRepo.features")}</p>
             <SwitchRow
               title="Issues"
-              desc="跟踪 bug 与功能请求。"
+              desc={t("newRepo.featuresIssuesDesc")}
               checked={features.issues}
               onChange={(v) => setFeatures((f) => ({ ...f, issues: v }))}
             />
             <SwitchRow
               title="Discussions"
-              desc="开放的社区讨论空间。"
+              desc={t("newRepo.featuresDiscussionsDesc")}
               checked={features.discussions}
               onChange={(v) => setFeatures((f) => ({ ...f, discussions: v }))}
             />
             <SwitchRow
               title="Wiki"
-              desc="仓库文档与协作空间。"
+              desc={t("newRepo.featuresWikiDesc")}
               checked={features.wiki}
               onChange={(v) => setFeatures((f) => ({ ...f, wiki: v }))}
             />
             <SwitchRow
               title="Projects"
-              desc="用看板与视图组织工作。"
+              desc={t("newRepo.featuresProjectsDesc")}
               checked={features.projects}
               onChange={(v) => setFeatures((f) => ({ ...f, projects: v }))}
             />
@@ -382,34 +384,34 @@ export default function NewRepositoryPage() {
 
           {/* Merge options */}
           <div className="space-y-3">
-            <p className="text-sm font-medium">合并选项</p>
+            <p className="text-sm font-medium">{t("newRepo.mergeOptions")}</p>
             <SwitchRow
-              title="允许 squash merge"
-              desc="将 PR 合并为单个提交。"
+              title={t("newRepo.allowSquash")}
+              desc={t("newRepo.allowSquashDesc")}
               checked={merge.squash}
               onChange={(v) => setMerge((m) => ({ ...m, squash: v }))}
             />
             <SwitchRow
-              title="允许 merge commit"
-              desc="创建合并提交。"
+              title={t("newRepo.allowMergeCommit")}
+              desc={t("newRepo.allowMergeCommitDesc")}
               checked={merge.mergeCommit}
               onChange={(v) => setMerge((m) => ({ ...m, mergeCommit: v }))}
             />
             <SwitchRow
-              title="允许 rebase merge"
-              desc="将提交 rebase 到目标分支。"
+              title={t("newRepo.allowRebase")}
+              desc={t("newRepo.allowRebaseDesc")}
               checked={merge.rebase}
               onChange={(v) => setMerge((m) => ({ ...m, rebase: v }))}
             />
             <SwitchRow
-              title="允许 auto-merge"
-              desc="满足条件后自动合并 PR。"
+              title={t("newRepo.allowAutoMerge")}
+              desc={t("newRepo.allowAutoMergeDesc")}
               checked={merge.autoMerge}
               onChange={(v) => setMerge((m) => ({ ...m, autoMerge: v }))}
             />
             <SwitchRow
-              title="合并后自动删除分支"
-              desc="PR 合并后自动删除源分支。"
+              title={t("newRepo.deleteOnMerge")}
+              desc={t("newRepo.deleteOnMergeDesc")}
               checked={merge.deleteOnMerge}
               onChange={(v) => setMerge((m) => ({ ...m, deleteOnMerge: v }))}
             />
@@ -417,8 +419,8 @@ export default function NewRepositoryPage() {
 
           {/* 模板仓库 */}
           <SwitchRow
-            title="模板仓库"
-            desc="标记为模板，供他人从此仓库生成新仓库。"
+            title={t("newRepo.template")}
+            desc={t("newRepo.templateDesc")}
             checked={isTemplate}
             onChange={setIsTemplate}
           />
@@ -430,7 +432,7 @@ export default function NewRepositoryPage() {
               {t("common.cancel")}
             </Button>
             <Button onClick={() => void create()} disabled={busy || !name.trim()}>
-              {busy ? "创建中…" : "创建仓库"}
+              {busy ? t("common.creating") : t("newRepo.create")}
             </Button>
           </div>
         </div>

@@ -9,6 +9,7 @@
 import type { ReactNode } from "react";
 import { Bell, BellRing, Settings } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { useI18n } from "@/i18n";
 
 /** 分区标题 + 可选右侧操作（齿轮图标等）；供已有 <section> 外壳的调用方嵌入 */
 export function SidebarHeading({ title, action }: { title: string; action?: ReactNode }) {
@@ -35,11 +36,12 @@ export function EditActionButton({
   /** 自定义 aria-label（默认「编辑{label}」；审计者栏语义为邀请，可覆盖为「邀请审计」） */
   ariaLabel?: string;
 }) {
+  const { t } = useI18n();
   return (
     <button
       type="button"
       onClick={onClick}
-      aria-label={ariaLabel ?? `编辑${label}`}
+      aria-label={ariaLabel ?? t("sidebar.editLabel", { label })}
       className="-mr-1 rounded p-1 text-muted-foreground transition-colors hover:bg-muted hover:text-foreground"
     >
       <Settings className="size-3.5" />

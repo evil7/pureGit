@@ -12,6 +12,7 @@ import {
   LATEST_COMMIT_QUERY,
   REPO_HEADER_QUERY,
   FILE_COMMIT_QUERY,
+  FILE_HISTORY_QUERY,
   REPO_WITH_RELEASES_QUERY,
   CREATE_REPOSITORY_MUTATION,
   UPDATE_REPOSITORY_MUTATION,
@@ -42,6 +43,7 @@ import {
   fetchPublicRepoStats,
   fetchLatestCommit,
   fetchFileCommit,
+  fetchFileCommits,
   fetchBranches,
 } from "../restapi";
 import type { Repository, Release, RepoStats, CreateRepoInput } from "../restapi";
@@ -177,6 +179,137 @@ export async function fetchFileCommitSmart(
     }
   }
   return fetchFileCommit(owner, name, path, branch, token);
+}
+
+/** 文件提交历史单项（GraphQL history 节点与 REST listCommits 归一） */
+export interface FileCommitItem {
+  sha: string;
+  message: string;
+  committedDate: string;
+  authorLogin: string | null;
+  authorName: string | null;
+  authorAvatarUrl: string | null;
+}
+
+/** 文件提交历史分页结果（GraphQL 游标 + REST 页码双轨，供 CommitsPage 加载更多） */
+export interface PagedFileCommits {
+  commits: FileCommitItem[];
+  endCursor: string | null;
+  hasNextPage: boolean;
+  restPage: number | null;
+}
+
+/** 文件历史每页条数（对齐官方 commits 列表默认 30/页） */
+const FILE_HISTORY_PAGE_SIZE = 30;
+
+/** REST RepoCommit → FileCommitItem（authorLogin 为空时回退 git 提交 author.name） */
+function toFileCommitItem(c: {
+  sha: string;
+  commit: { message: string; author: { name: string; date: string } | null };
+  author: { login: string; avatar_url: string } | null;
+}): FileCommitItem {
+  return {
+    sha: c.sha,
+    message: c.commit.message,
+    committedDate: c.commit.author?.date ?? "",
+    authorLogin: c.author?.login ?? null,
+    authorName: c.commit.author?.name ?? null,
+    authorAvatarUrl: c.author?.avatar_url ?? null,
+  };
+}
+
+/**
+ * 智能获取指定文件的提交历史（blob History 页）：
+ * GraphQL object(expression: branch).history(path) 分页首选（游标），失败/匿名 → 熔断降级 REST
+ * listCommits(sha, path) 分页（页码）。返回 PagedFileCommits（endCursor/restPage 双轨续接）。
+ */
+export async function fetchFileCommitsSmart(
+  owner: string,
+  name: string,
+  branch: string,
+  path: string,
+  cursor: string | null,
+  restPage: number,
+  token?: string | null,
+): Promise<PagedFileCommits> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>): Promise<PagedFileCommits> =>
+    withRestFallback(
+      async () => {
+        const cs = await fetchFileCommits(
+          owner,
+          name,
+          branch,
+          path,
+          FILE_HISTORY_PAGE_SIZE,
+          restPage,
+          token,
+        );
+        return {
+          commits: cs.map(toFileCommitItem),
+          endCursor: null,
+          // REST 无游标：按「批次是否拉满」判断是否还有下一页
+          hasNextPage: cs.length >= FILE_HISTORY_PAGE_SIZE,
+          restPage: restPage + 1,
+        };
+      },
+      "fetchFileCommitsSmart",
+      gqlResp,
+    );
+
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          object: {
+            history: {
+              pageInfo: { endCursor: string | null; hasNextPage: boolean };
+              nodes: Array<{
+                oid: string;
+                message: string;
+                committedDate: string;
+                author: {
+                  name: string | null;
+                  avatarUrl: string;
+                  user: { login: string } | null;
+                } | null;
+              }>;
+            } | null;
+          } | null;
+        } | null;
+      }> = await graphqlRequest(
+        FILE_HISTORY_QUERY,
+        {
+          owner,
+          name,
+          expression: branch,
+          path,
+          first: FILE_HISTORY_PAGE_SIZE,
+          after: cursor ?? null,
+        },
+        token,
+      );
+      const h = resp.data?.repository?.object?.history;
+      if (!hasGraphQLErrors(resp) && h) {
+        return {
+          commits: (h.nodes ?? []).map((n) => ({
+            sha: n.oid,
+            message: n.message,
+            committedDate: n.committedDate,
+            authorLogin: n.author?.user?.login ?? null,
+            authorName: n.author?.name ?? null,
+            authorAvatarUrl: n.author?.avatarUrl ?? null,
+          })),
+          endCursor: h.pageInfo?.endCursor ?? null,
+          hasNextPage: h.pageInfo?.hasNextPage ?? false,
+          restPage: null,
+        };
+      }
+      return fromRest(resp);
+    } catch {
+      return fromRest(undefined);
+    }
+  }
+  return fromRest(undefined);
 }
 
 /** 创建仓库（smart 层入参，camelCase；GraphQL 无适配字段由 post-create PATCH 承担） */

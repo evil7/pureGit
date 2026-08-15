@@ -10,6 +10,7 @@
  * - permission="org"：组织管理（组织资料/成员设置与修改），依据 canManageOrg
  */
 import { useAuth } from "@/hooks/useAuth";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 export function PermissionGate({
@@ -24,6 +25,7 @@ export function PermissionGate({
   hint?: string;
 }) {
   const { token, canWrite, canEditAccount, canGist, canManageOrg } = useAuth();
+  const { t } = useI18n();
   const has =
     permission === "write"
       ? canWrite
@@ -33,13 +35,7 @@ export function PermissionGate({
           ? canGist
           : canManageOrg;
   const defaultHint =
-    permission === "write"
-      ? "需完全控制：请在「设置」右上角切换为完全控制模式（重新登录）"
-      : permission === "editAccount"
-        ? "需完全控制：请在「设置」右上角切换为完全控制模式"
-        : permission === "gist"
-          ? "需完全控制：请在「设置」右上角切换为完全控制模式"
-          : "需完全控制：请在「设置」右上角切换为完全控制模式";
+    permission === "write" ? t("gate.needFullControl") : t("gate.needFullControlShort");
   // 匿名：保持原样（点击触发登录引导）；已登录但缺权限：置灰禁用
   if (!token || has) return <>{children}</>;
   return (

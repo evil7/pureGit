@@ -25,6 +25,7 @@ import {
   Upload,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { Card, CardContent } from "@/components/ui/card";
 import { InlineError } from "@/components/InlineError";
 import { Input } from "@/components/ui/input";
@@ -111,7 +112,7 @@ export function BranchPicker({
         </Button>
       </DropdownMenuTrigger>
       <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
-        <DropdownMenuLabel className="text-xs">分支</DropdownMenuLabel>
+        <DropdownMenuLabel className="text-xs">{tStatic("repoCode.branches")}</DropdownMenuLabel>
         {branches.map((b) => (
           <DropdownMenuItem
             key={b}
@@ -224,7 +225,7 @@ export function RepoActionBar({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="max-h-80 w-56 overflow-y-auto">
-          <DropdownMenuLabel className="text-xs">分支</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-xs">{tStatic("repoCode.branches")}</DropdownMenuLabel>
           {branches.map((b) => (
             <DropdownMenuItem
               key={b}
@@ -288,7 +289,7 @@ export function RepoActionBar({
             </Button>
           </DropdownMenuTrigger>
           <DropdownMenuContent align="end" className="w-80">
-            <DropdownMenuLabel className="text-xs">克隆仓库</DropdownMenuLabel>
+            <DropdownMenuLabel className="text-xs">{tStatic("repoCode.clone")}</DropdownMenuLabel>
             <DropdownMenuSeparator />
             <div className="space-y-3 px-2 py-2">
               {/* HTTPS（官方：纯链接文本，无 git clone 前缀） */}
@@ -337,7 +338,9 @@ export function RepoActionBar({
               </div>
               {/* 镜像（本站域名，insteadOf 接入，见 cli-setup.md） */}
               <div>
-                <p className="mb-1 text-xs text-muted-foreground">HTTPS（镜像）</p>
+                <p className="mb-1 text-xs text-muted-foreground">
+                  {tStatic("repoCode.httpsMirror")}
+                </p>
                 <div className="flex items-center gap-1">
                   <code className="min-w-0 flex-1 truncate rounded border bg-muted px-2 py-1 font-mono text-xs">
                     https://{siteHost}/{owner}/{repo}.git
@@ -434,7 +437,11 @@ function LatestCommitLine({
         <Clock className="size-3.5" />
         {fmt(commit.commit.committer.date)}
       </span>
-      <span className="shrink-0 font-mono text-primary">{commit.sha.slice(0, 7)}</span>
+      <Badge variant="secondary" asChild className="shrink-0 font-mono hover:bg-secondary/80">
+        <Link to={`/${owner}/${repo}/commit/${commit.sha}`} title={commit.sha}>
+          {commit.sha.slice(0, 7)}
+        </Link>
+      </Badge>
     </div>
   );
 }
@@ -483,7 +490,9 @@ export function FileList({
           </Link>
         )}
         {sorted.length === 0 && (
-          <p className="p-6 text-center text-sm text-muted-foreground">目录为空</p>
+          <p className="p-6 text-center text-sm text-muted-foreground">
+            {tStatic("repoCode.dirEmpty")}
+          </p>
         )}
         {sorted.map((e) => (
           <Link
@@ -536,7 +545,7 @@ function CmdBlock({
           variant="ghost"
           className="size-7"
           onClick={() => onCopy(copyKey, cmds.join("\n"))}
-          aria-label={`${title}（复制）`}
+          aria-label={tStatic("repoCode.copyTitle", { title })}
         >
           {copied === copyKey ? (
             <Check className="size-3.5 text-chart-1" />
@@ -716,8 +725,13 @@ export function FileTreeSidebar({
       <div className="flex items-center justify-between border-b px-3 py-2 text-xs font-medium text-muted-foreground">
         <span>Files</span>
         {onToggleCollapse && (
-          <Tip label="折叠文件树">
-            <Button variant="ghost" size="icon" onClick={onToggleCollapse} aria-label="折叠文件树">
+          <Tip label={tStatic("blob.collapseTree")}>
+            <Button
+              variant="ghost"
+              size="icon"
+              onClick={onToggleCollapse}
+              aria-label={tStatic("blob.collapseTree")}
+            >
               <PanelLeftClose className="size-3.5" />
             </Button>
           </Tip>
@@ -743,7 +757,7 @@ export function FileTreeSidebar({
         {treeRoot ? (
           <FileTree root={treeRoot} currentPath={currentPath} branch={branch} filter={filter} />
         ) : (
-          <p className="p-2 text-sm text-muted-foreground">文件树为空</p>
+          <p className="p-2 text-sm text-muted-foreground">{tStatic("repoCode.treeEmpty")}</p>
         )}
       </div>
     </div>

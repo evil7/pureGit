@@ -192,16 +192,16 @@ export default function ReposNavPage() {
                     <Button variant="ghost" className="gap-1" asChild>
                       <Link to={`/${r.owner.login}/${r.name}/settings`}>
                         <Settings className="size-3.5" />
-                        设置
+                        {t("common.settings")}
                       </Link>
                     </Button>
                   </PermissionGate>
                 ) : (
-                  <Tip label="仅仓库所有者可设置">
+                  <Tip label={t("repo.ownerOnly")}>
                     <span className="inline-flex cursor-not-allowed opacity-40">
                       <Button variant="ghost" className="gap-1" disabled>
                         <Settings className="size-3.5" />
-                        设置
+                        {t("common.settings")}
                       </Button>
                     </span>
                   </Tip>

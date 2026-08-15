@@ -27,6 +27,7 @@ import { Check, Copy } from "lucide-react";
 import { githubSyntax, parseRepoFromRawBase } from "@/lib/markdown/markdown-plugins";
 import { rawImgFallbackSrc } from "@/lib/repo/raw-proxy";
 import { useIsDark } from "@/hooks/useIsDark";
+import { useI18n } from "@/i18n";
 import type { OutlineItem } from "@/lib/markdown/markdown-outline";
 
 /** 从 pre 子节点递归提取纯文本（复制内容 = 代码原文，去高亮 span 包装） */
@@ -42,6 +43,7 @@ function extractCodeText(node: ReactNode): string {
 
 /** 代码块（pre）——库默认复制按钮改注入与操作栏一致的 lucide 按钮（hover 显示，点击 chart-1 √） */
 function CodeBlock({ children, ...props }: ComponentProps<"pre">) {
+  const { t } = useI18n();
   const [copied, setCopied] = useState(false);
   const code = extractCodeText(children);
   const doCopy = async () => {
@@ -59,8 +61,8 @@ function CodeBlock({ children, ...props }: ComponentProps<"pre">) {
       <button
         type="button"
         onClick={doCopy}
-        title={copied ? "已复制" : "复制代码"}
-        aria-label={copied ? "已复制" : "复制代码"}
+        title={t(copied ? "common.copied" : "code.copy")}
+        aria-label={t(copied ? "common.copied" : "code.copy")}
         className="absolute right-2 top-2 z-10 flex size-6 items-center justify-center rounded-md border bg-background text-muted-foreground opacity-0 shadow-sm transition-opacity group-hover:opacity-100 hover:text-foreground"
       >
         {copied ? <Check className="size-3.5 text-chart-1" /> : <Copy className="size-3.5" />}

@@ -129,7 +129,7 @@ export function CommentsSection({
           <div className="flex justify-end">
             <Button type="submit" disabled={submitting || !body.trim()}>
               <Send className="size-3.5" />
-              {submitting ? t("comments.submitting") : t("comments.submit")}
+              {submitting ? t("common.submitting") : t("comments.submit")}
             </Button>
           </div>
         </form>

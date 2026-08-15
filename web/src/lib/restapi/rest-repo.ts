@@ -1268,15 +1268,66 @@ export async function fetchCommits(
   );
 }
 
-/** 单个 commit 详情（GET /repos/{owner}/{repo}/commits/{ref}）；feed push 卡片补拉 commit message 用 */
+/** 指定文件的提交历史（GET /repos/{owner}/{repo}/commits?sha=branch&path=path；分页） */
+export async function fetchFileCommits(
+  owner: string,
+  repo: string,
+  branch: string,
+  path: string,
+  perPage = 30,
+  page = 1,
+  token?: string | null,
+): Promise<RepoCommit[]> {
+  return typedRequest<RepoCommit[]>(token, (octokit) =>
+    octokit.rest.repos.listCommits({
+      owner,
+      repo,
+      sha: branch,
+      path,
+      per_page: perPage,
+      page,
+    }),
+  );
+}
+
+/** 单个 commit 变更文件（GET /repos/{owner}/{repo}/commits/{ref} 的 files 项；结构与 PR files 一致） */
+export interface CommitFile {
+  filename: string;
+  status: string; // added / removed / modified / renamed / copied
+  additions: number;
+  deletions: number;
+  changes: number;
+  /** unified diff 文本（超大文件可能省略，为 undefined） */
+  patch?: string;
+  raw_url?: string;
+  /** 重命名/复制时提供旧路径 */
+  previous_filename?: string;
+}
+
+/** 单个 commit 完整详情（commit 详情页用：标题/作者/父提交/文件 diff/统计） */
+export interface CommitDetail {
+  sha: string;
+  commit: {
+    message: string;
+    author: { name: string; date: string } | null;
+    committer: { name: string; date: string } | null;
+  };
+  /** GitHub 用户（外层 author；可能为 null——无 GitHub 账号的提交） */
+  author: { login: string; avatar_url: string } | null;
+  parents: { sha: string }[];
+  files: CommitFile[];
+  stats: { additions: number; deletions: number; total: number };
+}
+
+/** 单个 commit 详情（GET /repos/{owner}/{repo}/commits/{ref}）——commit 详情页主通道 */
 export async function fetchCommitDetail(
   owner: string,
   repo: string,
   sha: string,
   token?: string | null,
-): Promise<RepoCommit | null> {
+): Promise<CommitDetail | null> {
   try {
-    return await typedRequest<RepoCommit>(token, (octokit) =>
+    return await typedRequest<CommitDetail>(token, (octokit) =>
       octokit.rest.repos.getCommit({ owner, repo, ref: sha }),
     );
   } catch {

@@ -31,6 +31,8 @@ const CodeIndex = lazy(() => import("@/pages/CodeIndex"));
 const TreePage = lazy(() => import("@/pages/TreePage"));
 const BlobPage = lazy(() => import("@/pages/BlobPage"));
 const BranchesPage = lazy(() => import("@/pages/BranchesPage"));
+const CommitPage = lazy(() => import("@/pages/CommitPage"));
+const CommitsPage = lazy(() => import("@/pages/CommitsPage"));
 const UploadPage = lazy(() => import("@/pages/UploadPage"));
 const ForkPage = lazy(() => import("@/pages/ForkPage"));
 const FileEditorPage = lazy(() =>
@@ -46,6 +48,7 @@ const NewIssuePage = lazy(() => import("@/pages/NewIssuePage"));
 const NewPullRequestPage = lazy(() => import("@/pages/NewPullRequestPage"));
 const NewRepositoryPage = lazy(() => import("@/pages/NewRepositoryPage"));
 const ReleasesPage = lazy(() => import("@/pages/ReleasesPages"));
+const ReleaseDetailPage = lazy(() => import("@/pages/ReleaseDetailPage"));
 const SecurityPage = lazy(() => import("@/pages/SecurityPages"));
 const SecurityAdvisoryDetailPage = lazy(() =>
   import("@/pages/SecurityPages").then((m) => ({
@@ -287,6 +290,8 @@ const router = createBrowserRouter([
           { path: "fork", element: <ForkPage /> },
           { path: "branches", element: <BranchesPage /> },
           { path: "branches/:filter", element: <BranchesPage /> },
+          { path: "commit/:sha", element: <CommitPage /> },
+          { path: "commits/*", element: <CommitsPage /> },
           { path: "issues", element: <IssuesPage /> },
           { path: "issues/new/choose", element: <NewIssuePage /> },
           { path: "issues/new", element: <NewIssuePage /> },
@@ -310,6 +315,7 @@ const router = createBrowserRouter([
           { path: "actions/runs/:runId", element: <RunDetailPage /> },
           { path: "actions/runs/:runId/job/:jobId", element: <JobDetailPage /> },
           { path: "releases", element: <ReleasesPage /> },
+          { path: "releases/tag/:tag", element: <ReleaseDetailPage /> },
           { path: "security", element: <SecurityPage /> },
           { path: "security/advisories/:ghsaId", element: <SecurityAdvisoryDetailPage /> },
           { path: "pulse", element: <InsightsPage /> },

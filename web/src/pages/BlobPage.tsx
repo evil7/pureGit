@@ -23,6 +23,7 @@ import {
   X,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Badge } from "@/components/ui/badge";
 import { InlineError } from "@/components/InlineError";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
@@ -40,7 +41,7 @@ import {
 import { useAuth } from "@/hooks/useAuth";
 import { useBranchPath } from "@/hooks/useBranchPath";
 import { useDateFormat } from "@/hooks/useDateFormat";
-import { tStatic } from "@/i18n";
+import { tStatic, useI18n } from "@/i18n";
 import { fetchFileWithCommitSmart, apiErrorMessage, type FileCommitInfo } from "@/lib/api";
 import { fetchFileMeta, deleteFileContent } from "@/lib/restapi";
 import { WORKER_BASE } from "@/lib/auth/worker-base";
@@ -62,6 +63,7 @@ export default function BlobPage() {
   const { owner = "", repo = "" } = useParams();
   const { token } = useAuth();
   const { fmt } = useDateFormat();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const { collapsed: treeCollapsed, setCollapsed: setTreeCollapsed } = useTreeCollapse();
   // blob 路由已改 splat：按分支列表最长前缀匹配解析 branch/path（分支名可含 `/`）
@@ -302,7 +304,7 @@ export default function BlobPage() {
           <Button variant="ghost" className="rounded-none px-2.5" onClick={() => void openRaw()}>
             Raw
           </Button>
-          <Tip label={copiedRaw ? "已复制" : "复制原始内容"}>
+          <Tip label={copiedRaw ? t("common.copied") : t("blob.copyRaw")}>
             <Button
               variant="ghost"
               size="icon"
@@ -316,7 +318,7 @@ export default function BlobPage() {
               )}
             </Button>
           </Tip>
-          <Tip label="下载原始文件">
+          <Tip label={t("blob.downloadRaw")}>
             <Button
               variant="ghost"
               size="icon"
@@ -333,13 +335,13 @@ export default function BlobPage() {
           <WriteGate className="flex items-center gap-1.5">
             <ForkGate className="flex items-center gap-1.5">
               <div className="flex items-stretch overflow-hidden rounded-md border">
-                <Tip label="编辑此文件">
+                <Tip label={t("blob.editFile")}>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="rounded-none"
                     asChild
-                    aria-label="编辑此文件"
+                    aria-label={t("blob.editFile")}
                   >
                     {/*：blob 已加载内容随导航 state 传给编辑页（省一次内容请求）；直接访问编辑链接则自加载 */}
                     <Link
@@ -350,13 +352,13 @@ export default function BlobPage() {
                     </Link>
                   </Button>
                 </Tip>
-                <Tip label="删除文件">
+                <Tip label={t("blob.deleteFile")}>
                   <Button
                     variant="ghost"
                     size="icon"
                     className="rounded-none text-destructive hover:bg-destructive/10 hover:text-destructive"
                     onClick={() => setDelOpen(true)}
-                    aria-label="删除文件"
+                    aria-label={t("blob.deleteFile")}
                   >
                     <Trash2 className="size-3.5" />
                   </Button>
@@ -371,7 +373,7 @@ export default function BlobPage() {
             variant="ghost"
             size="icon"
             onClick={() => setOutlineOpen((v) => !v)}
-            title={outlineOpen ? "关闭目录面板" : "打开目录面板"}
+            title={outlineOpen ? t("blob.closeOutline") : t("blob.openOutline")}
             aria-pressed={outlineOpen}
             aria-expanded={outlineOpen}
           >
@@ -383,7 +385,7 @@ export default function BlobPage() {
             variant="ghost"
             size="icon"
             onClick={() => setSymbolsOpen((v) => !v)}
-            title={symbolsOpen ? "关闭符号面板" : "打开符号面板"}
+            title={symbolsOpen ? t("blob.closeSymbols") : t("blob.openSymbols")}
             aria-pressed={symbolsOpen}
             aria-expanded={symbolsOpen}
           >
@@ -411,13 +413,13 @@ export default function BlobPage() {
       >
         <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm">
           {/* 折叠态元素：展开树按钮 + 分支常驻挂载 + hidden 显隐，避免切换重挂载重复请求 */}
-          <Tip label="展开文件树">
+          <Tip label={t("blob.expandTree")}>
             <Button
               variant="ghost"
               size="icon"
               className={cn("size-7", !treeCollapsed && "hidden")}
               onClick={() => setTreeCollapsed(false)}
-              aria-label="展开文件树"
+              aria-label={t("blob.expandTree")}
             >
               <PanelRightOpen className="size-3.5" />
             </Button>
@@ -469,17 +471,19 @@ export default function BlobPage() {
             {commit.author?.login ?? "unknown"}
           </span>
           <span className="min-w-0 flex-1 truncate">{commit.commit.message.split("\n")[0]}</span>
-          <span className="shrink-0 font-mono text-primary">{commit.sha.slice(0, 7)}</span>
+          <Badge variant="secondary" asChild className="shrink-0 font-mono hover:bg-secondary/80">
+            <Link to={`/${owner}/${repo}/commit/${commit.sha}`} title={commit.sha}>
+              {commit.sha.slice(0, 7)}
+            </Link>
+          </Badge>
           <span className="shrink-0">{fmt(commit.commit.committer.date)}</span>
-          <a
-            href={`https://github.com/${owner}/${repo}/commits/${b}/${path}`}
-            target="_blank"
-            rel="noreferrer"
+          <Link
+            to={`/${owner}/${repo}/commits/${b}/${path}`}
             className="ml-auto flex shrink-0 items-center gap-1 text-primary hover:underline"
           >
             <History className="size-3.5" />
             History
-          </a>
+          </Link>
         </div>
       )}
 
@@ -583,7 +587,7 @@ export default function BlobPage() {
               {tStatic("common.deleteFile").replace("{name}", fileName)}
             </AlertDialogTitle>
             <AlertDialogDescription>
-              将在分支 {b} 上提交删除此文件。此操作会写入 git 历史，请确认。
+              {t("blob.deleteConfirm").replace("{branch}", b)}
             </AlertDialogDescription>
           </AlertDialogHeader>
           {delError && <InlineError message={delError} size="sm" />}
@@ -594,7 +598,7 @@ export default function BlobPage() {
               onClick={() => void doDelete()}
               disabled={delBusy}
             >
-              {delBusy ? "删除中…" : "提交删除"}
+              {delBusy ? t("common.deleting") : t("blob.deleteSubmit")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>
@@ -640,6 +644,7 @@ function SymbolsPanel({
   onJumpLine: (line: number) => void;
 }) {
   const { owner = "", repo = "" } = useParams();
+  const { t } = useI18n();
   // 详情视图（官方：Back to all symbols + kind/名称 + Definitions + References + Search）
   if (selectedSym) {
     const { symbol, defText, refs } = selectedSym;
@@ -649,10 +654,15 @@ function SymbolsPanel({
         <div className="flex items-center justify-between border-b bg-muted/50 px-2 py-1.5">
           <Button variant="ghost" className="gap-1 px-2" onClick={onBack}>
             <ArrowLeft className="size-3.5" />
-            All symbols
+            {t("blob.symbols.allSymbols")}
           </Button>
-          <Tip label="关闭符号面板">
-            <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭符号面板">
+          <Tip label={t("blob.closeSymbols")}>
+            <Button
+              size="icon"
+              variant="ghost"
+              onClick={onClose}
+              aria-label={t("blob.closeSymbols")}
+            >
               <X className="size-3.5" />
             </Button>
           </Tip>
@@ -673,7 +683,7 @@ function SymbolsPanel({
         </div>
         {/* Definitions in this file（官方：定义所在行） */}
         <div className="border-b px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          Definitions in this file
+          {t("blob.symbols.definitions")}
         </div>
         <button
           onClick={() => onJumpLine(symbol.line)}
@@ -686,7 +696,7 @@ function SymbolsPanel({
         </button>
         {/* References in this file（官方：引用行列表） */}
         <div className="border-b px-3 pb-1 pt-2 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground">
-          References in this file
+          {t("blob.symbols.references")}
           {refs.length > 0 && (
             <span className="ml-1 font-normal normal-case text-muted-foreground/80">
               ({refs.length})
@@ -694,7 +704,7 @@ function SymbolsPanel({
           )}
         </div>
         {refs.length === 0 ? (
-          <p className="px-3 py-1.5 text-xs text-muted-foreground">未找到文件内引用</p>
+          <p className="px-3 py-1.5 text-xs text-muted-foreground">{t("blob.noRefs")}</p>
         ) : (
           <div className="max-h-[38vh] overflow-y-auto pb-1">
             {refs.map((r) => (
@@ -718,7 +728,7 @@ function SymbolsPanel({
           )}&type=code`}
           className="flex items-center gap-1.5 border-t px-3 py-2 text-xs text-primary hover:underline"
         >
-          Search for this symbol
+          {t("blob.symbols.search")}
           <ExternalLink className="size-3" />
         </a>
       </div>
@@ -729,9 +739,9 @@ function SymbolsPanel({
     <div className="overflow-hidden rounded-md border">
       {/* 标题行（官方：Symbols + 关闭按钮） */}
       <div className="flex items-center justify-between border-b bg-muted/50 px-3 py-2">
-        <h2 className="text-sm font-semibold">Symbols</h2>
-        <Tip label="关闭符号面板">
-          <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭符号面板">
+        <h2 className="text-sm font-semibold">{t("blob.symbols.title")}</h2>
+        <Tip label={t("blob.closeSymbols")}>
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("blob.closeSymbols")}>
             <X className="size-3.5" />
           </Button>
         </Tip>
@@ -741,14 +751,14 @@ function SymbolsPanel({
         <Input
           value={filter}
           onChange={(e) => onFilterChange(e.target.value)}
-          placeholder="Filter symbols"
-          aria-label="Filter symbols"
+          placeholder={t("blob.symbols.filter")}
+          aria-label={t("blob.symbols.filter")}
         />
       </div>
       {/* 符号树列表（官方：kind 标签 + 名称 + 行号；点击跳 #L{n}） */}
       <div className="max-h-[55vh] overflow-y-auto p-1">
         {symbols.length === 0 ? (
-          <p className="px-2 py-1 text-xs text-muted-foreground">无匹配符号</p>
+          <p className="px-2 py-1 text-xs text-muted-foreground">{t("blob.noSymbols")}</p>
         ) : (
           symbols.map((s) => (
             <button
@@ -789,13 +799,14 @@ function OutlinePanel({
   onSelect: (o: OutlineItem) => void;
   onClose: () => void;
 }) {
+  const { t } = useI18n();
   return (
     <div className="overflow-hidden rounded-md border">
       {/* 标题行（官方：Outline + 关闭按钮） */}
       <div className="flex items-center justify-between border-b bg-muted/50 px-3 py-2">
-        <h2 className="text-sm font-semibold">Outline</h2>
-        <Tip label="关闭目录面板">
-          <Button size="icon" variant="ghost" onClick={onClose} aria-label="关闭目录面板">
+        <h2 className="text-sm font-semibold">{t("blob.outline.title")}</h2>
+        <Tip label={t("blob.closeOutline")}>
+          <Button size="icon" variant="ghost" onClick={onClose} aria-label={t("blob.closeOutline")}>
             <X className="size-3.5" />
           </Button>
         </Tip>
@@ -805,14 +816,14 @@ function OutlinePanel({
         <Input
           value={filter}
           onChange={(e) => onFilterChange(e.target.value)}
-          placeholder="Filter headings"
-          aria-label="Filter headings"
+          placeholder={t("blob.outline.filter")}
+          aria-label={t("blob.outline.filter")}
         />
       </div>
       {/* 标题树列表（官方：层级缩进；点击滚动到标题） */}
       <div className="max-h-[55vh] overflow-y-auto p-1">
         {outline.length === 0 ? (
-          <p className="px-2 py-1 text-xs text-muted-foreground">无匹配标题</p>
+          <p className="px-2 py-1 text-xs text-muted-foreground">{t("blob.noHeadings")}</p>
         ) : (
           outline.map((o) => (
             <button

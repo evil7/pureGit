@@ -82,13 +82,13 @@ export default function TreePage() {
           不条件渲染卸载/重挂载 → 切换折叠不重跑 useEffect、不重复请求（BranchPicker 配 active 懒加载）。 */}
       <div className="sticky top-14 z-10 mb-3 border-b bg-background/95 backdrop-blur">
         <div className="flex flex-wrap items-center gap-2 px-4 py-2 text-sm">
-          <Tip label="展开文件树">
+          <Tip label={tStatic("blob.expandTree")}>
             <Button
               variant="ghost"
               size="icon"
               className={cn("size-7", !treeCollapsed && "hidden")}
               onClick={() => setTreeCollapsed(false)}
-              aria-label="展开文件树"
+              aria-label={tStatic("blob.expandTree")}
             >
               <PanelRightOpen className="size-3.5" />
             </Button>

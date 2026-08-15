@@ -117,7 +117,7 @@ export function PullMetadataSidebar({
     try {
       await setPullLockedSmart(owner, repo, number, !locked, token, pullRequestId);
       onLockedChange(!locked);
-      toastSuccess(locked ? "已解锁对话" : "已锁定对话");
+      toastSuccess(locked ? t("pullDetail.unlocked") : t("pullDetail.locked"));
     } catch (e) {
       toastError(apiErrorMessage(e, "锁定操作失败"));
     } finally {
@@ -144,8 +144,8 @@ export function PullMetadataSidebar({
         number={number}
         current={assignees}
         onChange={onAssigneesChange}
-        title="指派给"
-        emptyText="未指派"
+        title={t("issueDetail.assignees")}
+        emptyText={t("issueDetail.noAssignees")}
       />
 
       {/* Labels */}
@@ -155,16 +155,16 @@ export function PullMetadataSidebar({
         number={number}
         current={labels}
         onChange={onLabelsChange}
-        title="标签"
-        emptyText="无标签"
+        title={t("issueDetail.labels")}
+        emptyText={t("issueDetail.noLabels")}
       />
 
       {/* Projects（GraphQL-only 只读） */}
-      <SidebarSection title="项目">
+      <SidebarSection title={t("pullDetail.projects")}>
         {projects === null ? (
           <p className="text-muted-foreground">—</p>
         ) : projects.length === 0 ? (
-          <p className="text-muted-foreground">暂无项目</p>
+          <p className="text-muted-foreground">{t("pullDetail.noProjects")}</p>
         ) : (
           <ul className="space-y-1.5">
             {projects.map((p) => (
@@ -193,16 +193,16 @@ export function PullMetadataSidebar({
         number={number}
         current={milestone}
         onChange={onMilestoneChange}
-        title="里程碑"
-        emptyText="无里程碑"
+        title={t("issueDetail.milestone")}
+        emptyText={t("issueDetail.noMilestone")}
       />
 
       {/* Development（GraphQL-only 只读） */}
-      <SidebarSection title="开发">
+      <SidebarSection title={t("pullDetail.development")}>
         {development === null ? (
           <p className="text-muted-foreground">—</p>
         ) : development.issues.length === 0 && development.branches.length === 0 ? (
-          <p className="text-muted-foreground">暂无关联</p>
+          <p className="text-muted-foreground">{t("pullDetail.noDevelopment")}</p>
         ) : (
           <ul className="space-y-1.5">
             {development.issues.map((i) => (
@@ -235,8 +235,8 @@ export function PullMetadataSidebar({
             subscribed={subscribed}
             busy={subscribing}
             onToggle={onToggleSubscribe}
-            subscribeLabel="订阅"
-            unsubscribeLabel="取消订阅"
+            subscribeLabel={t("issueDetail.subscribe")}
+            unsubscribeLabel={t("issueDetail.unsubscribe")}
           />
           {/* 锁定会话：仅仓库协作权限（TRIAGE+）或 PR 作者可见（令牌写 scope + 仓库权限双门槛） */}
           {canWrite && (canCollaborate || user?.login === authorLogin) && (
@@ -247,7 +247,7 @@ export function PullMetadataSidebar({
               disabled={lockBusy}
             >
               {locked ? <LockOpen className="size-3.5" /> : <Lock className="size-3.5" />}
-              {locked ? "解锁会话" : "锁定会话"}
+              {locked ? t("pullDetail.unlockConversation") : t("pullDetail.lockConversation")}
             </Button>
           )}
         </div>

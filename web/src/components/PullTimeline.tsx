@@ -35,6 +35,7 @@ import { Stepper, StepperItem, StepperIndicator, StepperNav } from "@/components
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { useDateFormat } from "@/hooks/useDateFormat";
+import { useI18n, type I18nKey } from "@/i18n";
 import { MarkdownView } from "@/components/MarkdownView";
 import { UserAvatar } from "@/components/UserAvatar";
 import { repoRawBase } from "@/lib/repo/repo-raw";
@@ -91,55 +92,61 @@ type RowEvent = Exclude<
   { kind: "comment" | "review" | "review-thread" | "commit" }
 >;
 
-/** 事件行中文文案（对齐官方语义；与 PullReviewPanel 硬编码中文一致） */
-function eventText(e: RowEvent): string {
-  const actor = copilotDisplayName(e.actor?.login ?? "未知用户");
+/** 事件行中文文案（对齐官方语义；t 注入 i18n 翻译函数，actor 归一 Copilot） */
+function eventText(
+  e: RowEvent,
+  t: (key: I18nKey, vars?: Record<string, unknown>) => string,
+): string {
+  const actor = copilotDisplayName(e.actor?.login ?? t("common.unknownUser"));
   switch (e.kind) {
     case "merged":
-      return `${actor} 将提交合并到 ${e.mergeRefName ?? "目标分支"}`;
+      return t("timeline.merged", { actor, ref: e.mergeRefName ?? t("common.targetBranch") });
     case "closed":
-      return `${actor} 关闭了此 PR`;
+      return t("timeline.closed", { actor });
     case "reopened":
-      return `${actor} 重新打开了此 PR`;
+      return t("timeline.reopened", { actor });
     case "assigned":
       return e.assignee === actor || !e.assignee
-        ? `${actor} 自行指派`
-        : `${actor} 指派给了 ${e.assignee}`;
+        ? t("timeline.assignedSelf", { actor })
+        : t("timeline.assigned", { actor, assignee: e.assignee });
     case "unassigned":
-      return e.assignee ? `${actor} 取消了 ${e.assignee} 的指派` : `${actor} 取消了指派`;
+      return e.assignee
+        ? t("timeline.unassignedOther", { actor, assignee: e.assignee })
+        : t("timeline.unassigned", { actor });
     case "labeled":
-      return `${actor} 添加了标签 ${e.label?.name ?? ""}`;
+      return t("timeline.labeled", { actor, label: e.label?.name ?? "" });
     case "unlabeled":
-      return `${actor} 移除了标签 ${e.label?.name ?? ""}`;
+      return t("timeline.unlabeled", { actor, label: e.label?.name ?? "" });
     case "milestoned":
-      return `${actor} 将此 PR 添加到里程碑 ${e.milestoneTitle ?? ""}`;
+      return t("timeline.milestoned", { actor, milestone: e.milestoneTitle ?? "" });
     case "demilestoned":
-      return `${actor} 将此 PR 移出里程碑 ${e.milestoneTitle ?? ""}`;
+      return t("timeline.demilestoned", { actor, milestone: e.milestoneTitle ?? "" });
     case "review-requested":
-      return `${actor} 请求了评审`;
+      return t("timeline.reviewRequested", { actor });
     case "review-request-removed":
-      return `${actor} 移除了评审请求`;
+      return t("timeline.reviewRequestRemoved", { actor });
     case "locked":
-      return `${actor} 锁定了会话`;
+      return t("timeline.locked", { actor });
     case "unlocked":
-      return `${actor} 解锁了会话`;
+      return t("timeline.unlocked", { actor });
     case "renamed":
-      return `${actor} 将标题「${e.previousTitle}」改为「${e.currentTitle}」`;
+      return t("timeline.renamed", { actor, from: e.previousTitle, to: e.currentTitle });
     case "force-pushed":
-      return `${actor} 强制推送了分支`;
+      return t("timeline.forcePushed", { actor });
     case "ready-for-review":
-      return `${actor} 将此 PR 标记为就绪`;
+      return t("timeline.markedReady", { actor });
     default:
-      return `${actor} 更新了此 PR`;
+      return t("timeline.updated", { actor });
   }
 }
 
 /** 纯事件行（图标 + 文案 + 时间，无卡片；时间用「 · 」紧跟文案分隔） */
 function TimelineEventRow({ event }: { event: RowEvent }) {
   const { fmt } = useDateFormat();
+  const { t } = useI18n();
   return (
     <div className="flex min-w-0 items-center gap-2 py-1.5 text-sm text-muted-foreground">
-      <span className="min-w-0 truncate">{eventText(event)}</span>
+      <span className="min-w-0 truncate">{eventText(event, t)}</span>
       <span className="shrink-0 text-xs"> · {fmt(event.createdAt)}</span>
     </div>
   );
@@ -156,6 +163,7 @@ function ReviewCard({
   repo: string;
 }) {
   const { fmt } = useDateFormat();
+  const { t } = useI18n();
   const isComment = event.state === "COMMENTED";
   return (
     <div className="pb-4">
@@ -167,7 +175,11 @@ function ReviewCard({
           {copilotDisplayName(event.author?.login ?? "ghost")}
         </Link>
         <span>
-          {isComment ? "提出了" : event.state === "APPROVED" ? "批准了这些更改" : "请求更改"}
+          {isComment
+            ? t("timeline.proposed")
+            : event.state === "APPROVED"
+              ? t("timeline.approved")
+              : t("timeline.requestedChanges")}
           {event.submittedAt ? ` · ${fmt(event.submittedAt)}` : ""}
         </span>
         {!isComment && <ReviewStateBadge state={event.state} />}
@@ -240,6 +252,7 @@ function ReviewThreadCard({
   repo: string;
 }) {
   const { fmt } = useDateFormat();
+  const { t } = useI18n();
   const [expanded, setExpanded] = useState(false);
   const first = event.comments[0];
   const line = event.line ?? event.originalLine ?? null;
@@ -255,8 +268,10 @@ function ReviewThreadCard({
               {copilotDisplayName(first?.author?.login ?? "ghost")}
             </Link>
             <span>
-              在 {event.path}
-              {line != null ? `:${line}` : ""} 评论了
+              {t("timeline.commentedOn", {
+                path: event.path,
+                line: line != null ? `:${line}` : "",
+              })}
             </span>
             {event.isResolved && (
               <Badge
@@ -264,7 +279,7 @@ function ReviewThreadCard({
                 className="gap-1 border-transparent bg-emerald-500/15 text-[11px] text-emerald-600"
               >
                 <CheckCircle2 className="size-3" />
-                已解决
+                {t("diff.resolved")}
               </Badge>
             )}
             {first && <span className="shrink-0 text-xs"> · {fmt(first.createdAt)}</span>}
@@ -279,7 +294,7 @@ function ReviewThreadCard({
             ) : (
               <ChevronRight className="size-3.5" />
             )}
-            查看评论（{event.comments.length}）
+            {t("timeline.viewComments", { count: event.comments.length })}
           </button>
           {expanded && (
             <div className="mt-2 space-y-2 border-t pt-2">
@@ -342,9 +357,10 @@ export function PullTimeline({
 }) {
   // stepper 步骤定义（仅 id 用于节点/竖线骨架；事件内容自定义渲染）
   const steps = useMemo(() => events.map((e) => ({ id: e.id })), [events]);
+  const { t } = useI18n();
 
   if (events.length === 0) {
-    return <p className="py-6 text-center text-sm text-muted-foreground">暂无时间线事件</p>;
+    return <p className="py-6 text-center text-sm text-muted-foreground">{t("timeline.empty")}</p>;
   }
 
   return (

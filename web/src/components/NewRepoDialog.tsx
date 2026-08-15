@@ -129,6 +129,7 @@ function RepoPickerDialog({
 }) {
   const navigate = useNavigate();
   const { token } = useAuth();
+  const { t } = useI18n();
 
   const pick = (r: Repository) => {
     onOpenChange(false);
@@ -140,15 +141,17 @@ function RepoPickerDialog({
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
         <DialogHeader>
-          <DialogTitle>新建{kind === "issue" ? " Issue" : " Pull Request"}</DialogTitle>
-          <DialogDescription>选择目标仓库</DialogDescription>
+          <DialogTitle>{kind === "issue" ? t("create.issue") : t("create.pr")}</DialogTitle>
+          <DialogDescription>{t("newRepoDialog.chooseRepo")}</DialogDescription>
         </DialogHeader>
         <div className="flex max-h-72 flex-col gap-1 overflow-y-auto py-2">
           {repos === null ? (
-            <p className="py-8 text-center text-sm text-muted-foreground">加载仓库中…</p>
+            <p className="py-8 text-center text-sm text-muted-foreground">
+              {t("newRepoDialog.loading")}
+            </p>
           ) : repos.length === 0 ? (
             <p className="py-8 text-center text-sm text-muted-foreground">
-              {token ? "暂无可写仓库" : "请先登录"}
+              {token ? t("newRepoDialog.noRepos") : t("newRepoDialog.loginFirst")}
             </p>
           ) : (
             repos.map((r) => (
@@ -166,7 +169,7 @@ function RepoPickerDialog({
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)}>
-            取消
+            {t("common.cancel")}
           </Button>
         </DialogFooter>
       </DialogContent>

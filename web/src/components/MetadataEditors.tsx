@@ -11,6 +11,7 @@
  */
 import { useState } from "react";
 import { Link } from "react-router-dom";
+import { useI18n } from "@/i18n";
 import { Check, Milestone as MilestoneIcon } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -60,7 +61,7 @@ function EditorDialog({
   onSave,
   busy,
   error,
-  saveLabel = "保存",
+  saveLabel,
 }: {
   open: boolean;
   onOpenChange: (v: boolean) => void;
@@ -72,6 +73,8 @@ function EditorDialog({
   error?: string | null;
   saveLabel?: string;
 }) {
+  const { t } = useI18n();
+  const saveText = saveLabel ?? t("common.save");
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -83,10 +86,10 @@ function EditorDialog({
         {error && <p className="text-sm text-red-500">{error}</p>}
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
-            取消
+            {t("common.cancel")}
           </Button>
           <Button onClick={onSave} disabled={busy}>
-            {busy ? "保存中…" : saveLabel}
+            {busy ? t("common.saving") : saveText}
           </Button>
         </DialogFooter>
       </DialogContent>
@@ -113,6 +116,7 @@ export function AssigneesEditor({
   title: string;
   emptyText: string;
 }) {
+  const { t } = useI18n();
   const { token, canWrite } = useAuth();
   const { canCollaborate } = useRepoPermission();
   const [open, setOpen] = useState(false);
@@ -141,7 +145,7 @@ export function AssigneesEditor({
     try {
       await updatePullAssignees(owner, repo, number, add, remove, token);
       onChange(candidates!.filter((u) => selected.includes(u.login)));
-      toastSuccess("已更新指派");
+      toastSuccess(t("metadata.assignSaved"));
       setOpen(false);
     } catch (e) {
       setError(apiErrorMessage(e, "更新指派失败"));
@@ -182,12 +186,12 @@ export function AssigneesEditor({
         onSave={save}
         busy={busy}
         error={error}
-        saveLabel="保存指派"
+        saveLabel={t("metadata.saveAssign")}
       >
         {candidates === null ? (
           <Skeleton className="h-40 w-full" />
         ) : candidates.length === 0 ? (
-          <p className="text-sm text-muted-foreground">暂无可用用户</p>
+          <p className="text-sm text-muted-foreground">{t("metadata.noUsers")}</p>
         ) : (
           <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
             {candidates.map((u) => {
@@ -238,6 +242,7 @@ export function LabelsEditor({
   title: string;
   emptyText: string;
 }) {
+  const { t } = useI18n();
   const { token, canWrite } = useAuth();
   const { canCollaborate } = useRepoPermission();
   const isDark = useIsDark();
@@ -268,7 +273,7 @@ export function LabelsEditor({
           .filter((l) => selected.includes(l.name))
           .map((l) => ({ name: l.name, color: l.color })),
       );
-      toastSuccess("已更新标签");
+      toastSuccess(t("metadata.labelsSaved"));
       setOpen(false);
     } catch (e) {
       setError(apiErrorMessage(e, "更新标签失败"));
@@ -310,12 +315,12 @@ export function LabelsEditor({
         onSave={save}
         busy={busy}
         error={error}
-        saveLabel="保存标签"
+        saveLabel={t("metadata.saveLabels")}
       >
         {candidates === null ? (
           <Skeleton className="h-40 w-full" />
         ) : candidates.length === 0 ? (
-          <p className="text-sm text-muted-foreground">暂无标签</p>
+          <p className="text-sm text-muted-foreground">{t("metadata.noLabels")}</p>
         ) : (
           <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
             {candidates.map((l) => {
@@ -371,6 +376,7 @@ export function MilestoneEditor({
   title: string;
   emptyText: string;
 }) {
+  const { t } = useI18n();
   const { token, canWrite } = useAuth();
   const { canCollaborate } = useRepoPermission();
   const [open, setOpen] = useState(false);
@@ -397,7 +403,7 @@ export function MilestoneEditor({
       await updatePullMilestone(owner, repo, number, selected, token);
       const m = milestones?.find((x) => x.number === selected) ?? null;
       onChange(m ? { title: m.title, number: m.number } : null);
-      toastSuccess(selected ? "已设置里程碑" : "已清除里程碑");
+      toastSuccess(selected ? t("metadata.milestoneSet") : t("metadata.milestoneCleared"));
       setOpen(false);
     } catch (e) {
       setError(apiErrorMessage(e, "更新里程碑失败"));
@@ -432,7 +438,7 @@ export function MilestoneEditor({
         onSave={save}
         busy={busy}
         error={error}
-        saveLabel="保存里程碑"
+        saveLabel={t("metadata.saveMilestone")}
       >
         <button
           type="button"
@@ -442,12 +448,12 @@ export function MilestoneEditor({
           onClick={() => setSelected(null)}
         >
           <MilestoneIcon className="size-3.5 text-muted-foreground" />
-          无里程碑
+          {t("metadata.noMilestone")}
         </button>
         {milestones === null ? (
           <Skeleton className="h-32 w-full" />
         ) : milestones.length === 0 ? (
-          <p className="text-sm text-muted-foreground">暂无里程碑</p>
+          <p className="text-sm text-muted-foreground">{t("metadata.noMilestone")}</p>
         ) : (
           <div className="flex max-h-64 flex-col gap-1 overflow-y-auto">
             {milestones.map((m) => (

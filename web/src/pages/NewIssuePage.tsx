@@ -38,6 +38,7 @@ import {
 } from "@/lib/restapi";
 import type { GitHubUser } from "@/lib/restapi";
 import { MarkdownEditor } from "@/components/MarkdownEditor";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 import PageLayout from "@/components/PageLayout";
 import { PAGE_SHELL } from "@/lib/ui/layout";
@@ -46,6 +47,7 @@ import { LoginPrompt } from "@/components/LoginPrompt";
 export default function NewIssuePage() {
   const { owner = "", repo = "" } = useParams();
   const { token, canWrite } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
   const [searchParams] = useSearchParams();
@@ -74,7 +76,7 @@ export default function NewIssuePage() {
 
   // 当前选中模板对象（用于显示 "Bug report · Choose a different template"）
   const activeTemplate = useMemo(
-    () => templates?.find((t) => t.filename === templateName) ?? null,
+    () => templates?.find((tmpl) => tmpl.filename === templateName) ?? null,
     [templates, templateName],
   );
 
@@ -105,7 +107,7 @@ export default function NewIssuePage() {
         .then((list) => {
           if (cancelled) return;
           setTemplates(list);
-          const tmpl = list.find((t) => t.filename === templateName);
+          const tmpl = list.find((x) => x.filename === templateName);
           if (tmpl) {
             // 模板预填：正文（.md）+ 标题/labels（form 模板 front matter）
             setBody(tmpl.content);
@@ -168,12 +170,8 @@ export default function NewIssuePage() {
     return (
       <div className={`${PAGE_SHELL} mx-auto max-w-md`}>
         <LoginPrompt
-          title="新建 Issue"
-          desc={
-            !token
-              ? "登录后可提交 issue，请求由你的 GitHub 账号发出。"
-              : "只读模式无法创建，请切换完全控制后重试。"
-          }
+          title={t("create.issue")}
+          desc={!token ? t("newIssue.loginDesc") : t("newIssue.readonlyDesc")}
         />
       </div>
     );
@@ -187,10 +185,10 @@ export default function NewIssuePage() {
           <Button variant="ghost" asChild className="mb-3">
             <Link to={`/${owner}/${repo}/issues`}>
               <ArrowLeft className="size-4" />
-              返回 Issues
+              {t("newIssue.back")}
             </Link>
           </Button>
-          <h1 className="mb-1 text-2xl font-semibold">新建 Issue</h1>
+          <h1 className="mb-1 text-2xl font-semibold">{t("create.issue")}</h1>
           {templates === null ? (
             <div className="mt-6 space-y-3">
               <Skeleton className="h-16 w-full" />
@@ -199,9 +197,9 @@ export default function NewIssuePage() {
           ) : templates.length === 0 ? (
             // 无模板：官方直接进空白表单
             <div className="mt-6 rounded-lg border p-6 text-center">
-              <p className="text-sm text-muted-foreground">此仓库没有配置 issue 模板。</p>
+              <p className="text-sm text-muted-foreground">{t("newIssue.noTemplates")}</p>
               <Button className="mt-4" asChild>
-                <Link to={`/${owner}/${repo}/issues/new`}>创建空白 issue</Link>
+                <Link to={`/${owner}/${repo}/issues/new`}>{t("newIssue.createBlank")}</Link>
               </Button>
             </div>
           ) : (
@@ -223,7 +221,7 @@ export default function NewIssuePage() {
               ))}
               <div className="pt-3">
                 <Button variant="ghost" asChild>
-                  <Link to={`/${owner}/${repo}/issues/new`}>跳过模板，创建空白 issue</Link>
+                  <Link to={`/${owner}/${repo}/issues/new`}>{t("newIssue.skipTemplate")}</Link>
                 </Button>
               </div>
             </div>
@@ -244,9 +242,11 @@ export default function NewIssuePage() {
             <aside className="space-y-5 text-sm">
               {/* Labels（checkbox 多选） */}
               <section>
-                <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">标签</h3>
+                <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">
+                  {t("newIssue.labels")}
+                </h3>
                 {labels.length === 0 ? (
-                  <p className="text-muted-foreground">此仓库暂无标签</p>
+                  <p className="text-muted-foreground">{t("newIssue.noLabels")}</p>
                 ) : (
                   <div className="flex max-h-56 flex-wrap gap-1.5 overflow-y-auto">
                     {labels.map((l) => (
@@ -284,15 +284,17 @@ export default function NewIssuePage() {
 
               {/* Assignees（下拉单选，官方支持多选 → 简化核心 @me/成员） */}
               <section>
-                <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">指派给</h3>
+                <h3 className="mb-1.5 text-xs font-semibold text-muted-foreground">
+                  {t("newIssue.assignees")}
+                </h3>
                 <Select value={selectedAssignee} onValueChange={setSelectedAssignee}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="选择指派对象" />
+                    <SelectValue placeholder={t("newIssue.assignPlaceholder")} />
                   </SelectTrigger>
                   <SelectContent>
                     {assignees.length === 0 ? (
                       <SelectItem value="__none__" disabled>
-                        无可用成员
+                        {t("newIssue.noAssignees")}
                       </SelectItem>
                     ) : (
                       assignees.slice(0, 20).map((a) => (
@@ -315,10 +317,10 @@ export default function NewIssuePage() {
           <Button variant="ghost" asChild className="mb-3">
             <Link to={`/${owner}/${repo}/issues`}>
               <ArrowLeft className="size-4" />
-              返回 Issues
+              {t("newIssue.back")}
             </Link>
           </Button>
-          <h1 className="mb-2 text-2xl font-semibold">新建 Issue</h1>
+          <h1 className="mb-2 text-2xl font-semibold">{t("create.issue")}</h1>
 
           {/* 模板提示（官方：Bug report · Choose a different template） */}
           {activeTemplate && (
@@ -329,7 +331,7 @@ export default function NewIssuePage() {
                 to={`/${owner}/${repo}/issues/new/choose`}
                 className="text-primary hover:underline"
               >
-                选择其他模板
+                {t("newIssue.chooseTemplate")}
               </Link>
             </div>
           )}
@@ -338,14 +340,14 @@ export default function NewIssuePage() {
             {/* 标题（官方 Add a title *） */}
             <div className="space-y-1.5">
               <Label htmlFor="issue-title" className="text-sm font-medium">
-                标题 <span className="text-destructive">*</span>
+                {t("newIssue.titleLabel")} <span className="text-destructive">*</span>
               </Label>
               <Input
                 id="issue-title"
                 value={title}
                 onChange={(e) => setTitle(e.target.value)}
                 onKeyDown={handleKeyDown}
-                placeholder="为 issue 添加标题"
+                placeholder={t("newIssue.titlePlaceholder")}
                 required
               />
             </div>
@@ -353,7 +355,7 @@ export default function NewIssuePage() {
             {/* 正文（官方 Write/Preview；MarkdownEditor） */}
             <div className="space-y-1.5">
               <Label htmlFor="issue-body" className="text-sm font-medium">
-                内容（Markdown 支持）
+                {t("newIssue.bodyLabel")}
               </Label>
               <MarkdownEditor
                 id="issue-body"
@@ -361,7 +363,7 @@ export default function NewIssuePage() {
                 owner={owner}
                 repo={repo}
                 defaultValue={templateBody}
-                placeholder="详细描述…"
+                placeholder={t("newIssue.bodyPlaceholder")}
                 rows={12}
                 onChange={setBody}
                 onSubmit={() => void doSubmit()}
@@ -374,15 +376,15 @@ export default function NewIssuePage() {
             <div className="flex flex-wrap items-center gap-4">
               <label className="flex cursor-pointer items-center gap-2 text-sm text-muted-foreground">
                 <Checkbox checked={createMore} onCheckedChange={(v) => setCreateMore(Boolean(v))} />
-                创建后继续
+                {t("newIssue.createMore")}
               </label>
               <div className="ml-auto flex items-center gap-2">
                 <Button type="button" variant="ghost" asChild>
-                  <Link to={`/${owner}/${repo}/issues`}>取消</Link>
+                  <Link to={`/${owner}/${repo}/issues`}>{t("common.cancel")}</Link>
                 </Button>
                 <Button type="submit" disabled={submitting || !title.trim()}>
                   <Send className="size-3.5" />
-                  {submitting ? "提交中…" : "创建 Issue"}
+                  {submitting ? t("common.submitting") : t("newIssue.create")}
                   <kbd className="ml-1.5 hidden rounded bg-primary-foreground/20 px-1 text-[10px] font-normal sm:inline">
                     ⌃⏎
                   </kbd>

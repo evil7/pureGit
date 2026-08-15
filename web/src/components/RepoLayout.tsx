@@ -25,8 +25,18 @@ import { PAGE_SHELL } from "@/lib/ui/layout";
 import PageLayout from "@/components/PageLayout";
 import { Skeleton } from "@/components/ui/skeleton";
 
-/** 未登录可匿名浏览的 Code 相关路径段（根/tree/blob/new/edit/upload/branches；其余 tab 需登录） */
-const CODE_PATH_SEGMENTS = ["", "tree", "blob", "new", "edit", "upload", "branches"];
+/** 未登录可匿名浏览的 Code 相关路径段（根/tree/blob/new/edit/upload/branches/commits/commit；其余 tab 需登录） */
+const CODE_PATH_SEGMENTS = [
+  "",
+  "tree",
+  "blob",
+  "new",
+  "edit",
+  "upload",
+  "branches",
+  "commits",
+  "commit",
+];
 
 /** 仓库内容区：key 随路径变化触发动画；未登录且非 Code 段 → 登录墙（URL 驱动，登录后回落） */
 function RepoContent() {
@@ -85,6 +95,10 @@ export default function RepoLayout() {
   const isReleasesPage = /\/releases(\/|$)/.test(pathname);
   // 分支管理页（官方全宽单列，无 About 右栏）
   const isBranchesPage = /\/branches(\/|$)/.test(pathname);
+  // 文件提交历史页（官方全宽单列，无 About 右栏）
+  const isCommitsPage = /\/commits(\/|$)/.test(pathname);
+  // 单个 commit 详情页（官方全宽两栏：文件树 + diff，无 About 右栏）
+  const isCommitPage = /\/commit\//.test(pathname);
   // 文件上传页（官方全宽单列，无 About 右栏，同 blob/new/edit）
   const isUploadPage = /\/upload(\/|$)/.test(pathname);
   // Fork 页（官方全宽单列卡片，无 About 右栏）
@@ -110,6 +124,8 @@ export default function RepoLayout() {
     isPulsePage ||
     isReleasesPage ||
     isBranchesPage ||
+    isCommitsPage ||
+    isCommitPage ||
     isUploadPage ||
     isForkPage ||
     (!token && !isCodePath);

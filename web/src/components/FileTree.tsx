@@ -8,6 +8,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { ChevronDown, ChevronRight, File, Folder, FolderOpen } from "lucide-react";
+import { tStatic } from "@/i18n";
 import { cn } from "@/lib/utils";
 import type { TreeNode } from "@/lib/repo/file-tree";
 
@@ -60,6 +61,8 @@ export function FileTree({
   currentPath,
   branch,
   filter = "",
+  onSelectFile,
+  initiallyExpandAll = false,
 }: {
   root: TreeNode;
   /** 当前高亮路径（相对仓库根，如 "src/utils"） */
@@ -68,10 +71,18 @@ export function FileTree({
   branch: string;
   /** 过滤关键词（Go to file 实时过滤） */
   filter?: string;
+  /** 自定义文件点击行为（commit 详情页：滚动到 diff anchor；默认：跳 blob） */
+  onSelectFile?: (path: string) => void;
+  /** 初始展开所有目录（commit 详情页 diff 文件树） */
+  initiallyExpandAll?: boolean;
 }) {
   const { owner = "", repo = "" } = useParams();
   const navigate = useNavigate();
-  const [open, setOpen] = useState<Set<string>>(() => collectOpenPaths(root, currentPath));
+  const [open, setOpen] = useState<Set<string>>(() =>
+    initiallyExpandAll
+      ? new Set(["", ...collectAllTreePaths(root)])
+      : collectOpenPaths(root, currentPath),
+  );
   const q = filter.trim().toLowerCase();
   const shownRoot = useMemo(() => (q ? filterTree(root, q) : root), [root, q]);
 
@@ -114,6 +125,8 @@ export function FileTree({
               // 官方 blob/edit 左树：点目录仅展开/收起（不导航，树内浏览）；点文件才跳 blob
               if (isDir) {
                 toggle(node.path);
+              } else if (onSelectFile) {
+                onSelectFile(node.path);
               } else {
                 navigate(`/${owner}/${repo}/blob/${branch}/${node.path}`);
               }
@@ -154,7 +167,7 @@ export function FileTree({
   };
 
   if (!shownRoot) {
-    return <p className="p-2 text-sm text-muted-foreground">无匹配文件</p>;
+    return <p className="p-2 text-sm text-muted-foreground">{tStatic("fileTree.noMatch")}</p>;
   }
   return <div className="space-y-0.5">{render(shownRoot, 0)}</div>;
 }

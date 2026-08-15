@@ -96,25 +96,27 @@ export function computeMissingScopes(
   return REQUIRED_SCOPES[mode].filter((r) => !granted.some((g) => scopeCovers(g, r)));
 }
 
-/** 缺失 scope 的人类可读描述（用于提示条；中文名映射） */
+import i18n from "@/i18n";
+
+/** 缺失 scope 的人类可读描述（用于提示条；经 i18n 翻译，未知 scope 回退原名） */
 export function describeScopes(scopes: string[]): string {
-  const names: Record<string, string> = {
-    repo: "私有仓库与项目",
-    "read:org": "组织信息",
-    "read:user": "用户资料",
-    "user:email": "邮箱",
-    "read:public_key": "SSH 密钥",
-    "read:gpg_key": "GPG 密钥",
-    "admin:org": "组织管理",
-    user: "账户资料",
-    gist: "Gist",
-    "admin:public_key": "SSH 密钥管理",
-    delete_repo: "删除仓库",
-    workflow: "Actions 工作流",
-    notifications: "通知",
-    "admin:gpg_key": "GPG 密钥管理",
-    "read:project": "项目（只读）",
-    project: "项目",
+  const keys: Record<string, string> = {
+    repo: "scopes.repo",
+    "read:org": "scopes.readOrg",
+    "read:user": "scopes.readUser",
+    "user:email": "scopes.userEmail",
+    "read:public_key": "scopes.readPublicKey",
+    "read:gpg_key": "scopes.readGpgKey",
+    "admin:org": "scopes.adminOrg",
+    user: "scopes.user",
+    gist: "scopes.gist",
+    "admin:public_key": "scopes.adminPublicKey",
+    delete_repo: "scopes.deleteRepo",
+    workflow: "scopes.workflow",
+    notifications: "scopes.notifications",
+    "admin:gpg_key": "scopes.adminGpgKey",
+    "read:project": "scopes.readProject",
+    project: "scopes.project",
   };
-  return scopes.map((s) => names[s] ?? s).join("、");
+  return scopes.map((s) => (keys[s] ? i18n.t(keys[s]) : s)).join("、");
 }

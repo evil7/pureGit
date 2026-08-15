@@ -569,7 +569,7 @@ export default function AccountSettings() {
               <PermissionGate permission="editAccount">
                 <Button onClick={() => void add()} disabled={busy || !title.trim() || !key.trim()}>
                   <Plus className="size-4" />
-                  {t("accountSettings.add")}
+                  {t("common.add")}
                 </Button>
               </PermissionGate>
               <Button
@@ -692,7 +692,7 @@ export default function AccountSettings() {
               <PermissionGate permission="editAccount">
                 <Button onClick={() => void addGpg()} disabled={gpgBusy || !gpgBody.trim()}>
                   <Plus className="size-4" />
-                  {t("accountSettings.gpgAdd")}
+                  {t("common.add")}
                 </Button>
               </PermissionGate>
               <Button
@@ -739,7 +739,7 @@ export default function AccountSettings() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={logoutBusy}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={logoutBusy}>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={logoutBusy}
               onClick={(e) => {
@@ -763,7 +763,7 @@ export default function AccountSettings() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={logoutAllBusy}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={logoutAllBusy}>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={logoutAllBusy}
               onClick={(e) => {
@@ -787,7 +787,7 @@ export default function AccountSettings() {
             </AlertDialogDescription>
           </AlertDialogHeader>
           <AlertDialogFooter>
-            <AlertDialogCancel disabled={revokeBusy}>取消</AlertDialogCancel>
+            <AlertDialogCancel disabled={revokeBusy}>{t("common.cancel")}</AlertDialogCancel>
             <AlertDialogAction
               disabled={revokeBusy}
               onClick={(e) => {

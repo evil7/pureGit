@@ -20,6 +20,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useI18n } from "@/i18n";
 import { cn } from "@/lib/utils";
 
 /** 切换实体：个人账户 或 组织 */
@@ -62,6 +63,7 @@ export function AccountSwitcher({
   className?: string;
 }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   if (entities.length < 2) return null; // 无其他可切换实体 → 不渲染
 
   return (
@@ -71,12 +73,12 @@ export function AccountSwitcher({
           "inline-flex size-7 shrink-0 items-center justify-center rounded-md text-muted-foreground outline-none transition-colors hover:bg-accent hover:text-foreground focus-visible:ring-3 focus-visible:ring-ring/50",
           className,
         )}
-        aria-label="切换账号/组织"
+        aria-label={t("account.switch")}
       >
         <ArrowSwitchIcon className="size-4" />
       </DropdownMenuTrigger>
       <DropdownMenuContent align="end" className="w-56">
-        <DropdownMenuLabel>切换设置</DropdownMenuLabel>
+        <DropdownMenuLabel>{t("account.switchSettings")}</DropdownMenuLabel>
         <DropdownMenuSeparator />
         {entities.map((e) => (
           <DropdownMenuItem key={`${e.kind}:${e.login}`} onSelect={() => navigate(targetPath(e))}>

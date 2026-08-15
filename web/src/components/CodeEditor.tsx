@@ -23,6 +23,7 @@ import {
 import { inferLang } from "@/lib/code/shiki";
 import { useCodeTheme } from "@/hooks/useCodeTheme";
 import { useTheme } from "@/hooks/useTheme";
+import { useI18n } from "@/i18n";
 import { createCmEditor } from "@/lib/code/codemirror";
 import { cn } from "@/lib/utils";
 import type { GraphQLSchema } from "graphql";
@@ -61,6 +62,7 @@ export function CodeEditor({
 }: Props) {
   const { codeThemeId, codeTheme } = useCodeTheme();
   const { theme } = useTheme();
+  const { t } = useI18n();
   const [preview, setPreview] = useState(false);
   // 官方同款配置（Indent mode / Indent size / Line wrap）
   const [wrap, setWrap] = useState(true);
@@ -188,7 +190,7 @@ export function CodeEditor({
               onClick={() => setPreview(false)}
             >
               <PencilLine className="size-3" />
-              编辑
+              {t("common.edit")}
             </Button>
             <Button
               variant={preview ? "default" : "ghost"}
@@ -196,7 +198,7 @@ export function CodeEditor({
               onClick={() => setPreview(true)}
             >
               <Eye className="size-3" />
-              预览
+              {t("code.preview")}
             </Button>
           </div>
           {/* 右侧控件（官方 CodeMirrorSpacingControls；仅编辑态显示缩进配置） */}

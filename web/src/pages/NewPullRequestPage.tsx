@@ -26,6 +26,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { useAuth } from "@/hooks/useAuth";
+import { useI18n } from "@/i18n";
 import { createPullRequestSmart, fetchBranchesSmart } from "@/lib/api";
 import { fetchCompare, type CompareResult } from "@/lib/restapi";
 import { PAGE_SHELL } from "@/lib/ui/layout";
@@ -36,6 +37,7 @@ import { DiffView } from "@/components/DiffView";
 export default function NewPullRequestPage() {
   const { owner = "", repo = "" } = useParams();
   const { token, canWrite } = useAuth();
+  const { t } = useI18n();
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
   const [base, setBase] = useState("main");
@@ -119,10 +121,7 @@ export default function NewPullRequestPage() {
   if (!token) {
     return (
       <div className={`${PAGE_SHELL} mx-auto max-w-md`}>
-        <LoginPrompt
-          title="新建 Pull Request"
-          desc="登录后可提交 PR，请求由你的 GitHub 账号发出。"
-        />
+        <LoginPrompt title={t("create.pr")} desc={t("newPr.loginDesc")} />
       </div>
     );
   }
@@ -130,7 +129,7 @@ export default function NewPullRequestPage() {
   if (!canWrite) {
     return (
       <div className={`${PAGE_SHELL} mx-auto max-w-md`}>
-        <LoginPrompt title="新建 Pull Request" desc="只读模式无法创建，请切换完全控制后重试。" />
+        <LoginPrompt title={t("create.pr")} desc={t("newPr.readonlyDesc")} />
       </div>
     );
   }
@@ -145,7 +144,7 @@ export default function NewPullRequestPage() {
       <Input
         value={value}
         onChange={(e) => setter(e.target.value)}
-        placeholder="加载分支中…"
+        placeholder={t("newPr.loadingBranches")}
         disabled
       />
     ) : branches.length > 0 ? (
@@ -176,30 +175,30 @@ export default function NewPullRequestPage() {
         <Button variant="ghost" asChild className="mb-3">
           <Link to={`/${owner}/${repo}/pulls`}>
             <ArrowLeft className="size-4" />
-            返回 Pull Requests
+            {t("newPr.back")}
           </Link>
         </Button>
         <h1 className="mb-4 flex items-center gap-2 text-2xl font-semibold">
           <GitCompare className="size-6 text-muted-foreground" />
-          新建 Pull Request
+          {t("create.pr")}
         </h1>
         <form onSubmit={submit} className="space-y-4">
           {/* 分支选择（官方 base ↔ compare） */}
           <div className="grid gap-4 sm:grid-cols-[1fr_auto_1fr] sm:items-center">
             <div className="space-y-1.5">
-              <Label htmlFor="pr-base">base（目标分支）</Label>
-              {branchSelect("pr-base", base, setBase, "选择分支")}
+              <Label htmlFor="pr-base">{t("newPr.base")}</Label>
+              {branchSelect("pr-base", base, setBase, t("newPr.chooseBranch"))}
             </div>
             <div className="hidden text-center text-xs font-medium text-muted-foreground sm:block">
               …
             </div>
             <div className="space-y-1.5">
-              <Label htmlFor="pr-head">compare（来源分支）</Label>
+              <Label htmlFor="pr-head">{t("newPr.compare")}</Label>
               {branchSelect("pr-head", head, setHead, "feature/xxx")}
             </div>
           </div>
           {branches !== null && branches.length === 0 && (
-            <p className="text-xs text-muted-foreground">分支列表加载失败，请手动输入分支名。</p>
+            <p className="text-xs text-muted-foreground">{t("newPr.branchesLoadFailed")}</p>
           )}
 
           {/* compare 统计条 + diff 预览（官方 compare 页内容） */}
@@ -209,10 +208,10 @@ export default function NewPullRequestPage() {
               <Skeleton className="h-40 w-full" />
             </div>
           ) : compareError ? (
-            <InlineError message="compare 加载失败" size="sm" />
+            <InlineError message={t("newPr.compareFailed")} size="sm" />
           ) : compare && compare.files.length === 0 ? (
             <p className="rounded-md border bg-muted/40 px-3 py-2 text-sm text-muted-foreground">
-              {head} 与 {base} 没有可比较的差异。
+              {t("newPr.noDiff", { head, base })}
             </p>
           ) : compare ? (
             <div className="space-y-3">
@@ -231,7 +230,7 @@ export default function NewPullRequestPage() {
                   {compare.files.reduce((s, f) => s + f.deletions, 0)}
                 </Badge>
                 <span className="text-xs text-muted-foreground">
-                  {compare.files.length} 个文件变更
+                  {t("newPr.filesChanged", { count: compare.files.length })}
                 </span>
               </div>
               {/* diff 预览（复用 DiffView） */}
@@ -246,23 +245,23 @@ export default function NewPullRequestPage() {
           ) : null}
 
           <div className="space-y-1.5">
-            <Label htmlFor="pr-title">标题</Label>
+            <Label htmlFor="pr-title">{t("newPr.titleLabel")}</Label>
             <Input
               id="pr-title"
               value={title}
               onChange={(e) => setTitle(e.target.value)}
-              placeholder="PR 标题"
+              placeholder={t("newPr.titlePlaceholder")}
               required
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="pr-body">内容（Markdown 支持）</Label>
+            <Label htmlFor="pr-body">{t("newPr.bodyLabel")}</Label>
             <MarkdownEditor
               id="pr-body"
               owner={owner}
               repo={repo}
               defaultValue=""
-              placeholder="变更说明…"
+              placeholder={t("newPr.bodyPlaceholder")}
               rows={6}
               onChange={setBody}
             />
@@ -270,7 +269,7 @@ export default function NewPullRequestPage() {
           {error && <InlineError message={error} size="sm" />}
           <div className="flex items-center gap-3">
             <Button type="submit" disabled={submitting || !title.trim() || !head.trim()}>
-              {submitting ? "提交中…" : "创建 Pull Request"}
+              {submitting ? t("common.submitting") : t("newPr.create")}
             </Button>
             <span className="text-sm text-muted-foreground">
               {owner}/{repo}

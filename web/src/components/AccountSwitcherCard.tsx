@@ -19,6 +19,7 @@ import {
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { useI18n } from "@/i18n";
 import type { SwitcherEntity } from "@/components/AccountSwitcher";
 
 export function AccountSwitcherCard({
@@ -36,6 +37,7 @@ export function AccountSwitcherCard({
   className?: string;
 }) {
   const navigate = useNavigate();
+  const { t } = useI18n();
   const label = current.name ?? current.login;
 
   return (
@@ -55,7 +57,7 @@ export function AccountSwitcherCard({
           </button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="start" className="w-60">
-          <DropdownMenuLabel className="text-xs">切换账号</DropdownMenuLabel>
+          <DropdownMenuLabel className="text-xs">{t("account.switchAccount")}</DropdownMenuLabel>
           {items.map((e) => (
             <DropdownMenuItem key={`${e.kind}:${e.login}`} onClick={() => navigate(getTarget(e))}>
               <Avatar className="size-5">

@@ -7,6 +7,7 @@
  * - 行内评论（Gitea 简化）：add/ctx 行 hover [+] → MarkdownEditor 表单 → POST review comments
  */
 import { useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import {
   Check,
   ChevronDown,
@@ -69,6 +70,7 @@ function DiffFile({
   number,
   baseSha,
   headSha,
+  fileLinkSha,
 }: {
   file: PullFile;
   owner?: string;
@@ -76,6 +78,7 @@ function DiffFile({
   number?: number;
   baseSha?: string;
   headSha?: string;
+  fileLinkSha?: string;
 }) {
   const { token, canWrite } = useAuth();
   const { canWrite: canWriteRepo } = useRepoPermission();
@@ -183,20 +186,35 @@ function DiffFile({
     type === "add" ? "+" : type === "del" ? "-" : type === "ctx" ? " " : "";
 
   return (
-    <div className="overflow-hidden rounded-lg border bg-card">
-      {/* 文件头 */}
-      <button
-        type="button"
-        onClick={() => setOpen((v) => !v)}
-        className="flex w-full flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2.5 text-left transition-colors hover:bg-accent/50"
-      >
-        {open ? (
-          <ChevronDown className="size-4 shrink-0 text-muted-foreground" />
+    <div
+      id={`diff-${file.filename}`}
+      className="scroll-mt-20 overflow-hidden rounded-lg border bg-card"
+    >
+      {/* 文件头：左侧折叠按钮 + 文件名（可跳转到该 sha 下的文件内容页）；右侧增删统计 */}
+      <div className="flex w-full flex-wrap items-center gap-2 border-b bg-muted/40 px-4 py-2.5">
+        <button
+          type="button"
+          onClick={() => setOpen((v) => !v)}
+          aria-label={open ? t("common.collapse") : t("common.expand")}
+          className="flex shrink-0 items-center gap-2 text-muted-foreground transition-colors hover:text-foreground"
+        >
+          {open ? (
+            <ChevronDown className="size-4 shrink-0" />
+          ) : (
+            <ChevronRight className="size-4 shrink-0" />
+          )}
+          <FileStatusIcon status={file.status} />
+        </button>
+        {owner && repo && fileLinkSha ? (
+          <Link
+            to={`/${owner}/${repo}/blob/${fileLinkSha}/${file.filename}`}
+            className="min-w-0 flex-1 truncate font-mono text-sm transition-colors hover:text-primary hover:underline"
+          >
+            {file.filename}
+          </Link>
         ) : (
-          <ChevronRight className="size-4 shrink-0 text-muted-foreground" />
+          <span className="min-w-0 flex-1 truncate font-mono text-sm">{file.filename}</span>
         )}
-        <FileStatusIcon status={file.status} />
-        <span className="min-w-0 flex-1 truncate font-mono text-sm">{file.filename}</span>
         <Badge variant="outline" className="gap-1 text-xs">
           <FilePlus2 className="size-3" style={{ color: "var(--diff-add-fg)" }} />
           {file.additions}
@@ -205,7 +223,7 @@ function DiffFile({
           <FileMinus2 className="size-3" style={{ color: "var(--diff-del-fg)" }} />
           {file.deletions}
         </Badge>
-      </button>
+      </div>
 
       {open && rows.length > 0 && (
         <div className="overflow-x-auto">
@@ -215,7 +233,7 @@ function DiffFile({
                 if (row.type === "hunk") {
                   return (
                     <tr key={`h-${i}`} className="diff-hunk border-y bg-muted/40">
-                      <td className="px-2 py-0.5 text-right" colSpan={4}>
+                      <td className="px-2 py-0.5 text-left" colSpan={4}>
                         <span className="inline-flex items-center gap-2">
                           {!expanded && baseSha && headSha && (
                             <Button
@@ -227,7 +245,7 @@ function DiffFile({
                               }}
                               disabled={expandBusy}
                             >
-                              {expandBusy ? "…" : t("diff.expand")}
+                              {expandBusy ? "…" : t("common.expand")}
                             </Button>
                           )}
                           <code className="font-mono text-xs text-muted-foreground">
@@ -235,7 +253,9 @@ function DiffFile({
                           </code>
                         </span>
                         {expandFailed && (
-                          <span className="ml-2 text-[11px] text-destructive">展开失败</span>
+                          <span className="ml-2 text-[11px] text-destructive">
+                            {t("diff.expandFailed")}
+                          </span>
                         )}
                       </td>
                     </tr>
@@ -335,7 +355,7 @@ function DiffFile({
         </div>
       )}
       {open && rows.length === 0 && (
-        <p className="px-4 py-3 text-xs text-muted-foreground">（patch 不可用）</p>
+        <p className="px-4 py-3 text-xs text-muted-foreground">{t("diff.patchUnavailable")}</p>
       )}
     </div>
   );
@@ -369,7 +389,7 @@ function InlineCommentForm({
           owner={owner}
           repo={repo}
           defaultValue={defaultValue}
-          placeholder="评论此行…"
+          placeholder={t("diff.commentPlaceholder")}
           rows={3}
           onChange={onChange}
         />
@@ -380,7 +400,7 @@ function InlineCommentForm({
           </Button>
           <Button type="button" onClick={onSubmit} disabled={busy || !defaultValue.trim()}>
             <MessageSquare className="size-3.5" />
-            {busy ? t("comments.submitting") : t("comments.submit")}
+            {busy ? t("common.submitting") : t("comments.submit")}
           </Button>
         </div>
       </div>
@@ -404,6 +424,7 @@ function CommentRows({
   busyThreadId?: string | null;
   onToggleThread?: (c: ReviewComment) => void;
 }) {
+  const { t } = useI18n();
   return (
     <td colSpan={4} className="border-t bg-muted/10 p-3">
       <div className="space-y-2">
@@ -422,7 +443,7 @@ function CommentRows({
                 {c.threadResolved && (
                   <Badge variant="outline" className="gap-1 text-[10px]">
                     <Check className="size-3 text-emerald-500" />
-                    已解决
+                    {t("diff.resolved")}
                   </Badge>
                 )}
               </div>
@@ -438,7 +459,11 @@ function CommentRows({
                 disabled={busyThreadId === c.threadId}
                 onClick={() => onToggleThread(c)}
               >
-                {busyThreadId === c.threadId ? "…" : c.threadResolved ? "取消解决" : "解决"}
+                {busyThreadId === c.threadId
+                  ? "…"
+                  : c.threadResolved
+                    ? t("diff.unresolve")
+                    : t("diff.resolve")}
               </Button>
             )}
           </div>
@@ -456,6 +481,7 @@ export function DiffView({
   number,
   baseSha,
   headSha,
+  fileLinkSha,
 }: {
   files: PullFile[];
   owner?: string;
@@ -463,9 +489,11 @@ export function DiffView({
   number?: number;
   baseSha?: string;
   headSha?: string;
+  fileLinkSha?: string;
 }) {
+  const { t } = useI18n();
   if (files.length === 0) {
-    return <p className="py-8 text-center text-sm text-muted-foreground">没有可显示的变更文件</p>;
+    return <p className="py-8 text-center text-sm text-muted-foreground">{t("diff.noFiles")}</p>;
   }
   return (
     <div className="flex flex-col gap-3">
@@ -478,6 +506,7 @@ export function DiffView({
           number={number}
           baseSha={baseSha}
           headSha={headSha}
+          fileLinkSha={fileLinkSha}
         />
       ))}
     </div>

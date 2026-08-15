@@ -132,7 +132,7 @@ export function IssueDetailPage() {
         prev ? { ...prev, state: updated.state, closed_at: updated.closed_at } : prev,
       );
       setConfirmClose(false);
-      toastSuccess(state === "closed" ? "Issue 已关闭" : "Issue 已重新打开");
+      toastSuccess(state === "closed" ? t("issueDetail.closed") : t("issueDetail.reopened"));
     } catch (e) {
       toastError(apiErrorMessage(e, t("issueDetail.stateFailed")));
     } finally {
@@ -257,7 +257,7 @@ export function IssueDetailPage() {
         <Button variant="ghost" asChild>
           <Link to={`/${owner}/${repo}/issues`}>
             <ArrowLeft className="size-4" />
-            返回列表
+            {t("issueDetail.backToList")}
           </Link>
         </Button>
 
@@ -364,7 +364,7 @@ export function IssueDetailPage() {
                     </AlertDialogDescription>
                   </AlertDialogHeader>
                   <AlertDialogFooter>
-                    <AlertDialogCancel>{t("issueDetail.cancel")}</AlertDialogCancel>
+                    <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
                     <AlertDialogAction onClick={() => updateState("closed")} disabled={closing}>
                       {t("issueDetail.close")}
                     </AlertDialogAction>

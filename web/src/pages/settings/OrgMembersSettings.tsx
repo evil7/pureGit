@@ -308,7 +308,7 @@ export default function OrgMembersSettings() {
                 void removeMember();
               }}
             >
-              {t("orgSettings.removeMemberConfirm")}
+              {t("common.remove")}
             </AlertDialogAction>
           </AlertDialogFooter>
         </AlertDialogContent>

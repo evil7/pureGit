@@ -47,23 +47,25 @@ function resolveLang(pref: Lang): "zh-CN" | "en-US" {
   }
 }
 
-// 编译期完整性校验：en-US 与 zh-CN 键必须完全一致（多/少任一键均报错）
-// 导出类型即「已使用」，无运行时开销
+// 编译期完整性校验：en-US 与 zh-CN 键必须完全一致（多/少任一键均报错）。
+// 用「差值字符串」做错误类型：键对称时差值为 never → true；不对称时差值落在模板
+// 字符串分支（非 true）→ _Assert 触发报错（旧版用 never 兜底，never extends true 恒真，
+// 校验失效——多余的键不会报错）。
 type _Assert<T extends true> = T;
 export type _KeysMatch = _Assert<
-  [keyof typeof enUS] extends [I18nKey]
-    ? [I18nKey] extends [keyof typeof enUS]
+  Exclude<keyof typeof enUS, I18nKey> extends never
+    ? Exclude<I18nKey, keyof typeof enUS> extends never
       ? true
-      : never
-    : never
+      : `zh-CN 多余键: ${Exclude<I18nKey, keyof typeof enUS> & string}`
+    : `en-US 多余键: ${Exclude<keyof typeof enUS, I18nKey> & string}`
 >;
 /** 调试语言包键一致性校验（独立命名空间） */
 export type _DebugKeysMatch = _Assert<
-  [keyof typeof enDebug] extends [I18nDebugKey]
-    ? [I18nDebugKey] extends [keyof typeof enDebug]
+  Exclude<keyof typeof enDebug, I18nDebugKey> extends never
+    ? Exclude<I18nDebugKey, keyof typeof enDebug> extends never
       ? true
-      : never
-    : never
+      : `debug/zh-CN 多余键: ${Exclude<I18nDebugKey, keyof typeof enDebug> & string}`
+    : `debug/en-US 多余键: ${Exclude<keyof typeof enDebug, I18nDebugKey> & string}`
 >;
 
 i18n.use(initReactI18next).init({
@@ -114,7 +116,7 @@ if (typeof window !== "undefined") {
   });
 }
 
-/** 模块顶层取文案（HomePage PERIODS / SettingsLayout NAV_ITEMS 用；i18n 已初始化） */
-export const tStatic = (key: I18nKey): string => i18n.t(key);
+/** 模块顶层取文案（HomePage PERIODS / SettingsLayout NAV_ITEMS 用；i18n 已初始化；vars 兼容插值） */
+export const tStatic = (key: I18nKey, vars?: Record<string, unknown>): string => i18n.t(key, vars);
 
 export default i18n;

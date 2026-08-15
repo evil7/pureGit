@@ -118,7 +118,7 @@ export function EmailsSection() {
               }}
             >
               <Plus className="size-4" />
-              {t("emailsSettings.add")}
+              {t("common.add")}
             </Button>
           </PermissionGate>
         )}

@@ -186,6 +186,7 @@ export default function HomePage() {
 // → 单次请求的完整列表 = 100 条（按最近更新排序 = 官方「最近操作过的项目」）。一次拉满直接全部渲染
 // （无折叠/显示更多）；超过 100 条 → 显示「全部仓库」链接引导到设置页（完整列表走专门页，首页不无限续接）
 function SidebarContent() {
+  const { t } = useI18n();
   const { token } = useAuth();
   const navigate = useNavigate();
   const [repos, setRepos] = useState<Repository[] | null>(null);
@@ -218,14 +219,14 @@ function SidebarContent() {
       {/* Top 仓库 */}
       <div className="rounded-lg border bg-card p-3">
         <div className="mb-2 flex items-center justify-between">
-          <h3 className="text-sm font-semibold">Top 仓库</h3>
+          <h3 className="text-sm font-semibold">{t("home.topRepos")}</h3>
           <WriteGate>
-            <Tip label="新建仓库">
+            <Tip label={t("home.newRepo")}>
               <Button
                 variant="ghost"
                 size="icon"
                 className="size-6"
-                aria-label="新建仓库"
+                aria-label={t("home.newRepo")}
                 onClick={() => navigate("/new")}
               >
                 <Plus className="size-4" />
@@ -238,7 +239,7 @@ function SidebarContent() {
           <Input
             value={filter}
             onChange={(e) => setFilter(e.target.value)}
-            placeholder="查找仓库…"
+            placeholder={t("home.filterRepos")}
             className="h-8 pl-8 text-sm"
           />
         </div>
@@ -249,7 +250,7 @@ function SidebarContent() {
             ))}
           </div>
         ) : filtered.length === 0 ? (
-          <p className="py-2 text-xs text-muted-foreground">无匹配仓库</p>
+          <p className="py-2 text-xs text-muted-foreground">{t("home.noMatchRepos")}</p>
         ) : (
           <ul className="space-y-0.5">
             {filtered.map((r, i) => (
@@ -276,7 +277,7 @@ function SidebarContent() {
             to="/settings/repositories"
             className="mt-1 block px-1.5 text-xs text-primary hover:underline"
           >
-            全部仓库
+            {t("home.allRepos")}
           </Link>
         )}
       </div>
@@ -785,6 +786,8 @@ function actionRowContent(
       const ref = ev.payload.ref?.replace("refs/heads/", "") ?? "HEAD";
       const head = ev.payload.head ?? "";
       const before = ev.payload.before ?? "";
+      // 有效 head sha（删除分支时 head 为全 0）→ 站内 commit 详情页；否则回退分支提交列表
+      const headSha = head && !/^0+$/.test(head) ? head : "";
       const range = (
         <span className="flex min-w-0 items-center gap-1">
           <FeedBadge title={`${ref} ${before}`}>
@@ -796,10 +799,8 @@ function actionRowContent(
       );
       return {
         title: commitMsg ?? `update: ${ref}`,
-        href: head
-          ? `https://github.com/${owner}/${repo}/commit/${head}`
-          : `${repoBase}/commits/${ref}`,
-        isExternal: Boolean(head),
+        href: headSha ? `${repoBase}/commit/${headSha}` : `${repoBase}/commits/${ref}`,
+        isExternal: false,
         meta: [
           <FeedBadge
             key="pushed"
@@ -858,14 +859,14 @@ function actionRowContent(
       };
     }
     case "CommitCommentEvent": {
-      // commit 行内评论：无 issue/PR/title → 降级 commit short_sha；站内无 commit 页 → 外链
+      // commit 行内评论：无 issue/PR/title → 降级 commit short_sha；站内 commit 详情页
       const sha = ev.payload?.commit_id ?? "";
       const loc = ev.payload?.comment?.path;
       const line = ev.payload?.comment?.line;
       return {
         title: sha ? `commit ${sha.slice(0, 7)}` : "commit",
-        href: ev.payload?.comment?.html_url ?? `https://github.com/${owner}/${repo}/commit/${sha}`,
-        isExternal: true,
+        href: sha ? `${repoBase}/commit/${sha}` : (ev.payload?.comment?.html_url ?? "#"),
+        isExternal: !sha,
         meta: [loc ? `${loc}${line ? `:${line}` : ""}` : ""].filter(Boolean),
         right: null,
       };
@@ -875,21 +876,20 @@ function actionRowContent(
   }
 }
 
-/** Release desc：版本号 + 正文预览（line-clamp-2） */
+/** Release desc：版本号 + 正文预览（line-clamp-2）；版本号 → 站内 release 详情页 */
 function ReleaseDesc({ ev }: { ev: ReceivedEvent }) {
   const rel = ev.payload?.release;
   if (!rel) return null;
+  const [owner, repo] = ev.repo.name.split("/");
   const body = rel.body?.trim() ?? "";
   return (
     <div className="text-sm text-muted-foreground">
-      <a
-        href={rel.html_url ?? "#"}
-        target="_blank"
-        rel="noreferrer"
+      <Link
+        to={`/${owner}/${repo}/releases/tag/${encodeURIComponent(rel.tag_name ?? rel.name ?? "")}`}
         className="font-medium text-foreground hover:underline"
       >
         {rel.tag_name ?? rel.name ?? ev.repo.name}
-      </a>
+      </Link>
       {body && <p className="mt-0.5 line-clamp-2 whitespace-pre-wrap wrap-break-word">{body}</p>}
     </div>
   );
@@ -1112,6 +1112,7 @@ function TrendingCard({ repo, rank }: { repo: Repository; rank: number }) {
  * 逻辑简化：单一请求方向（page++ 追加），无页码跳转/回退/竞态等旧分页 bug */
 function TrendingSection({ days }: { days: number }) {
   const { token } = useAuth();
+  const { t } = useI18n();
   const [reloadKey, setReloadKey] = useState(0);
   const [repos, setRepos] = useState<Repository[]>([]);
   const [error, setError] = useState<string | null>(null);
@@ -1195,7 +1196,7 @@ function TrendingSection({ days }: { days: number }) {
         <div className="flex flex-col items-start gap-3 sm:flex-row sm:items-center">
           <InlineError message={error} className="flex-1" />
           <Button variant="outline" onClick={() => setReloadKey((k) => k + 1)}>
-            重试
+            {t("common.retry")}
           </Button>
         </div>
       )}

@@ -884,7 +884,7 @@ export default function RepoSettingsPage() {
                   }}
                 >
                   {deleteBusy
-                    ? t("repoSettings.deleteDialog.busy")
+                    ? t("common.deleting")
                     : delStep === 1
                       ? t("repoSettings.deleteDialog.step1.btn")
                       : delStep === 2
