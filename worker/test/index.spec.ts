@@ -25,10 +25,13 @@ describe("PureGit worker", () => {
       ok: boolean;
       service: string;
       ts: number;
+      proxies: { mode: string };
     };
     expect(data.ok).toBe(true);
     expect(data.service).toBe("puregit-worker");
     expect(typeof data.ts).toBe("number");
+    // 反代能力矩阵：默认 login（供前端收敛 $raw/$wiki 通道）
+    expect(data.proxies.mode).toBe("login");
   });
 
   it("/$auth/login redirects to GitHub authorize (integration style)", async () => {

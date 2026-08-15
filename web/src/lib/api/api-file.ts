@@ -5,19 +5,17 @@
 
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
 import type { GraphQLResponse } from "./api-core";
-import {
-  FILE_RAW_QUERY,
-  FILE_EDIT_QUERY,
-  FILE_WITH_COMMIT_QUERY,
-  TREE_ENTRIES_QUERY,
-  repoRawBase,
-} from "@/lib/repo/repo-raw";
-import { fetchRawContentSmart } from "@/lib/repo/raw-proxy";
+import { TREE_ENTRIES_QUERY, repoRawBase } from "@/lib/repo/repo-raw";
+import { fetchRawContentSmart, fetchJsdelivrContent } from "@/lib/repo/raw-proxy";
+import { getCachedSha, setCachedSha } from "@/lib/repo/sha-cache";
+import { getProxyMode, anonymousProxyAllowed } from "@/lib/net/proxy-mode";
+import { reportChannel } from "@/lib/net/channel-status";
+import { fetchFileCommitSmart } from "./api-repo";
 import {
   ApiError,
   fetchFileContent,
+  fetchLatestCommit,
   fetchFileMeta,
-  fetchFileCommit,
   fetchDirContents,
   fetchReadme,
   fetchRootFiles,
@@ -37,26 +35,24 @@ function fileContentLog(detail: string, channel: string, size: number): void {
 }
 
 /**
- * GitHub API 文件内容通道上限（修订，官方 2022-05 起 REST 提升至 100MB）：
+ * GitHub API 文件内容通道上限（官方 2022-05 起 REST 提升至 100MB）：
  * - API_REST_MAX_BYTES = 100MB：REST contents + raw Accept 上限（1MB~100MB 必须 raw Accept，
  *   fetchFileContent 已满足）；>100MB 接口直接拒绝。
- * - API_GQL_MAX_BYTES = 1MB：GraphQL Blob.text 硬限制——>1MB 时 isTruncated=true、text 只含部分
- *   （官方 确认：text 非 null 但截断），必须检查 isTruncated 防静默返回残缺内容。
- * 文件树（git/trees 递归）自带 size 字段，knownSize 已知超限时跳过对应通道（免无谓 API 尝试）。
+ * 文件内容读取已去 GraphQL（blob 1MB 截断徒增复杂度），统一走 REST contents 通道；
+ * 文件树（git/trees 递归）自带 size 字段，knownSize 已知超限时跳过 REST 直连保底（免无谓尝试）。
  */
 export const API_REST_MAX_BYTES = 100 * 1024 * 1024;
-export const API_GQL_MAX_BYTES = 1024 * 1024;
 
 /**
- * 智能获取文件原始内容（blob 页主加载通道）——**API 优先 + 按登录态保底**。
+ * 智能获取文件原始内容（blob 页主加载通道）——**REST contents 唯一通道 + 按登录态保底**。
  *
- * 分层（用户定稿：登录 = API smart hack 优先、$raw 保底；匿名 = REST hack 优先、raw 直连保底）：
- * - **登录**：① GraphQL blob（`Blob.text` + isTruncated 检查，5000 点配额，≤1MB）
- *   → ② REST contents（raw Accept，100MB 通道，私有仓库可读）
- *   → ③ Worker /$raw 代理保底（跳过直连——受限网络直连超时浪费 5s；worker 带会话 token，绕墙 + Cache API）。
- * - **匿名**（GraphQL 恒 403 守卫短路）：① REST contents（raw Accept，公开仓库，60/h 配额——
- *   api.github.com 实测可达，用户定稿主通道）→ ② raw 直连保底（零配额零成本；**仅直连不转代理**）。
- * - **knownSize 门控**：>100MB（REST 硬限制）→ 直接保底通道；>1MB（GraphQL 必截断）→ 跳过 GraphQL 直接 REST。
+ * 分层（文件内容读取已去 GraphQL——blob 1MB 截断徒增复杂度，统一 REST contents）：
+ * - **登录**：① REST contents（raw Accept，100MB 通道，私有仓库可读）
+ *   → ② Worker /$raw 代理保底（跳过 raw 直连——受限网络直连超时浪费 5s；worker 带会话 token）。
+ * - **匿名**（省流优先）：① 拿最新 commit sha（缓存 10min，1 额度）→ ② jsDelivr @sha（零额度精确绕墙）
+ *   → ③ REST contents（②失败/拿不到 sha 时，实时）→ ④ raw 直连（零额度）→ ⑤ worker $raw（仅 mode=on）。
+ *   额度耗尽（REST 限流）时跳过 ④ raw 直连，直接 ⑤ worker（on）/ 报错（off/login）。
+ * - **knownSize 门控**：>100MB（REST 硬限制）→ 直接保底通道。
  * 每次命中通道打 fileContentLog（dev 审计）。
  */
 export async function fetchFileContentSmart(
@@ -68,19 +64,64 @@ export async function fetchFileContentSmart(
   knownSize?: number,
 ): Promise<string> {
   const detail = `${owner}/${repo} ${branch}:${path}`;
-  // 保底通道（登录 $raw 代理 / 匿名 raw 直连）——用户定稿
-  const fallback = async (): Promise<string> => {
-    if (token) {
-      // 登录保底：$raw 代理（directFirst=false 跳过直连，受限网络直连超时浪费 5s）
-      const raw = await fetchRawContentSmart(owner, repo, branch, path, false);
-      if (raw != null) {
-        fileContentLog(detail, "fallback→$raw-proxy", raw.length);
-        return raw;
-      }
-      fileContentLog(detail, "fallback→$raw-proxy→null", 0);
-      throw new ApiError(413, "文件获取失败（超过通道上限或网络不可达）");
+  // 登录保底：$raw 代理（directFirst=false 跳过直连，受限网络直连超时浪费 5s）
+  const loginFallback = async (): Promise<string> => {
+    const raw = await fetchRawContentSmart(owner, repo, branch, path, false);
+    if (raw != null) {
+      fileContentLog(detail, "fallback→$raw-proxy", raw.length);
+      return raw;
     }
-    // 匿名保底：raw 直连（零配额；仅直连不转代理，用户定稿）
+    fileContentLog(detail, "fallback→$raw-proxy→null", 0);
+    throw new ApiError(413, "文件获取失败（超过通道上限或网络不可达）");
+  };
+
+  // 匿名省流链（token 为空）
+  const anonymousFetch = async (): Promise<string> => {
+    // ① 拿最新 commit sha（缓存 10min 优先；miss 时 REST 1 额度）
+    let sha = getCachedSha(owner, repo, branch);
+    if (!sha) {
+      try {
+        const latest = await fetchLatestCommit(owner, repo, branch, null);
+        if (latest?.sha) {
+          sha = latest.sha;
+          setCachedSha(owner, repo, branch, sha);
+        }
+      } catch {
+        /* 拿不到 sha（可能额度耗尽/网络） */
+      }
+    }
+    // ② jsDelivr @sha（拿到 sha 才走；零额度内容寻址精确绕墙）
+    if (sha) {
+      const jd = await fetchJsdelivrContent(owner, repo, sha, path);
+      if (jd != null) {
+        fileContentLog(detail, "jsdelivr@sha", jd.length);
+        return jd;
+      }
+      fileContentLog(detail, "jsdelivr@sha→null", 0);
+    }
+    // ③ REST contents（实时，1 额度）
+    try {
+      const rest = await fetchFileContent(owner, repo, path, null, branch);
+      fileContentLog(detail, "rest-contents", rest.length);
+      reportChannel("rest");
+      return rest;
+    } catch (e) {
+      fileContentLog(detail, "rest-contents→err", 0);
+      // 额度耗尽（限流）：跳过 raw 直连（撞墙浪费 5s），直接 worker $raw（on）/ 报错（off/login）
+      if (e instanceof ApiError && e.isRateLimit) {
+        const mode = await getProxyMode();
+        if (anonymousProxyAllowed(mode)) {
+          const raw = await fetchRawContentSmart(owner, repo, branch, path, false);
+          if (raw != null) {
+            fileContentLog(detail, "ratelimit→$raw-proxy", raw.length);
+            return raw;
+          }
+        }
+        fileContentLog(detail, "ratelimit→no-channel", 0);
+        throw new ApiError(403, "匿名 API 额度已耗尽，请登录后继续");
+      }
+    }
+    // ④ raw 直连（非限流失败；零额度，仅直连不转代理）
     const raw = await fetchRawContentSmart(owner, repo, branch, path, true, false);
     if (raw != null) {
       fileContentLog(detail, "fallback→raw-direct", raw.length);
@@ -89,65 +130,36 @@ export async function fetchFileContentSmart(
     fileContentLog(detail, "fallback→raw-direct→null", 0);
     throw new ApiError(404, "文件获取失败（公开文件不可达，请登录后重试）");
   };
-  // ①-0 size 门控：>100MB（REST 硬限制）→ 直接保底通道
+
+  // size 门控：>100MB（REST 硬限制）→ 直接保底通道
   if (knownSize != null && knownSize > API_REST_MAX_BYTES) {
     fileContentLog(detail, "size-gated(>100MB)→fallback", 0);
-    return fallback();
+    return token ? loginFallback() : anonymousFetch();
   }
-  // ① GraphQL：仅登录且 ≤1MB（>1MB 必截断，跳过省一次无效查询）
-  if (token && !(knownSize != null && knownSize > API_GQL_MAX_BYTES)) {
+  // 登录态：REST contents 唯一通道（去 GraphQL）
+  if (token) {
     try {
-      const resp: GraphQLResponse<{
-        repository: { object: { text: string | null; isTruncated: boolean } | null } | null;
-      }> = await graphqlRequest(
-        FILE_RAW_QUERY,
-        { owner, name: repo, expr: `${branch}:${path}` },
-        token,
-      );
-      const obj = resp.data?.repository?.object;
-      // text 完整（非截断）才返回；截断（>1MB）/ errors → 降级 REST
-      if (!hasGraphQLErrors(resp) && obj?.text != null && !obj.isTruncated) {
-        fileContentLog(detail, "graphql-blob", obj.text.length);
-        return obj.text;
-      }
-      fileContentLog(detail, "graphql-blob→skip(truncated/err)", 0);
+      const rest = await fetchFileContent(owner, repo, path, token, branch);
+      fileContentLog(detail, "rest-contents", rest.length);
+      reportChannel("rest");
+      return rest;
     } catch {
-      fileContentLog(detail, "graphql-blob→err", 0);
+      fileContentLog(detail, "rest-contents→err", 0);
     }
-  } else {
-    fileContentLog(
-      detail,
-      token ? "graphql-blob→skip(size>1MB)" : "graphql-blob→skip(anonymous)",
-      0,
-    );
+    return loginFallback();
   }
-  // ② REST contents（raw Accept，100MB 通道；登录匿名都走——api.github.com 实测可达）
-  try {
-    const rest = await fetchFileContent(owner, repo, path, token, branch);
-    fileContentLog(detail, "rest-contents", rest.length);
-    return rest;
-  } catch {
-    fileContentLog(detail, "rest-contents→err", 0);
-  }
-  // ③ 保底通道（登录 $raw 代理 / 匿名 raw 直连）
-  return fallback();
+  // 匿名态：省流链
+  return anonymousFetch();
 }
 
-/** blob 文件头 commit 信息（与 REST fetchFileCommit 返回结构一致） */
-export type FileCommitInfo = Awaited<ReturnType<typeof fetchFileCommit>>;
+/** blob 文件头 commit 信息（与 fetchFileCommitSmart 返回结构一致） */
+export type FileCommitInfo = Awaited<ReturnType<typeof fetchFileCommitSmart>>;
 
 /**
- * blob 页复合查询——一次 GraphQL 同时拿文件内容(text) + 该文件最近提交(commit)。
- * 替代 BlobPage 原先 fetchFileContentSmart + fetchFileCommitSmart 两次请求（登录态 2→1）。
- *
- * 分层：
- * - 登录且 ≤1MB：一次 FILE_WITH_COMMIT_QUERY（file alias 拿 Blob.text + commit alias 拿 Commit.history）。
- *   text 完整（非截断）→ content + commit 一次到位；
- *   text 截断（>1MB）→ content 降级 REST（commit 保留 GraphQL 结果）；
- *   commit 为 null（文件无提交历史）→ commit 降级 REST。
- * - 其余（匿名 / >1MB 门控 / GraphQL 失败）→ 分别降级：
- *   content 走 fetchFileContentSmart 完整降级链（GraphQL blob → REST → $raw）；
- *   commit 走 REST fetchFileCommit（静默 null，BlobPage 匿名本就跳过 commit）。
+ * blob 页复合查询——文件内容 + 该文件最近提交，两通道并行。
+ * - content：fetchFileContentSmart（REST contents 唯一通道 + $raw/raw 保底，去 GraphQL）
+ * - commit：fetchFileCommitSmart（GraphQL 主通道 + REST 降级；无 1MB 限制保留 GraphQL）
+ * 匿名时 commit 为 null（BlobPage 匿名本就跳过 commit）。
  */
 export async function fetchFileWithCommitSmart(
   owner: string,
@@ -157,69 +169,9 @@ export async function fetchFileWithCommitSmart(
   branch = "HEAD",
   knownSize?: number,
 ): Promise<{ content: string; commit: FileCommitInfo }> {
-  const detail = `${owner}/${repo} ${branch}:${path}`;
-  // GraphQL commit 节点 → FileCommitInfo
-  const mapCommit = (n: {
-    oid: string;
-    message: string;
-    committedDate: string;
-    author: { avatarUrl: string; user: { login: string } | null } | null;
-  }): FileCommitInfo => ({
-    sha: n.oid,
-    commit: { message: n.message, committer: { date: n.committedDate } },
-    author: n.author?.user ? { login: n.author.user.login, avatar_url: n.author.avatarUrl } : null,
-  });
-
-  // 合并查询主通道（仅登录且 ≤1MB——>1MB text 必截断，跳过省一次无效查询）
-  if (token && !(knownSize != null && knownSize > API_GQL_MAX_BYTES)) {
-    try {
-      const resp: GraphQLResponse<{
-        repository: {
-          file: { text: string | null; isTruncated: boolean } | null;
-          commit: {
-            history: { nodes: Parameters<typeof mapCommit>[0][] } | null;
-          } | null;
-        } | null;
-      }> = await graphqlRequest(
-        FILE_WITH_COMMIT_QUERY,
-        { owner, name: repo, fileExpr: `${branch}:${path}`, commitExpr: branch, path },
-        token,
-      );
-      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
-        const file = resp.data.repository.file;
-        const commitNode = resp.data.repository.commit?.history?.nodes?.[0];
-        // text 完整（非截断）→ content + commit 一次到位
-        if (file?.text != null && !file.isTruncated) {
-          fileContentLog(detail, "graphql-blob+commit", file.text.length);
-          return {
-            content: file.text,
-            commit: commitNode
-              ? mapCommit(commitNode)
-              : await fetchFileCommit(owner, repo, path, branch, token),
-          };
-        }
-        // text 截断（>1MB）→ content 走 REST contents 降级（commit 保留）
-        fileContentLog(detail, "graphql-blob→truncated", 0);
-        try {
-          const rest = await fetchFileContent(owner, repo, path, token, branch);
-          return {
-            content: rest,
-            commit: commitNode
-              ? mapCommit(commitNode)
-              : await fetchFileCommit(owner, repo, path, branch, token),
-          };
-        } catch {
-          /* content REST 失败 → 落入下方完整降级链 */
-        }
-      }
-    } catch {
-      /* GraphQL 失败 → 落入下方完整降级链 */
-    }
-  }
-  // 完整降级链（匿名 / 截断 REST 失败 / GraphQL 失败）
   const [content, commit] = await Promise.all([
     fetchFileContentSmart(owner, repo, path, token, branch, knownSize),
-    token ? fetchFileCommit(owner, repo, path, branch, token) : Promise.resolve(null),
+    token ? fetchFileCommitSmart(owner, repo, path, branch, token) : Promise.resolve(null),
   ]);
   return { content, commit };
 }
@@ -453,13 +405,11 @@ export interface FileEditData {
 }
 
 /**
- * 编辑页数据：一次 GraphQL 同时拿 blob 内容(text) + sha(oid)，降级链完备。
- * - oid 与 REST contents.sha 同为 blob SHA（GitHub 官方文档），可直接用于 PUT 提交；
- * - >1MB：isTruncated=true（text 只含部分，官方 确认）→ 不返回残缺内容，
- *   内容经 fetchFileContentSmart（REST/$raw）补齐，sha 用 oid；
- * - 误填目录路径（object 为 Tree，fragment 不匹配）→ 无 oid → 降级 REST 报错（同 REST 行为）；
- * - 匿名 / GraphQL 失败：降级 REST fetchFileMeta 拿 sha + fetchFileContentSmart 内容通道；
- * - skipContent=true（blob→编辑注入路径）：仅取 sha（GraphQL 仍返回 text 字段，解析时忽略）。
+ * 编辑页数据：REST 通道一次拿 sha(meta) + 内容（去 GraphQL——blob 1MB 截断徒增复杂度）。
+ * - sha：fetchFileMeta（REST contents 元数据，与 createOrUpdateFileContents 的 sha 语义一致）；
+ * - 内容：fetchFileContentSmart（REST contents 唯一通道 + $raw/raw 保底）；
+ * - skipContent=true（blob→编辑注入路径）：仅取 sha；
+ * - 编辑场景 token 必在（WriteGate 门控）。
  */
 export async function fetchFileEditSmart(
   owner: string,
@@ -469,35 +419,6 @@ export async function fetchFileEditSmart(
   branch = "HEAD",
   skipContent = false,
 ): Promise<FileEditData> {
-  // ① 登录 GraphQL 首选：object { ... on Blob { oid text isTruncated } }
-  if (token) {
-    try {
-      const resp: GraphQLResponse<{
-        repository: {
-          object: { oid: string; text: string | null; isTruncated: boolean } | null;
-        } | null;
-      }> = await graphqlRequest(
-        FILE_EDIT_QUERY,
-        { owner, name: repo, expr: `${branch}:${path}` },
-        token,
-      );
-      const obj = resp.data?.repository?.object;
-      if (obj?.oid) {
-        // sha 到手；text 完整（非截断）则一并返回（skipContent 时调用方不要内容）
-        if (skipContent) return { content: null, sha: obj.oid };
-        if (obj.text != null && !obj.isTruncated) {
-          return { content: obj.text, sha: obj.oid };
-        }
-        // isTruncated（>1MB）→ 不返回残缺内容，经 smart 通道补齐，sha 用 oid
-        const c = await fetchFileContentSmart(owner, repo, path, token, branch);
-        return { content: c, sha: obj.oid };
-      }
-      // object 为 null（路径不存在）或非 Blob（目录）→ 降级 REST（行为与 REST contents 一致）
-    } catch {
-      /* 降级 */
-    }
-  }
-  // ② 降级：REST contents 拿 sha + smart 通道内容（编辑场景 token 必在：WriteGate 门控）
   const meta = await fetchFileMeta(owner, repo, path, token!);
   if (skipContent) return { content: null, sha: meta.sha };
   const c = await fetchFileContentSmart(owner, repo, path, token, branch);

@@ -33,7 +33,7 @@ export function LoginPrompt({
   className?: string;
   /** 涟漪聚光灯目标（默认右上角登录按钮；可指定任意元素/选择器） */
   spotlightTarget?: RippleTarget;
-  /** 涟漪聚光灯动画参数（restoreAt 提前还原 / duration / 阶段比例 / scrollToTarget 先滚动） */
+  /** 涟漪聚光灯动画参数（restoreAt 提前还原 / duration / 阶段比例 / scrollToTarget 目标不可见时滚动） */
   spotlightOptions?: RippleOptions;
 }) {
   const { t } = useI18n();

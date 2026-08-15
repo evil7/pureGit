@@ -26,6 +26,7 @@ import {
   subscribeUsageChange,
   type ApiUsage,
 } from "@/lib/api/octokit";
+import { getChannel, subscribeChannel, type ChannelKind } from "@/lib/net/channel-status";
 
 /** 本项目 GitHub 仓库（owner/name + URL；如地址变更在此修改） */
 const PROJECT_REPO = { owner: "evil7", name: "puregit" } as const;
@@ -39,6 +40,15 @@ export default function AppFooter() {
   const [usage, setUsage] = useState<ApiUsage | null>(null);
   const [status, setStatus] = useState<ApiStatus>("loading");
   const [stats, setStats] = useState<RepoStats | null>(null);
+  const [channel, setChannel] = useState<ChannelKind | null>(null);
+
+  // 通道状态灯：订阅最近命中通道（channel-status 全局单例），页面任意请求命中即刷新
+  useEffect(() => {
+    const apply = () => setChannel(getChannel());
+    const unsub = subscribeChannel(apply);
+    apply(); // 初始同步：挂载前可能已有请求命中
+    return unsub;
+  }, []);
 
   // API 状态 + 双额度（REST core / GraphQL）：订阅统一 limit 缓存（octokit.ts 每次响应头实时更新），
   // 页面任意接口活动都会即时刷新 footer，无需独立轮询 /rate_limit。
@@ -125,21 +135,26 @@ export default function AppFooter() {
           </a>
         </div>
 
-        {/* 右侧：API 状态 + 双额度（REST core / GraphQL 独立计数）。
+        {/* 右侧：通道状态灯 + 双额度（REST core / GraphQL 独立计数）。
+            状态灯展示最近一次请求实际命中的服务通道（替代原「GitHub API」单一指示灯）；
             组内紧凑（gap-x-4），与左侧分栏保持 gap-x-6，形成整体分组视觉 */}
         <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
           <span className="flex items-center gap-1.5">
             <span
               className={cn(
                 "size-2 rounded-full",
-                status === "ok"
-                  ? "bg-emerald-500"
-                  : status === "error"
-                    ? "bg-destructive"
+                status === "error"
+                  ? "bg-destructive"
+                  : channel
+                    ? "bg-emerald-500"
                     : "bg-muted-foreground/50",
               )}
             />
-            {t("footer.apiStatus")}
+            {status === "error"
+              ? t("footer.apiError")
+              : channel
+                ? t(`footer.channel.${channel}`)
+                : t("footer.apiStatus")}
           </span>
           {usage && status === "ok" && (
             <>
@@ -159,7 +174,6 @@ export default function AppFooter() {
               </Tip>
             </>
           )}
-          {status === "error" && <span>{t("footer.apiError")}</span>}
         </div>
       </div>
     </footer>

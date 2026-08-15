@@ -12,7 +12,7 @@
 |------|---------|--------|
 | [vision.md](./vision.md) | **中心思想与产品定位（最高纲领）**：项目做什么、为什么存在、功能取舍判据 | 任何新功能/新页面**动手前** |
 | [design.md](./design.md) | **UI/UX 设计规范（Design System）**：布局框架/组件规范/响应式/动画/验收清单 | 写任何 UI/布局/组件**之前** |
-| [architecture.md](./architecture.md) | **架构设计**：前端 / Worker / CLI 镜像代理、职责边界、API 策略 | 涉及跨层改动、API 数据流、新增端点时 |
+| [architecture.md](./architecture.md) | **架构设计**：前端 / Worker / CLI 镜像代理、职责边界、API 策略、**Raw 内容通道（$raw 后端）编排** | 涉及跨层改动、API 数据流、新增端点时；`$raw` 文件读取通道/省流方案/反代开关 |
 | [cli-setup.md](./cli-setup.md) | **CLI 接入指南**：git 镜像端点 insteadOf 配置 | 用户配置 git / 排查 clone/pull/push 问题时 |
 
 > **内部文档不保留**：临时任务与决策随开发开始和结束自然消亡，最终结果沉淀在代码注释（总结性语义）与公开框架文档中，避免文档膨胀。

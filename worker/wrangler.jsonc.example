@@ -55,7 +55,14 @@
 		"GITHUB_CLIENT_ID": "<你的 GitHub OAuth App Client ID>",
 		"GITHUB_OAUTH_CALLBACK": "https://<你的域名>/$auth/callback",
 		"SESSION_COOKIE_NAME": "puregit_session",
-		"FRONTEND_URL": "https://<你的域名>"
+		"FRONTEND_URL": "https://<你的域名>",
+		/**
+		 * 反代开关（off/login/on）：控制 /$wiki 与 /$raw 反代可用性。
+		 * off = 完全关闭反代（任何请求 403）；
+		 * login（默认）= 仅登录用户可用（匿名不提供，防刷，匿名 401）；
+		 * on = 全部放行（兼容旧 PROXY_ALLOW_ANON="true"）。
+		 */
+		"RAW_PROXY_ENABLE": "login"
 	},
 	/**
 	 * KV 会话存储

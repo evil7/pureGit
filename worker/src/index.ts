@@ -42,25 +42,38 @@ import { handleWikiProxy, isWikiRequest } from "./wiki-proxy";
 import { handleRawProxy, isRawRequest } from "./raw-proxy";
 
 /**
- * Proxy 匿名闸：/$wiki 与 /$raw 代理接口防滥用。
- * PROXY_ALLOW_ANON !== "true" 时强制要求有效会话（登录），未登录返回 401。
- * 返回 null = 放行；返回 Response = 拦截（401）。
+ * Proxy 反代开关（RAW_PROXY_ENABLE）：/$wiki 与 /$raw 反代防滥用。
+ * 三段式：
+ *   - off：完全关闭反代（部署方不承担反代流量）→ 403
+ *   - login（默认）：仅登录用户可用（匿名不提供，防刷）→ 匿名 401
+ *   - on：全部放行（兼容旧 PROXY_ALLOW_ANON="true"）
+ * 返回 null = 放行；返回 Response = 拦截（401/403）。
  */
 async function requireProxyAuth(request: Request, env: Env): Promise<Response | null> {
-  // 默认允许匿名（公开内容可读，保持 wiki/raw 体验）；部署方可将
-  // PROXY_ALLOW_ANON 设为 "false" 强制登录（防代理被当肉鸡刷流量）。
-  // （wrangler types 把 vars 推断为字面量 "true"，经可选类型读取避免误报）
-  const allowAnon = (env as { PROXY_ALLOW_ANON?: string }).PROXY_ALLOW_ANON;
-  if (allowAnon !== "false") return null;
-  const login = await getSessionLogin(request, env);
-  if (login) return null;
-  return new Response(JSON.stringify({ error: "auth_required" }), {
-    status: 401,
-    headers: {
-      ...corsHeaders(env.FRONTEND_URL),
-      "Content-Type": "application/json",
-    },
-  });
+  // 读模式（wrangler types 把 vars 推断为字面量 "login"，经可选类型读取避免误报）
+  const mode = (env as { RAW_PROXY_ENABLE?: string }).RAW_PROXY_ENABLE ?? "login";
+  if (mode === "off") {
+    return new Response(JSON.stringify({ error: "proxy_disabled" }), {
+      status: 403,
+      headers: {
+        ...corsHeaders(env.FRONTEND_URL),
+        "Content-Type": "application/json",
+      },
+    });
+  }
+  if (mode === "login") {
+    const login = await getSessionLogin(request, env);
+    if (login) return null;
+    return new Response(JSON.stringify({ error: "auth_required" }), {
+      status: 401,
+      headers: {
+        ...corsHeaders(env.FRONTEND_URL),
+        "Content-Type": "application/json",
+      },
+    });
+  }
+  // "on"（默认）：全部放行
+  return null;
 }
 
 export default {
@@ -76,13 +89,16 @@ export default {
     }
 
     // 健康检查（/$healthz）：无条件轻量响应，不经过任何业务逻辑
-    // （通用在线探活端点：外部监控程序/本机调试均可探活，返回即时 JSON）
+    // （通用在线探活端点：外部监控程序/本机调试均可探活，返回即时 JSON）。
+    // 下发反代能力矩阵（proxies.mode）供前端收敛 $raw/$wiki 通道。
     if (url.pathname === "/$healthz") {
+      const mode = (env as { RAW_PROXY_ENABLE?: string }).RAW_PROXY_ENABLE ?? "login";
       return new Response(
         JSON.stringify({
           ok: true,
           service: "puregit-worker",
           ts: Date.now(),
+          proxies: { mode },
         }),
         {
           status: 200,

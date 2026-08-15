@@ -31,7 +31,7 @@ export interface RippleOptions {
   phase1Ratio?: number;
   /** 阶段 2（收缩聚焦）结束占比（默认 0.375；剩余为阶段 3 聚焦环匀速淡出） */
   phase2Ratio?: number;
-  /** 滚动到目标后再播放（默认 true：smooth 滚动使目标垂直居中，滚动结束后才开始涟漪动画） */
+  /** 目标不可见时滚动到目标后再播放（默认 true：仅当目标不在视口内才 smooth 滚动垂直居中，滚动结束后才开始涟漪动画；目标已可见时始终直接播放，不受此开关影响） */
   scrollToTarget?: boolean;
 }
 

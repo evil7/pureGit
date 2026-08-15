@@ -13,7 +13,7 @@
  *   - `$raw`/`$wiki` 以 `$` 符号前缀标识**内部高优先级功能性路由**——GitHub 用户名/仓库名规范
  *     不含 `$`，/$raw /$wiki 永不被 /:owner/:repo 用户级通配路由占用。
  *   - 上游白名单：仅 raw.githubusercontent.com（防 SSRF——不解析用户任意 URL）。
- *   - 仅 GET；15s 超时；可选匿名闸（PROXY_ALLOW_ANON，见 index.ts requireProxyAuth）。
+ *   - 仅 GET；15s 超时；可选反代开关（RAW_PROXY_ENABLE，见 index.ts requireProxyAuth）。
  *
  * 防滥用与可靠性（防滥用增强）：
  *   - **分级限流**：匿名按 IP（CF-Connecting-IP）120 req/60s、登录按会话 login 600 req/60s

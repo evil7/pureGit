@@ -44,6 +44,7 @@ vi.mock("@/lib/restapi", async (importOriginal) => {
     fetchDirContents: vi.fn(),
     fetchReadme: vi.fn(),
     fetchRootFiles: vi.fn(),
+    fetchFileContent: vi.fn(),
   };
 });
 
@@ -73,6 +74,7 @@ import {
   fetchDirContents,
   fetchReadme,
   fetchRootFiles,
+  fetchFileContent,
   type Repository,
 } from "@/lib/restapi";
 
@@ -88,6 +90,7 @@ const mockCreatePullRequest = vi.mocked(createPullRequest);
 const mockFetchDirContents = vi.mocked(fetchDirContents);
 const mockFetchReadme = vi.mocked(fetchReadme);
 const mockFetchRootFiles = vi.mocked(fetchRootFiles);
+const mockFetchFileContent = vi.mocked(fetchFileContent);
 
 /** 最小 REST Repository 夹具（REST 降级路径返回值） */
 const restRepo: Repository = {
@@ -153,6 +156,7 @@ beforeEach(() => {
   mockFetchDirContents.mockResolvedValue([]);
   mockFetchReadme.mockResolvedValue(null);
   mockFetchRootFiles.mockResolvedValue(null);
+  mockFetchFileContent.mockResolvedValue("file content");
   mockFetchLanguages.mockResolvedValue({});
   // 默认 null（REST 降级时 data 保持 restRepo 原样，`toBe(restRepo)` 断言不受影响）
   mockFetchOpenPullsCount.mockResolvedValue(null);
@@ -459,19 +463,16 @@ describe("fetchReadmeSmart（README 定位 + 内容 GraphQL 主通道 + REST 熔
     expect(r).toBeNull();
   });
 
-  it("GraphQL 成功 + 有 README → 定位并取内容（REST 不调用）", async () => {
-    // 第 1 次 graphqlRequest：TREE_ENTRIES_QUERY 定位 README；第 2 次（fetchFileContentSmart）：FILE_RAW_QUERY 拿 blob
-    mockGraphql
-      .mockResolvedValueOnce({
-        data: {
-          repository: {
-            object: { entries: [{ name: "README.md", path: "README.md", type: "blob" }] },
-          },
+  it("GraphQL 成功 + 有 README → 定位并取内容（内容走 REST contents 通道）", async () => {
+    // graphqlRequest：TREE_ENTRIES_QUERY 定位 README；内容经 fetchFileContentSmart（REST contents 通道）
+    mockGraphql.mockResolvedValueOnce({
+      data: {
+        repository: {
+          object: { entries: [{ name: "README.md", path: "README.md", type: "blob" }] },
         },
-      } as never)
-      .mockResolvedValueOnce({
-        data: { repository: { object: { text: "hello readme", isTruncated: false } } },
-      } as never);
+      },
+    } as never);
+    mockFetchFileContent.mockResolvedValue("hello readme");
     const r = await fetchReadmeSmart("evil7", "puregit", "gho_x");
     expect(mockFetchReadme).not.toHaveBeenCalled();
     expect(r?.path).toBe("README.md");

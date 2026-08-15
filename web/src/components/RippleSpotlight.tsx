@@ -2,8 +2,9 @@
  * 涟漪聚光灯动画（参数化 + 聚焦强调 + 阻尼感）
  *
  * 2026-08-14 重命名：LoginSpotlight → RippleSpotlight（登录聚光灯 → 通用涟漪聚光灯，
- * 现也用于 fork 引导等非登录场景）。**滚动优化**：触发时先 smooth 滚动使目标垂直居中
- * （参考 `↑ Top` 按钮行为），**待滚动结束**再播放涟漪聚拢动画——画面先顺滑到位再聚焦。
+ * 现也用于 fork 引导等非登录场景）。**可见性自适应**：目标已在视口内则**直接**取位置
+ * 播放动画（跳过滚动等待，避免可见时的延迟）；不可见才 smooth 滚动到垂直居中（参考
+ * `↑ Top` 按钮行为），**待滚动结束**再播放涟漪聚拢动画——画面先顺滑到位再聚焦。
  *
  * 触发（跨文件统一 API，见 ripple-spotlight.ts）：
  *   `triggerRippleSpotlight(target?, options?)` —— target 可为：
@@ -87,6 +88,15 @@ function waitForScrollEnd(el: HTMLElement, timeoutMs = 3000): Promise<void> {
   });
 }
 
+/** 判断目标元素是否完整落在视口内（无需滚动即可完整看到）
+ * getBoundingClientRect 相对视口：top/left ≥ 0 且 bottom/right ≤ 视口宽高即完整可见。 */
+function isElementInViewport(el: HTMLElement): boolean {
+  const r = el.getBoundingClientRect();
+  return (
+    r.top >= 0 && r.left >= 0 && r.bottom <= window.innerHeight && r.right <= window.innerWidth
+  );
+}
+
 export function RippleSpotlight() {
   const [show, setShow] = useState(false);
   const [target, setTarget] = useState<{
@@ -119,21 +129,23 @@ export function RippleSpotlight() {
       const merged = { ...DEFAULT_OPTIONS, ...rawOptions };
       const el = resolveRippleTarget(rawTarget);
       const seq = ++seqRef.current;
-      // async：先 smooth 滚动到目标（垂直居中），滚动结束后再取位置播放涟漪动画
+      // async：目标可见则直接取位置播；不可见则先 smooth 滚动到位再取位置播（详见下方分支）
       void (async () => {
         let x: number;
         let y: number;
         let radius: number;
         if (el) {
-          // 顺滑滚动（参考 ↑ Top 按钮 behavior: smooth）；scrollToTarget=false 跳过（目标已在视口内）
-          if (merged.scrollToTarget) {
+          // 可见性自适应：目标已在视口内直接取位置播（跳过滚动等待，避免可见时的延迟）；
+          // 不可见才 smooth 滚动到垂直居中（scrollToTarget=false 强制不滚动）。
+          const inView = isElementInViewport(el);
+          if (!inView && merged.scrollToTarget) {
             el.scrollIntoView({ behavior: "smooth", block: "center" });
             await waitForScrollEnd(el);
+            if (seq !== seqRef.current) return; // 已被更新的触发取代
+            // 滚动到位后再延迟一帧取位置：长滚动后 sticky 头/布局可能 settle，立即取
+            // getBoundingClientRect 会偏移（2026-08-14 实测修复——滚动结束位置 ≠ 动画聚焦位置）
+            await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
           }
-          if (seq !== seqRef.current) return; // 已被更新的触发取代
-          // 滚动到位后再延迟一帧取位置：长滚动后 sticky 头/布局可能 settle，立即取
-          // getBoundingClientRect 会偏移（2026-08-14 实测修复——滚动结束位置 ≠ 动画聚焦位置）
-          await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
           if (seq !== seqRef.current) return;
           const r = el.getBoundingClientRect();
           x = r.left + r.width / 2;
