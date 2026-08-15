@@ -1,4 +1,4 @@
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useState, type KeyboardEvent, type ReactNode } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import {
   CheckCircle2,
@@ -13,15 +13,18 @@ import {
   MessageSquare,
   Milestone,
   Plus,
+  Search,
   SlidersHorizontal,
   Tag,
   User,
   Users,
+  X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { InlineError } from "@/components/InlineError";
 import { Button } from "@/components/ui/button";
+import { InputGroup, InputGroupAddon, InputGroupInput } from "@/components/ui/input-group";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Pager } from "@/components/Pager";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
@@ -44,7 +47,6 @@ import {
   type RepoMilestone,
 } from "@/lib/restapi";
 import type { PullRequest } from "@/lib/restapi";
-import { RepoSearchInput } from "@/components/RepoSearchInput";
 import { UserAvatar } from "@/components/UserAvatar";
 import { getLabelStyle } from "@/lib/ui/label-color";
 import { cn } from "@/lib/utils";
@@ -92,6 +94,10 @@ export default function PullsPage() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
+  // 搜索框即时输入值（URL q 为单一事实源；q 变化时回填，提交/清空写回 URL）
+  const [searchValue, setSearchValue] = useState(q);
+  useEffect(() => setSearchValue(q), [q]);
+
   // 过滤下拉数据源（contributors/labels/milestones/assignees，进入页面即并行预取一次）
   const [contributors, setContributors] = useState<{ login: string }[]>([]);
   const [repoLabels, setRepoLabels] = useState<RepoLabel[]>([]);
@@ -130,6 +136,21 @@ export default function PullsPage() {
       else next.set(k, v);
     }
     setSearchParams(next, { replace: true });
+  };
+
+  // 搜索提交/清空（Enter 提交；Escape 或点击 ✕ 清空）——与 InputGroup 组合框联动
+  const submitSearch = () => updateParams({ q: searchValue.trim() || null, page: null });
+  const clearSearch = () => {
+    setSearchValue("");
+    updateParams({ q: null, page: null });
+  };
+  const handleSearchKeyDown = (e: KeyboardEvent<HTMLInputElement>) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      submitSearch();
+    } else if (e.key === "Escape") {
+      clearSearch();
+    }
   };
 
   useEffect(() => {
@@ -214,16 +235,34 @@ export default function PullsPage() {
 
   return (
     <div className="space-y-4">
-      {/* ① 搜索工具条：Filters 下拉 + 搜索框 + Labels/Milestones 链接 + New pull request */}
+      {/* ① 搜索工具条：Filters 下拉 + 搜索框（InputGroup 组合）+ Labels/Milestones 链接 + New pull request */}
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div className="flex min-w-0 flex-1 items-center gap-2">
-          <FiltersMenu owner={owner!} repo={repo!} />
-          <RepoSearchInput
-            defaultValue={q}
-            placeholder={`is:pr is:${state}`}
-            onSubmit={(raw) => updateParams({ q: raw || null, page: null })}
-            className="min-w-0 flex-1"
-          />
+          <InputGroup className="min-w-0 flex-1">
+            <FiltersMenu owner={owner!} repo={repo!} />
+            <InputGroupAddon align="inline-start" className="pl-2">
+              <Search className="size-3.5 text-muted-foreground" />
+            </InputGroupAddon>
+            <InputGroupInput
+              value={searchValue}
+              onChange={(e) => setSearchValue(e.target.value)}
+              onKeyDown={handleSearchKeyDown}
+              placeholder={`is:pr is:${state}`}
+              aria-label={`is:pr is:${state}`}
+            />
+            {searchValue && (
+              <InputGroupAddon align="inline-end" className="pr-2">
+                <button
+                  type="button"
+                  onClick={clearSearch}
+                  aria-label="Clear search"
+                  className="flex size-4 items-center justify-center rounded-full text-muted-foreground hover:bg-muted hover:text-foreground"
+                >
+                  <X className="size-3" />
+                </button>
+              </InputGroupAddon>
+            )}
+          </InputGroup>
         </div>
         <div className="flex items-center gap-4 text-sm">
           <Link
@@ -406,12 +445,14 @@ function FiltersMenu({ owner, repo }: { owner: string; repo: string }) {
   ];
   return (
     <Popover>
-      <PopoverTrigger asChild>
-        <Button variant="outline" className="h-8 gap-1 rounded-r-none px-2.5">
-          {t("pulls.filters")}
-          <ChevronDown className="size-3.5" />
-        </Button>
-      </PopoverTrigger>
+      <InputGroupAddon align="inline-start" className="border-r py-0 pr-1">
+        <PopoverTrigger asChild>
+          <Button variant="ghost" className="gap-1 rounded-none px-2">
+            {t("pulls.filters")}
+            <ChevronDown className="size-3.5" />
+          </Button>
+        </PopoverTrigger>
+      </InputGroupAddon>
       <PopoverContent align="start" className="w-64 p-1">
         <div className="border-b px-2 py-1.5 text-xs font-semibold text-muted-foreground">
           Filter Issues

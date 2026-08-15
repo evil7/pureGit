@@ -14,7 +14,7 @@
  * 数据：PUT /repos/{o}/{r}/contents/{path}（有 sha 更新，无 sha 新增；新建分支先 POST /git/refs 两段式）。
  */
 import { useEffect, useMemo, useState, Fragment } from "react";
-import { useNavigate, useParams, useLocation, Link } from "react-router-dom";
+import { useNavigate, useParams, useLocation, useSearchParams, Link } from "react-router-dom";
 import { Button } from "@/components/ui/button";
 import { NeedFork } from "@/components/NeedFork";
 import { Input } from "@/components/ui/input";
@@ -43,8 +43,9 @@ import {
   type GitTree,
 } from "@/lib/restapi";
 // 编辑模式数据走 fetchFileEditSmart（一次 GraphQL 拿 blob 内容+sha，
-// 降级链完备；不再单独 REST fetchFileMeta + smart 内容两条通道）
-import { fetchFileEditSmart } from "@/lib/api";
+// 降级链完备；不再单独 REST fetchFileMeta + smart 内容两条通道）；
+// workflow 模板正文走 fetchTemplateContent（复用 fetchFileContentSmart 智能通道）
+import { fetchFileEditSmart, fetchTemplateContent } from "@/lib/api";
 import { useI18n } from "@/i18n";
 import { PAGE_SHELL, CONTENT_FILL } from "@/lib/ui/layout";
 import { cn } from "@/lib/utils";
@@ -56,25 +57,35 @@ export function FileEditorPage() {
   const { t } = useI18n();
   const navigate = useNavigate();
   const location = useLocation();
+  const [searchParams] = useSearchParams();
   const path = rest; // 编辑：文件路径；新建：可选前缀
   // 路由模式区分（bug 修复）：new/:branch/* 的 * 是**目录前缀**（非文件名），
   // 不能用 rest 是否为空判断新建——否则 new/main/docs（在 docs 目录新建）会被误判为编辑，
   // 把 "docs" 当文件名预填、并按目录请求内容返回 JSON 显示（用户反馈 bug）。
   const isNew = location.pathname.startsWith(`/${owner}/${repo}/new`);
+  // filename query（官方 workflow 模板跳转预填）：完整文件路径，如 .github/workflows/blank.yml
+  const filenameParam = searchParams.get("filename") ?? "";
+  // workflow_template query：模板 id（{category}/{name}），拉模板正文预填
+  const workflowTemplateParam = searchParams.get("workflow_template") ?? "";
 
   // 路径状态：dirs（已确认目录段）+ fileName（输入框，可能含未切分的 /）
   // 官方交互：输入 / 自动把 / 前内容切成目录段；输入框最前 Backspace 合并最后目录段回来
-  const initDirs = useMemo(
-    () =>
-      isNew
-        ? path.split("/").filter(Boolean) // 新建：整个 rest 都是目录前缀
-        : path.split("/").slice(0, -1).filter(Boolean), // 编辑：除最后一段都是目录
-    [isNew, path],
-  );
-  const initName = useMemo(
-    () => (isNew ? "" : (path.split("/").pop() ?? "")), // 新建：文件名留空（等用户输入）
-    [isNew, path],
-  );
+  // filename query 含文件名 → 目录段 = 去掉最后一段；路由通配符 → 全段即目录前缀
+  const initDirs = useMemo(() => {
+    if (isNew) {
+      const segs = (filenameParam || path).split("/").filter(Boolean);
+      return filenameParam ? segs.slice(0, -1) : segs;
+    }
+    return path.split("/").slice(0, -1).filter(Boolean); // 编辑：除最后一段都是目录
+  }, [isNew, path, filenameParam]);
+  const initName = useMemo(() => {
+    if (isNew) {
+      if (!filenameParam) return ""; // 新建：无 filename query 时文件名留空（等用户输入）
+      const segs = filenameParam.split("/").filter(Boolean);
+      return segs[segs.length - 1] ?? "";
+    }
+    return path.split("/").pop() ?? "";
+  }, [isNew, path, filenameParam]);
   const [dirs, setDirs] = useState<string[]>(initDirs);
   const [fileName, setFileName] = useState<string>(initName);
 
@@ -169,6 +180,26 @@ export function FileEditorPage() {
       setCommitMessage(fileName ? `Create ${fileName}` : "");
     }
   }, [isNew, fileName]);
+
+  // 新建 workflow 模板：workflow_template query（{category}/{name}）拉模板正文预填。
+  // workflow_template=blank（Skip 链接）无分类 → 不拉模板，内容留空自写。
+  useEffect(() => {
+    if (!isNew || !workflowTemplateParam) return;
+    const slashIdx = workflowTemplateParam.indexOf("/");
+    if (slashIdx <= 0) return;
+    const category = workflowTemplateParam.slice(0, slashIdx);
+    const name = workflowTemplateParam.slice(slashIdx + 1);
+    if (!category || !name) return;
+    let cancelled = false;
+    fetchTemplateContent(category, name, token)
+      .then((yaml) => {
+        if (!cancelled && yaml != null) setContent(yaml);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, [isNew, workflowTemplateParam, token]);
 
   // 路由 path 变化时重置路径状态（编辑 A → 编辑 B）
   useEffect(() => {

@@ -1,5 +1,5 @@
 /**
- * 仓库级跨页头部：仓库名 + 六 tab 导航（Code/Issues/PR/Discussions/Releases/Projects）
+ * 仓库级跨页头部：仓库名 + tab 导航（Code/Issues/PR/Discussions/Actions/Projects/Wiki/Security/Insights/Settings）
  * 仿 GitHub 仓库页头部，持久显示于所有仓库子页面
  * tab 高亮依据当前路径精确匹配（与 GitHub 路由一致）
  * 官方布局（2026 新版）：仓库名行 = 头像 + 名称 + Public/Private 标签 + Star/Fork（行最右侧）；
@@ -8,15 +8,15 @@
 import { Link, useLocation, useParams } from "react-router-dom";
 import {
   BookOpen,
-  MessageSquare,
+  ChartLine,
+  CircleDot,
+  Code,
   GitPullRequest,
-  Package,
-  Boxes,
+  MessagesSquare,
+  Play,
   Settings,
-  BookMarked,
-  Zap,
-  ShieldAlert,
-  BarChart3,
+  Shield,
+  Table2,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { formatCount } from "@/lib/ui/format";
@@ -34,18 +34,19 @@ const TABS: {
   /** 依据仓库 Features 开关显隐（undefined = 始终显示） */
   feature?: "issues" | "discussions" | "projects" | "wiki";
 }[] = [
-  // 官方顺序（实测 github.com/microsoft/vscode DOM）：
-  // Code → Issues → Pull requests → Discussions → Actions → Projects → Wiki → Security → Insights → Releases → Settings
-  { to: "", label: "Code", icon: BookOpen },
-  { to: "/issues", label: "Issues", icon: MessageSquare, feature: "issues" },
+  // 官方顺序（实测 github.com/evil7/pureGit-test DOM）+ octicon → lucide 图标映射：
+  // Code(code)/Issues(issue-opened)/PR(git-pull-request)/Discussions(comment-discussion)/
+  // Actions(play)/Projects(table)/Wiki(book)/Security(shield)/Insights(graph)/Settings(gear)
+  // （Releases 不进 header tabs，保留 About 侧栏入口）
+  { to: "", label: "Code", icon: Code },
+  { to: "/issues", label: "Issues", icon: CircleDot, feature: "issues" },
   { to: "/pulls", label: "Pull requests", icon: GitPullRequest },
-  { to: "/discussions", label: "Discussions", icon: MessageSquare, feature: "discussions" },
-  { to: "/actions", label: "Actions", icon: Zap },
-  { to: "/projects", label: "Projects", icon: Boxes, feature: "projects" },
-  { to: "/wiki", label: "Wiki", icon: BookMarked, feature: "wiki" },
-  { to: "/security", label: "Security", icon: ShieldAlert },
-  { to: "/pulse", label: "Insights", icon: BarChart3 },
-  { to: "/releases", label: "Releases", icon: Package },
+  { to: "/discussions", label: "Discussions", icon: MessagesSquare, feature: "discussions" },
+  { to: "/actions", label: "Actions", icon: Play },
+  { to: "/projects", label: "Projects", icon: Table2, feature: "projects" },
+  { to: "/wiki", label: "Wiki", icon: BookOpen, feature: "wiki" },
+  { to: "/security", label: "Security", icon: Shield },
+  { to: "/pulse", label: "Insights", icon: ChartLine },
   { to: "/settings", label: "Settings", icon: Settings },
 ];
 

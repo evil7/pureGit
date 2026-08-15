@@ -26,6 +26,7 @@ export * from "./api-discussions";
 export * from "./api-search";
 export * from "./api-feed-batch";
 export * from "./api-insights";
+export * from "./api-workflow";
 export * from "../restapi";
 // 注：graphql 模板不在此 re-export（api-core 已 re-export hasGraphQLErrors/GraphQLResponse；
 // 模板由各 api 板块直接从 "../graphql" import），避免 graphqlRequest 与 api-core 同名冲突。

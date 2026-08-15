@@ -9,12 +9,12 @@ import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
   Activity,
-  Boxes,
   ExternalLink,
   Gauge,
   GitBranch,
   Package,
   Search,
+  Server,
   ShieldCheck,
 } from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -31,7 +31,7 @@ import { useI18n } from "@/i18n";
 import { useDateFormat } from "@/hooks/useDateFormat";
 import { fetchWorkflows, fetchWorkflowRuns, fetchBranchesSmart, ApiError } from "@/lib/api";
 import type { Workflow, WorkflowRun } from "@/lib/restapi";
-import { Pager } from "@/components/Pager";
+import { InfinitePager } from "@/components/InfinitePager";
 import PageLayout from "@/components/PageLayout";
 import { cn } from "@/lib/utils";
 import { EVENT_OPTIONS, STATUS_OPTIONS, runStatusIcon } from "./shared";
@@ -151,100 +151,105 @@ export default function ActionsPage() {
         gap="sm"
         left={{
           node: (
-            <>
-              {/* Actions 分组 */}
-              <section>
-                <h3 className="mb-2 px-2 text-sm font-semibold">{t("actions.group.actions")}</h3>
-                <ul className="space-y-0.5">
-                  <li>
-                    <Link
-                      to={`/${owner}/${repo}/actions`}
+            <nav aria-label={t("actions.group.actions")}>
+              {/* 顶部标题行：Actions + 右侧 New workflow（官方外链） */}
+              <div className="flex items-center justify-between px-2">
+                <h2 className="text-sm font-semibold">{t("actions.group.actions")}</h2>
+                <a
+                  href={`https://github.com/${owner}/${repo}/actions/new`}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-xs font-medium text-primary hover:underline"
+                >
+                  {t("actions.newWorkflow")}
+                </a>
+              </div>
+
+              {/* All workflows（唯一站内入口） */}
+              <ul className="mt-1.5 space-y-0.5">
+                <li>
+                  <Link
+                    to={`/${owner}/${repo}/actions`}
+                    className={cn(
+                      "block truncate rounded-md px-2 py-1 text-sm transition-colors",
+                      !workflowId
+                        ? "bg-accent font-medium text-foreground"
+                        : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
+                    )}
+                  >
+                    {t("actions.allWorkflows")}
+                  </Link>
+                </li>
+              </ul>
+
+              {/* 分隔线 */}
+              <div className="my-2 border-t" />
+
+              {/* Workflow 列表（官方无标题，直接列名；点击过滤当前 run 列表） */}
+              <ul className="space-y-0.5">
+                {workflows.map((w) => (
+                  <li key={w.id}>
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setWorkflowId(String(w.id));
+                        setPage(1);
+                      }}
+                      title={w.path}
                       className={cn(
-                        "block truncate rounded-md px-2 py-1 text-sm transition-colors",
-                        !workflowId
+                        "block w-full truncate rounded-md px-2 py-1 text-left text-sm transition-colors",
+                        workflowId === String(w.id)
                           ? "bg-accent font-medium text-foreground"
                           : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
                       )}
                     >
-                      {t("actions.allWorkflows")}
-                    </Link>
+                      {w.name}
+                    </button>
                   </li>
-                </ul>
-              </section>
+                ))}
+              </ul>
 
-              {/* Workflows 分组（短名 + 完整路径） */}
-              <section>
-                <h3 className="mb-2 px-2 text-sm font-semibold">{t("actions.group.workflows")}</h3>
-                <ul className="space-y-0.5">
-                  {workflows.map((w) => (
-                    <li key={w.id}>
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setWorkflowId(String(w.id));
-                          setPage(1);
-                        }}
-                        title={w.path}
-                        className={cn(
-                          "block w-full truncate rounded-md px-2 py-1 text-left text-sm transition-colors",
-                          workflowId === String(w.id)
-                            ? "bg-accent font-medium text-foreground"
-                            : "text-muted-foreground hover:bg-accent/60 hover:text-foreground",
-                        )}
-                      >
-                        {w.name}
-                      </button>
-                    </li>
-                  ))}
-                  <li>
-                    <Link
-                      to={`/${owner}/${repo}/actions/workflows`}
-                      className="block truncate rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                    >
-                      {t("actions.workflowsPage")}
-                    </Link>
-                  </li>
-                </ul>
-              </section>
+              {/* 分隔线 */}
+              <div className="my-2 border-t" />
 
-              {/* Management 分组（官方；Caches 已站内化，其余 API 不可实现项外链官方并标注） */}
-              <section>
-                <h3 className="mb-2 px-2 text-sm font-semibold">{t("actions.group.management")}</h3>
-                <ul className="space-y-0.5">
-                  <li>
-                    <Link
-                      to={`/${owner}/${repo}/actions/caches`}
-                      className="flex items-center gap-1.5 truncate rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                    >
-                      <Package className="size-3.5 shrink-0" />
-                      <span className="truncate">{t("actions.mgmt.caches")}</span>
-                    </Link>
-                  </li>
-                  <ManagementLink
-                    icon={Boxes}
-                    label={t("actions.mgmt.deployments")}
-                    href={`https://github.com/${owner}/${repo}/deployments`}
-                  />
-                  <ManagementLink
-                    icon={ShieldCheck}
-                    label={t("actions.mgmt.attestations")}
-                    href={`https://github.com/${owner}/${repo}/attestations`}
-                  />
-                  <ManagementLink
-                    icon={Gauge}
-                    label={t("actions.mgmt.usage")}
-                    href={`https://github.com/${owner}/${repo}/settings/billing`}
-                    officialOnly
-                  />
-                  <ManagementLink
-                    icon={Activity}
-                    label={t("actions.mgmt.performance")}
-                    href={`https://github.com/${owner}/${repo}/actions/metrics`}
-                    officialOnly
-                  />
-                </ul>
-              </section>
-            </>
+              {/* Management 分组（Caches 站内，其余外链官方并标注） */}
+              <h3 className="px-2 text-sm font-semibold">{t("actions.group.management")}</h3>
+              <ul className="mt-1 space-y-0.5">
+                <li>
+                  <Link
+                    to={`/${owner}/${repo}/actions/caches`}
+                    className="flex items-center gap-1.5 truncate rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  >
+                    <Package className="size-3.5 shrink-0" />
+                    <span className="truncate">{t("actions.mgmt.caches")}</span>
+                  </Link>
+                </li>
+                <ManagementLink
+                  icon={ShieldCheck}
+                  label={t("actions.mgmt.attestations")}
+                  href={`https://github.com/${owner}/${repo}/attestations`}
+                  officialOnly
+                />
+                <ManagementLink
+                  icon={Server}
+                  label={t("actions.mgmt.runners")}
+                  href={`https://github.com/${owner}/${repo}/actions/runners`}
+                  officialOnly
+                />
+                <ManagementLink
+                  icon={Gauge}
+                  label={t("actions.mgmt.usage")}
+                  href={`https://github.com/${owner}/${repo}/actions/metrics/usage`}
+                  officialOnly
+                />
+                <ManagementLink
+                  icon={Activity}
+                  label={t("actions.mgmt.performance")}
+                  href={`https://github.com/${owner}/${repo}/actions/metrics/performance`}
+                  officialOnly
+                />
+              </ul>
+            </nav>
           ),
           width: 280,
           sticky: "nav",
@@ -375,10 +380,10 @@ export default function ActionsPage() {
             </ul>
           )}
 
-          {/* 分页（复用通用 Pager；官方 Previous/Next 语义；全站翻页上限 999 页） */}
-          <Pager
+          {/* 分页（官方 Previous/Next 语义；总数已知时按页算 endReached 禁用下一页） */}
+          <InfinitePager
             page={page}
-            totalPages={Math.min(999, Math.ceil(totalCount / PER_PAGE))}
+            endReached={page * PER_PAGE >= totalCount}
             onChange={(p) => {
               setPage(p);
               window.scrollTo({ top: 0, behavior: "smooth" });

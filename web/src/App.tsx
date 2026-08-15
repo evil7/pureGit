@@ -58,6 +58,7 @@ const SecurityAdvisoryDetailPage = lazy(() =>
 const InsightsPage = lazy(() => import("@/pages/InsightsPage"));
 const WikiPage = lazy(() => import("@/pages/WikiPage"));
 const ActionsPage = lazy(() => import("@/pages/actions/ActionsPage"));
+const NewWorkflowPage = lazy(() => import("@/pages/actions/NewWorkflowPage"));
 const WorkflowsPage = lazy(() => import("@/pages/actions/WorkflowsPage"));
 const CachesPage = lazy(() => import("@/pages/actions/CachesPage"));
 const RunDetailPage = lazy(() => import("@/pages/actions/RunDetailPage"));
@@ -313,6 +314,7 @@ const router = createBrowserRouter([
           { path: "discussions/:number", element: <DiscussionDetailPage /> },
           { path: "wiki/*", element: <WikiPage /> },
           { path: "actions", element: <ActionsPage /> },
+          { path: "actions/new", element: <NewWorkflowPage /> },
           { path: "actions/workflows", element: <WorkflowsPage /> },
           { path: "actions/caches", element: <CachesPage /> },
           { path: "actions/runs/:runId", element: <RunDetailPage /> },
