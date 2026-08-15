@@ -182,10 +182,18 @@ export default function DiscussionsPage() {
         gap="sm"
         left={{
           node: (
-            <div className="space-y-2">
-              {Array.from({ length: 6 }).map((_, i) => (
-                <Skeleton key={i} className="h-5 w-full" />
-              ))}
+            <div className="space-y-5">
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-1/2" />
+                {Array.from({ length: 3 }).map((_, i) => (
+                  <Skeleton key={i} className="h-7 w-full" />
+                ))}
+              </div>
+              <div className="space-y-2">
+                <Skeleton className="h-5 w-1/3" />
+                <Skeleton className="h-14 w-full" />
+                <Skeleton className="h-14 w-full" />
+              </div>
             </div>
           ),
           width: 280,

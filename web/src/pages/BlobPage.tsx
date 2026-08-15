@@ -493,7 +493,7 @@ export default function BlobPage() {
       {error ? (
         <InlineError message={error} size="sm" />
       ) : rawContent === "" ? (
-        <Skeleton className="h-64 w-full" />
+        <Skeleton className="h-96 w-full rounded-lg border" />
       ) : isMarkdown && view === "preview" ? (
         /* Markdown 渲染视图（官方 blob Preview tab：渲染后文档 + 右侧 Outline 目录；可折叠） */
         <div className="flex items-start gap-3">

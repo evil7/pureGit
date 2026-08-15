@@ -156,8 +156,11 @@ export function IssueDetailPage() {
         right={{
           node: (
             <div className="space-y-4">
-              <Skeleton className="h-24 w-full" />
-              <Skeleton className="h-24 w-full" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-16 w-full" />
+              <Skeleton className="h-20 w-full" />
+              <Skeleton className="h-16 w-full" />
             </div>
           ),
           width: 280,
@@ -165,10 +168,16 @@ export function IssueDetailPage() {
         }}
       >
         <div className="space-y-4">
+          {/* 返回按钮 */}
+          <Skeleton className="h-6 w-32" />
+          {/* 标题 + 状态徽标/meta 行 */}
           <Skeleton className="h-8 w-2/3" />
-          <Skeleton className="h-4 w-1/3" />
-          <Skeleton className="h-40 w-full" />
-          <Skeleton className="h-40 w-full" />
+          <Skeleton className="h-5 w-1/2" />
+          <Skeleton className="h-6 w-1/3" />
+          {/* 正文 + 评论列表 */}
+          <Skeleton className="h-32 w-full rounded-lg border" />
+          <Skeleton className="h-24 w-full rounded-lg border" />
+          <Skeleton className="h-24 w-full rounded-lg border" />
         </div>
       </PageLayout>
     );

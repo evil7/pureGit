@@ -103,9 +103,9 @@ export default function ReleasesPage() {
         gap="sm"
         left={{
           node: (
-            <div className="space-y-2">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-5 w-full" />
+            <div className="space-y-3">
+              {Array.from({ length: 6 }).map((_, i) => (
+                <Skeleton key={i} className="h-12 w-full" />
               ))}
             </div>
           ),
@@ -113,10 +113,10 @@ export default function ReleasesPage() {
           sticky: "nav",
         }}
       >
-        <div className="space-y-3">
-          {Array.from({ length: 3 }).map((_, i) => (
-            <Skeleton key={i} className="h-32 w-full" />
-          ))}
+        <div className="space-y-4">
+          <Skeleton className="h-48 w-full rounded-xl" />
+          <Skeleton className="h-40 w-full rounded-xl" />
+          <Skeleton className="h-40 w-full rounded-xl" />
         </div>
       </PageLayout>
     );

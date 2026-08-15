@@ -314,20 +314,28 @@ function StatCard({
 function PulseSkeleton() {
   return (
     <div className="flex flex-col gap-6">
-      <div className="grid gap-3 sm:grid-cols-2">
-        <Skeleton className="h-24 w-full" />
-        <Skeleton className="h-24 w-full" />
-      </div>
-      <div className="grid grid-cols-2 gap-3 sm:grid-cols-4">
-        {Array.from({ length: 4 }).map((_, i) => (
-          <Skeleton key={i} className="h-24 w-full" />
-        ))}
-      </div>
-      <div className="space-y-2 rounded-lg border p-4">
-        {Array.from({ length: 5 }).map((_, i) => (
-          <Skeleton key={i} className="h-7 w-full" />
-        ))}
-      </div>
+      <section>
+        <Skeleton className="mb-3 h-6 w-28" />
+        <div className="grid gap-3 sm:grid-cols-2">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </div>
+        <div className="mt-3 grid grid-cols-2 gap-3 sm:grid-cols-4">
+          {Array.from({ length: 4 }).map((_, i) => (
+            <Skeleton key={i} className="h-20 w-full" />
+          ))}
+        </div>
+      </section>
+      {/* Summary 文字块 */}
+      <Skeleton className="h-4 w-2/3" />
+      <section>
+        <Skeleton className="mb-3 h-6 w-40" />
+        <div className="space-y-2 rounded-lg border p-4">
+          {Array.from({ length: 5 }).map((_, i) => (
+            <Skeleton key={i} className="h-7 w-full" />
+          ))}
+        </div>
+      </section>
     </div>
   );
 }

@@ -153,11 +153,18 @@ export default function CommitsPage() {
 
   if (commits === null) {
     return (
-      <div className="space-y-3">
-        <Skeleton className="h-6 w-1/3" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
-        <Skeleton className="h-16 w-full" />
+      <div className="space-y-4">
+        {/* 面包屑行 */}
+        <Skeleton className="h-5 w-1/2" />
+        {/* 日期分组标题 + 提交行 */}
+        <div className="space-y-3">
+          <Skeleton className="h-5 w-40" />
+          <div className="space-y-0 overflow-hidden rounded-lg border">
+            {Array.from({ length: 3 }).map((_, i) => (
+              <Skeleton key={i} className="h-16 w-full rounded-none" />
+            ))}
+          </div>
+        </div>
       </div>
     );
   }

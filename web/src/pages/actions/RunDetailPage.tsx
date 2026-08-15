@@ -5,17 +5,35 @@
  * 右内容（Summary 卡 [Status/Total duration/Artifacts] + job 卡 step 耗时）。
  */
 import { useEffect, useMemo, useState } from "react";
-import { Link, useParams } from "react-router-dom";
-import { FileText, GitBranch, Package } from "lucide-react";
+import { Link, useNavigate, useParams } from "react-router-dom";
+import { Download, FileText, GitBranch, Package, RotateCcw, Trash2, XCircle } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogCancel,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { useAuth } from "@/hooks/useAuth";
+import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { useI18n } from "@/i18n";
 import { useDateFormat } from "@/hooks/useDateFormat";
+import { toastSuccess, toastError } from "@/lib/ui/toast";
 import {
   fetchWorkflowRunDetail,
   fetchWorkflowRunJobs,
   fetchRunArtifacts,
+  cancelWorkflowRun,
+  rerunWorkflowRun,
+  rerunWorkflowFailedJobs,
+  deleteWorkflowRun,
+  apiErrorMessage,
   ApiError,
 } from "@/lib/api";
 import type { WorkflowRun, WorkflowJob, RunArtifact } from "@/lib/restapi";
@@ -24,14 +42,19 @@ import { fmtDuration, runBadge, runStatusIcon, stepIcon } from "./shared";
 
 export default function RunDetailPage() {
   const { owner = "", repo = "", runId = "" } = useParams();
-  const { token } = useAuth();
+  const { token, canWrite } = useAuth();
+  const { canWrite: canWriteRepo } = useRepoPermission();
   const { t } = useI18n();
   const { fmt } = useDateFormat();
+  const navigate = useNavigate();
   const [run, setRun] = useState<WorkflowRun | null>(null);
   const [jobs, setJobs] = useState<WorkflowJob[]>([]);
   const [artifacts, setArtifacts] = useState<RunArtifact[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
+  // run 操作（取消/重跑/删除）进行中 + 删除确认弹窗
+  const [busy, setBusy] = useState(false);
+  const [confirmDelete, setConfirmDelete] = useState(false);
 
   useEffect(() => {
     if (!token) return;
@@ -63,6 +86,40 @@ export default function RunDetailPage() {
     const start = new Date(run.run_started_at).getTime();
     return Number.isFinite(end - start) ? end - start : null;
   }, [run]);
+
+  // 操作权限：令牌写 scope（canWrite）叠加仓库级写权限（canWriteRepo），同 PR 详情双门槛
+  const canOperate = Boolean(token) && canWrite && canWriteRepo;
+
+  /** run 操作统一处理：成功后刷新详情（取消→重拉；重跑→跳新 run 由 API 返回触发，此处仅提示） */
+  const operate = async (fn: () => Promise<void>, okMsg: string) => {
+    if (!token || !run || busy) return;
+    setBusy(true);
+    try {
+      await fn();
+      toastSuccess(okMsg);
+      // 取消/重跑/删除后状态已变，重拉一次详情刷新徽标与操作区
+      const fresh = await fetchWorkflowRunDetail(owner, repo, run.id, token).catch(() => null);
+      if (fresh) setRun(fresh);
+    } catch (e) {
+      toastError(apiErrorMessage(e, t("actions.opFailed")));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const handleDelete = async () => {
+    if (!token || !run) return;
+    setBusy(true);
+    try {
+      await deleteWorkflowRun(owner, repo, run.id, token);
+      toastSuccess(t("actions.deleted"));
+      navigate(`/${owner}/${repo}/actions`);
+    } catch (e) {
+      toastError(apiErrorMessage(e, t("actions.opFailed")));
+    } finally {
+      setBusy(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -111,15 +168,25 @@ export default function RunDetailPage() {
                 </span>
               </li>
               <li>
-                <a
-                  href={run.html_url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
-                >
-                  <FileText className="size-3.5 shrink-0" />
-                  {t("actions.workflowFile")}
-                </a>
+                {run.path ? (
+                  <Link
+                    to={`/${owner}/${repo}/blob/${run.head_sha}/${run.path}`}
+                    className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  >
+                    <FileText className="size-3.5 shrink-0" />
+                    {t("actions.workflowFile")}
+                  </Link>
+                ) : (
+                  <a
+                    href={run.html_url}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="flex items-center gap-1.5 rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                  >
+                    <FileText className="size-3.5 shrink-0" />
+                    {t("actions.workflowFile")}
+                  </a>
+                )}
               </li>
             </ul>
           </nav>
@@ -150,6 +217,84 @@ export default function RunDetailPage() {
             <span>{fmt(run.created_at)}</span>
             <span className="truncate font-mono text-[10px]">{run.head_sha.slice(0, 7)}</span>
           </div>
+
+          {/* run 操作区（官方：进行中可取消；完成后可重跑/重跑失败；均可删除；需仓库写权限） */}
+          {canOperate && (
+            <div className="flex flex-wrap gap-2 pt-1">
+              {run.status !== "completed" ? (
+                <Button
+                  variant="outline"
+                  onClick={() =>
+                    void operate(
+                      () => cancelWorkflowRun(owner, repo, run.id, token),
+                      t("actions.cancelled"),
+                    )
+                  }
+                  disabled={busy}
+                >
+                  <XCircle className="size-3.5" />
+                  {t("actions.cancelRun")}
+                </Button>
+              ) : (
+                <>
+                  {run.conclusion === "failure" && (
+                    <Button
+                      variant="outline"
+                      onClick={() =>
+                        void operate(
+                          () => rerunWorkflowFailedJobs(owner, repo, run.id, token),
+                          t("actions.rerunning"),
+                        )
+                      }
+                      disabled={busy}
+                    >
+                      <RotateCcw className="size-3.5" />
+                      {t("actions.rerunFailed")}
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    onClick={() =>
+                      void operate(
+                        () => rerunWorkflowRun(owner, repo, run.id, token),
+                        t("actions.rerunning"),
+                      )
+                    }
+                    disabled={busy}
+                  >
+                    <RotateCcw className="size-3.5" />
+                    {t("actions.rerunAll")}
+                  </Button>
+                </>
+              )}
+              <AlertDialog open={confirmDelete} onOpenChange={setConfirmDelete}>
+                <Button
+                  variant="ghost"
+                  className="text-destructive"
+                  onClick={() => setConfirmDelete(true)}
+                >
+                  <Trash2 className="size-3.5" />
+                  {t("actions.deleteRun")}
+                </Button>
+                <AlertDialogContent>
+                  <AlertDialogHeader>
+                    <AlertDialogTitle>{t("actions.deleteRunTitle")}</AlertDialogTitle>
+                    <AlertDialogDescription>{t("actions.deleteRunDesc")}</AlertDialogDescription>
+                  </AlertDialogHeader>
+                  <AlertDialogFooter>
+                    <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                    <AlertDialogAction
+                      onClick={() => void handleDelete()}
+                      disabled={busy}
+                      className="bg-destructive text-white hover:bg-destructive/90"
+                    >
+                      {busy ? t("common.deleting") : t("common.delete")}
+                    </AlertDialogAction>
+                  </AlertDialogFooter>
+                </AlertDialogContent>
+              </AlertDialog>
+            </div>
+          )}
         </header>
 
         {/* Workflow run summary（官方 Summary 卡） */}
@@ -194,6 +339,19 @@ export default function RunDetailPage() {
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground">
                     {(a.size_in_bytes / 1024).toFixed(0)} KB
                   </span>
+                  {a.archive_download_url && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="size-7 shrink-0"
+                      asChild
+                      title={t("actions.download")}
+                    >
+                      <a href={a.archive_download_url} target="_blank" rel="noreferrer">
+                        <Download className="size-3.5" />
+                      </a>
+                    </Button>
+                  )}
                 </li>
               ))}
             </ul>

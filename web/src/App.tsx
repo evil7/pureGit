@@ -59,6 +59,7 @@ const InsightsPage = lazy(() => import("@/pages/InsightsPage"));
 const WikiPage = lazy(() => import("@/pages/WikiPage"));
 const ActionsPage = lazy(() => import("@/pages/actions/ActionsPage"));
 const WorkflowsPage = lazy(() => import("@/pages/actions/WorkflowsPage"));
+const CachesPage = lazy(() => import("@/pages/actions/CachesPage"));
 const RunDetailPage = lazy(() => import("@/pages/actions/RunDetailPage"));
 const JobDetailPage = lazy(() => import("@/pages/actions/JobDetailPage"));
 const DiscussionsPage = lazy(() => import("@/pages/DiscussionsPage"));
@@ -312,6 +313,7 @@ const router = createBrowserRouter([
           { path: "wiki/*", element: <WikiPage /> },
           { path: "actions", element: <ActionsPage /> },
           { path: "actions/workflows", element: <WorkflowsPage /> },
+          { path: "actions/caches", element: <CachesPage /> },
           { path: "actions/runs/:runId", element: <RunDetailPage /> },
           { path: "actions/runs/:runId/job/:jobId", element: <JobDetailPage /> },
           { path: "releases", element: <ReleasesPage /> },

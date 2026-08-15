@@ -55,6 +55,8 @@ export interface WorkflowRun {
   head_sha: string;
   html_url: string;
   workflow_id?: number;
+  /** workflow 定义文件路径（.github/workflows/xxx.yml；用于站内跳 blob 页） */
+  path?: string;
 }
 
 /** Run Job（GET /repos/{o}/{r}/actions/runs/{id}/jobs） */
@@ -171,6 +173,112 @@ export async function dispatchWorkflow(
       ref,
       inputs,
     }),
+  );
+}
+
+/** 取消 workflow run（POST /repos/{o}/{r}/actions/runs/{id}/cancel；需 write） */
+export async function cancelWorkflowRun(
+  owner: string,
+  repo: string,
+  runId: number,
+  token: string | null,
+): Promise<void> {
+  await typedRequest<void>(token, (octokit) =>
+    octokit.rest.actions.cancelWorkflowRun({ owner, repo, run_id: runId }),
+  );
+}
+
+/** 重跑全部 job（POST /repos/{o}/{r}/actions/runs/{id}/rerun；需 write） */
+export async function rerunWorkflowRun(
+  owner: string,
+  repo: string,
+  runId: number,
+  token: string | null,
+): Promise<void> {
+  await typedRequest<void>(token, (octokit) =>
+    octokit.rest.actions.reRunWorkflow({ owner, repo, run_id: runId }),
+  );
+}
+
+/** 重跑失败的 job（POST /repos/{o}/{r}/actions/runs/{id}/rerun-failed-jobs；需 write） */
+export async function rerunWorkflowFailedJobs(
+  owner: string,
+  repo: string,
+  runId: number,
+  token: string | null,
+): Promise<void> {
+  await typedRequest<void>(token, (octokit) =>
+    octokit.rest.actions.reRunWorkflowFailedJobs({ owner, repo, run_id: runId }),
+  );
+}
+
+/** 删除 workflow run（DELETE /repos/{o}/{r}/actions/runs/{id}；需 write） */
+export async function deleteWorkflowRun(
+  owner: string,
+  repo: string,
+  runId: number,
+  token: string | null,
+): Promise<void> {
+  await typedRequest<void>(token, (octokit) =>
+    octokit.rest.actions.deleteWorkflowRun({ owner, repo, run_id: runId }),
+  );
+}
+
+/** Actions Cache（GET /repos/{o}/{r}/actions/caches） */
+export interface ActionsCache {
+  id: number;
+  ref: string;
+  key: string;
+  version: string;
+  last_accessed_at: string;
+  created_at: string;
+  size_in_bytes: number;
+}
+
+/** Actions Cache 用量（GET /repos/{o}/{r}/actions/cache/usage） */
+export interface ActionsCacheUsage {
+  full_name: string;
+  active_caches_size_in_bytes: number;
+  active_caches_count: number;
+}
+
+/** 缓存列表 */
+export async function fetchActionsCaches(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<{ total_count: number; caches: ActionsCache[] }> {
+  const data = await typedRequest<{ total_count: number; actions_caches: ActionsCache[] }>(
+    token,
+    (octokit) => octokit.rest.actions.getActionsCacheList({ owner, repo, per_page: 100 }),
+  );
+  return { total_count: data.total_count ?? 0, caches: data.actions_caches ?? [] };
+}
+
+/** 缓存用量 */
+export async function fetchActionsCacheUsage(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<ActionsCacheUsage | null> {
+  try {
+    return await typedRequest<ActionsCacheUsage>(token, (octokit) =>
+      octokit.rest.actions.getActionsCacheUsage({ owner, repo }),
+    );
+  } catch {
+    return null;
+  }
+}
+
+/** 删除缓存（DELETE /repos/{o}/{r}/actions/caches/{id}；需 write） */
+export async function deleteActionsCache(
+  owner: string,
+  repo: string,
+  cacheId: number,
+  token: string | null,
+): Promise<void> {
+  await typedRequest<void>(token, (octokit) =>
+    octokit.rest.actions.deleteActionsCacheById({ owner, repo, cache_id: cacheId }),
   );
 }
 

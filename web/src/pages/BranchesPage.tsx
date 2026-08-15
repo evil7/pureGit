@@ -180,7 +180,20 @@ export default function BranchesPage() {
       {loadError ? (
         <InlineError message={loadError} />
       ) : branches === null ? (
-        <Skeleton className="h-64 w-full" />
+        <div className="space-y-6">
+          {/* 默认分支分节 */}
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-24" />
+            <Skeleton className="h-14 w-full rounded-lg" />
+          </div>
+          {/* 活跃分支分节 */}
+          <div className="space-y-3">
+            <Skeleton className="h-5 w-32" />
+            {Array.from({ length: 5 }).map((_, i) => (
+              <Skeleton key={i} className="h-14 w-full" />
+            ))}
+          </div>
+        </div>
       ) : (
         <>
           {view === "overview" ? (

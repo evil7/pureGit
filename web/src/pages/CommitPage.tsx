@@ -94,10 +94,23 @@ export default function CommitPage() {
   if (error) throw error;
   if (detail === null || filesTree === null) {
     return (
-      <div className="space-y-4">
-        <Skeleton className="h-8 w-3/4" />
-        <Skeleton className="h-4 w-1/2" />
-        <Skeleton className="h-64 w-full" />
+      <div className="space-y-3">
+        {/* sticky 单行头 */}
+        <Skeleton className="h-11 w-full" />
+        {/* commit summary（可折叠 pre） */}
+        <Skeleton className="h-20 w-full" />
+        {/* 父提交 + sha 行 */}
+        <Skeleton className="h-9 w-2/3" />
+        {/* 统计行 */}
+        <Skeleton className="h-5 w-1/3" />
+        {/* 两栏：左文件树 + 右 diff */}
+        <div className="grid gap-3 md:grid-cols-[280px_1fr]">
+          <Skeleton className="h-80 w-full rounded-lg" />
+          <div className="space-y-3">
+            <Skeleton className="h-44 w-full rounded-lg" />
+            <Skeleton className="h-44 w-full rounded-lg" />
+          </div>
+        </div>
       </div>
     );
   }

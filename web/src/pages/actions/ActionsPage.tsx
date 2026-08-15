@@ -7,7 +7,16 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { Activity, Boxes, Gauge, GitBranch, Package, Search, ShieldCheck } from "lucide-react";
+import {
+  Activity,
+  Boxes,
+  ExternalLink,
+  Gauge,
+  GitBranch,
+  Package,
+  Search,
+  ShieldCheck,
+} from "lucide-react";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Input } from "@/components/ui/input";
 import {
@@ -110,9 +119,14 @@ export default function ActionsPage() {
         gap="sm"
         left={{
           node: (
-            <div className="space-y-2">
-              {Array.from({ length: 8 }).map((_, i) => (
-                <Skeleton key={i} className="h-5 w-full" />
+            <div className="space-y-5">
+              {Array.from({ length: 3 }).map((_g, g) => (
+                <div key={g} className="space-y-2">
+                  <Skeleton className="h-5 w-1/3" />
+                  {Array.from({ length: 3 }).map((_i, i) => (
+                    <Skeleton key={i} className="h-7 w-full" />
+                  ))}
+                </div>
               ))}
             </div>
           ),
@@ -193,15 +207,19 @@ export default function ActionsPage() {
                 </ul>
               </section>
 
-              {/* Management 分组（官方；外链官方或占位，去杂项） */}
+              {/* Management 分组（官方；Caches 已站内化，其余 API 不可实现项外链官方并标注） */}
               <section>
                 <h3 className="mb-2 px-2 text-sm font-semibold">{t("actions.group.management")}</h3>
                 <ul className="space-y-0.5">
-                  <ManagementLink
-                    icon={Package}
-                    label={t("actions.mgmt.caches")}
-                    href={`https://github.com/${owner}/${repo}/actions/caches`}
-                  />
+                  <li>
+                    <Link
+                      to={`/${owner}/${repo}/actions/caches`}
+                      className="flex items-center gap-1.5 truncate rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
+                    >
+                      <Package className="size-3.5 shrink-0" />
+                      <span className="truncate">{t("actions.mgmt.caches")}</span>
+                    </Link>
+                  </li>
                   <ManagementLink
                     icon={Boxes}
                     label={t("actions.mgmt.deployments")}
@@ -216,11 +234,13 @@ export default function ActionsPage() {
                     icon={Gauge}
                     label={t("actions.mgmt.usage")}
                     href={`https://github.com/${owner}/${repo}/settings/billing`}
+                    officialOnly
                   />
                   <ManagementLink
                     icon={Activity}
                     label={t("actions.mgmt.performance")}
                     href={`https://github.com/${owner}/${repo}/actions/metrics`}
+                    officialOnly
                   />
                 </ul>
               </section>
@@ -370,26 +390,36 @@ export default function ActionsPage() {
   );
 }
 
-/** Management 分组外链项 */
+/** Management 分组外链项（officialOnly=true 时标注「仅官方」，API 不可实现的官方专属功能） */
 function ManagementLink({
   icon: Icon,
   label,
   href,
+  officialOnly = false,
 }: {
   icon: typeof Package;
   label: string;
   href: string;
+  officialOnly?: boolean;
 }) {
+  const { t } = useI18n();
   return (
     <li>
       <a
         href={href}
         target="_blank"
         rel="noreferrer"
+        title={officialOnly ? t("actions.mgmt.officialOnlyTitle") : undefined}
         className="flex items-center gap-1.5 truncate rounded-md px-2 py-1 text-sm text-muted-foreground hover:bg-accent/60 hover:text-foreground"
       >
         <Icon className="size-3.5 shrink-0" />
         <span className="truncate">{label}</span>
+        {officialOnly && (
+          <span className="shrink-0 text-[10px] text-muted-foreground/70">
+            {t("actions.mgmt.officialOnly")}
+          </span>
+        )}
+        <ExternalLink className="size-3 shrink-0 text-muted-foreground/50" />
       </a>
     </li>
   );
