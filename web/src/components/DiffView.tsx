@@ -71,6 +71,7 @@ function DiffFile({
   baseSha,
   headSha,
   fileLinkSha,
+  onCommentAdded,
 }: {
   file: PullFile;
   owner?: string;
@@ -79,6 +80,7 @@ function DiffFile({
   baseSha?: string;
   headSha?: string;
   fileLinkSha?: string;
+  onCommentAdded?: () => void;
 }) {
   const { token, canWrite } = useAuth();
   const { canWrite: canWriteRepo } = useRepoPermission();
@@ -171,6 +173,7 @@ function DiffFile({
       setComments((prev) => [...prev, c]);
       setFormRow(null);
       setCommentBody("");
+      onCommentAdded?.();
     } catch (err) {
       setCommentError(apiErrorMessage(err, "评论发表失败"));
     } finally {
@@ -482,6 +485,7 @@ export function DiffView({
   baseSha,
   headSha,
   fileLinkSha,
+  onCommentAdded,
 }: {
   files: PullFile[];
   owner?: string;
@@ -490,6 +494,7 @@ export function DiffView({
   baseSha?: string;
   headSha?: string;
   fileLinkSha?: string;
+  onCommentAdded?: () => void;
 }) {
   const { t } = useI18n();
   if (files.length === 0) {
@@ -507,6 +512,7 @@ export function DiffView({
           baseSha={baseSha}
           headSha={headSha}
           fileLinkSha={fileLinkSha}
+          onCommentAdded={onCommentAdded}
         />
       ))}
     </div>

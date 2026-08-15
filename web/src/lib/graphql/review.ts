@@ -235,11 +235,15 @@ export const UNRESOLVE_REVIEW_THREAD_MUTATION = /* GraphQL */ `
 /** PR 时间线（timelineItems 正序；核心事件类型 fragment——评论/评审/评审线程/commit/合并/关闭/标签/里程碑/指派/锁定/改题/重新打开）
  * 官方 Conversation 自上而下时间递增；PullRequestReviewThread 含行内评论线程（path + lines + comments + isResolved）。 */
 export const PR_TIMELINE_QUERY = /* GraphQL */ `
-  query PullTimeline($owner: String!, $name: String!, $number: Int!) {
+  query PullTimeline($owner: String!, $name: String!, $number: Int!, $cursor: String) {
     repository(owner: $owner, name: $name) {
       pullRequest(number: $number) {
         id
-        timelineItems(first: 100) {
+        timelineItems(first: 100, after: $cursor) {
+          pageInfo {
+            endCursor
+            hasNextPage
+          }
           nodes {
             __typename
             ... on IssueComment {
@@ -248,8 +252,16 @@ export const PR_TIMELINE_QUERY = /* GraphQL */ `
                 login
                 avatarUrl
               }
+              authorAssociation
               createdAt
+              lastEditedAt
               body
+              reactionGroups {
+                content
+                reactors {
+                  totalCount
+                }
+              }
             }
             ... on PullRequestReview {
               id
@@ -257,10 +269,39 @@ export const PR_TIMELINE_QUERY = /* GraphQL */ `
                 login
                 avatarUrl
               }
+              authorAssociation
               createdAt
               submittedAt
               state
               body
+              comments(first: 20) {
+                nodes {
+                  id
+                  author {
+                    login
+                    avatarUrl
+                  }
+                  authorAssociation
+                  createdAt
+                  lastEditedAt
+                  body
+                  diffHunk
+                  path
+                  line
+                  reactionGroups {
+                    content
+                    reactors {
+                      totalCount
+                    }
+                  }
+                }
+              }
+              reactionGroups {
+                content
+                reactors {
+                  totalCount
+                }
+              }
             }
             ... on PullRequestReviewThread {
               id
@@ -276,8 +317,19 @@ export const PR_TIMELINE_QUERY = /* GraphQL */ `
                     login
                     avatarUrl
                   }
+                  authorAssociation
                   createdAt
+                  lastEditedAt
                   body
+                  diffHunk
+                  path
+                  line
+                  reactionGroups {
+                    content
+                    reactors {
+                      totalCount
+                    }
+                  }
                 }
               }
             }
@@ -304,6 +356,63 @@ export const PR_TIMELINE_QUERY = /* GraphQL */ `
               }
               createdAt
               mergeRefName
+              commit {
+                oid
+                abbreviatedOid
+                url
+              }
+            }
+            ... on HeadRefDeletedEvent {
+              id
+              actor {
+                login
+                avatarUrl
+              }
+              createdAt
+              headRefName
+            }
+            ... on MentionedEvent {
+              id
+              actor {
+                login
+                avatarUrl
+              }
+              createdAt
+            }
+            ... on DeployedEvent {
+              id
+              actor {
+                login
+                avatarUrl
+              }
+              createdAt
+              deployment {
+                environment
+                latestStatus {
+                  environmentUrl
+                }
+              }
+            }
+            ... on CrossReferencedEvent {
+              id
+              actor {
+                login
+                avatarUrl
+              }
+              createdAt
+              isCrossRepository
+              source {
+                ... on PullRequest {
+                  number
+                  title
+                  url
+                }
+                ... on Issue {
+                  number
+                  title
+                  url
+                }
+              }
             }
             ... on ClosedEvent {
               id
@@ -438,6 +547,12 @@ export const PR_TIMELINE_QUERY = /* GraphQL */ `
                 avatarUrl
               }
               createdAt
+              beforeCommit {
+                oid
+              }
+              afterCommit {
+                oid
+              }
             }
             ... on ReadyForReviewEvent {
               id
@@ -466,6 +581,36 @@ export const PR_PROJECTS_QUERY = /* GraphQL */ `
           nodes {
             id
             project {
+              id
+              number
+              title
+              url
+              public
+            }
+            fieldValueByName(name: "Status") {
+              __typename
+              ... on ProjectV2ItemFieldSingleSelectValue {
+                name
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
+/** Issue 关联 ProjectsV2（issue 侧栏 Projects 展示：项目 + 字段状态；GraphQL-only） */
+export const ISSUE_PROJECTS_QUERY = /* GraphQL */ `
+  query IssueProjects($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      issue(number: $number) {
+        id
+        projectItems(first: 20) {
+          nodes {
+            id
+            project {
+              id
               number
               title
               url
@@ -558,6 +703,18 @@ export const REOPEN_PULL_REQUEST_MUTATION = /* GraphQL */ `
       pullRequest {
         id
         state
+      }
+    }
+  }
+`;
+
+/** 更新 PR 描述（body；用于 Development 手动关联 issue——追加 closing keywords） */
+export const UPDATE_PULL_REQUEST_BODY_MUTATION = /* GraphQL */ `
+  mutation UpdatePullRequestBody($pullRequestId: ID!, $body: String!) {
+    updatePullRequest(input: { pullRequestId: $pullRequestId, body: $body }) {
+      pullRequest {
+        id
+        body
       }
     }
   }

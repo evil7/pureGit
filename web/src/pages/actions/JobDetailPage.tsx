@@ -6,7 +6,7 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import { ChevronDown, ChevronRight, FileText, Loader2, Search } from "lucide-react";
+import { FileText, Loader2, Search } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { InlineError } from "@/components/InlineError";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -207,8 +207,6 @@ export default function JobDetailPage() {
         <ul className="divide-y overflow-hidden rounded-lg border bg-card">
           {job.steps.map((s) => {
             const isSkipped = s.conclusion === "skipped";
-            const isExpanded =
-              logs[s.number] !== undefined || logLoading[s.number] || logError[s.number];
             return (
               <li key={s.number} className="text-sm">
                 <button
@@ -220,16 +218,6 @@ export default function JobDetailPage() {
                     isSkipped && "cursor-default",
                   )}
                 >
-                  {/* 展开指示（skip 项无） */}
-                  {!isSkipped && (
-                    <span className="shrink-0 text-muted-foreground">
-                      {isExpanded ? (
-                        <ChevronDown className="size-3.5" />
-                      ) : (
-                        <ChevronRight className="size-3.5" />
-                      )}
-                    </span>
-                  )}
                   {stepIcon(s.status, s.conclusion)}
                   <span className="truncate">{s.name}</span>
                   <span className="ml-auto shrink-0 text-xs text-muted-foreground">

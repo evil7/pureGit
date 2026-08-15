@@ -438,8 +438,11 @@ function RunRow({
   fmt: (s: string) => string;
 }) {
   const { t } = useI18n();
+  // 关联 PR（head_sha/head_branch 匹配的 PR；pull_request 事件触发时非空）
+  const linkedPrs = r.pull_requests ?? [];
+  // 无关联 PR 时的回退文案（旧式事件描述；仅 pull_request 事件）
   const prDesc =
-    r.event === "pull_request" || r.event === "pull_request_target"
+    linkedPrs.length === 0 && (r.event === "pull_request" || r.event === "pull_request_target")
       ? t("actions.prDesc")
           .replace("{number}", String(r.run_number))
           .replace(
@@ -468,6 +471,15 @@ function RunRow({
           )}
           <span className="truncate">
             {r.name} #{r.run_number}
+            {linkedPrs.map((p) => (
+              <Link
+                key={p.number}
+                to={`/${owner}/${repo}/pull/${p.number}`}
+                className="ml-1 font-medium text-primary hover:underline"
+              >
+                PR #{p.number}
+              </Link>
+            ))}
             {prDesc}
           </span>
           <span className="shrink-0">

@@ -5,7 +5,8 @@
  * - api-core.ts  graphqlRequest 模式包装 + 日志/熔断工具
  * - api-user.ts  viewer/账户/邮箱/组织列表/SSH/关注
  * - api-repo.ts  仓库详情/创建/star/fork/主题/订阅/删除/计数
- * - api-repo-extra.ts  仓库扩展（Projects v2/topics/订阅/最近分支/删除/Security）
+ * - api-repo-extra.ts  仓库扩展（topics/订阅/最近分支/删除/Security）
+ * - api-project.ts  Projects v2（列表/详情看板/字段/卡片/item）
  * - api-file.ts  文件内容（blob/目录/README/根文件/编辑页）
  * - api-org.ts   用户/组织主页 + 组织详情/更新/成员
  * - api-issue.ts issue/PR/评论/搜索 + 页面级合并查询
@@ -16,6 +17,7 @@ export * from "./api-core";
 export * from "./api-user";
 export * from "./api-repo";
 export * from "./api-repo-extra";
+export * from "./api-project";
 export * from "./api-file";
 export * from "./api-org";
 export * from "./api-issue";

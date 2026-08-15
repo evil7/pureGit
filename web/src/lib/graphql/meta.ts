@@ -278,6 +278,43 @@ export const PR_CHECK_RUNS_QUERY = /* GraphQL */ `
   }
 `;
 
+/** PR head commit 的 check-run 列表（Checks tab 逐条列出：名字 + 状态 + Details 链接 + workflow 名） */
+export const PR_CHECK_RUN_LIST_QUERY = /* GraphQL */ `
+  query PullCheckRunList($owner: String!, $name: String!, $expression: String!) {
+    repository(owner: $owner, name: $name) {
+      object(expression: $expression) {
+        ... on Commit {
+          statusCheckRollup {
+            contexts(first: 100) {
+              nodes {
+                ... on CheckRun {
+                  name
+                  status
+                  conclusion
+                  detailsUrl
+                  checkSuite {
+                    workflowRun {
+                      workflow {
+                        name
+                      }
+                    }
+                  }
+                }
+                ... on StatusContext {
+                  context
+                  state
+                  description
+                  targetUrl
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** 仓库协作者（Repository.collaborators → User；替代 GET /repos/{o}/{r}/collaborators，reviewer 选人数据源） */
 export const REPO_COLLABORATORS_QUERY = /* GraphQL */ `
   query RepoCollaborators($owner: String!, $name: String!) {

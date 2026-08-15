@@ -202,6 +202,66 @@ export interface CheckRun {
   name: string;
   status: "queued" | "in_progress" | "completed";
   conclusion: string | null;
+  /** check run 详情页（官方 Actions run 详情；REST check_runs 携带） */
+  html_url?: string | null;
+  details_url?: string | null;
+}
+
+/** 单个 check run 展示项（Checks tab 逐条列出；GraphQL CheckRun/StatusContext 与 REST check_runs 归一） */
+export interface CheckRunItem {
+  /** 显示名（GraphQL CheckRun.name=job 名 / StatusContext.context / REST check_runs.name） */
+  name: string;
+  /** workflow 名（仅 GraphQL CheckRun 可拿 checkSuite.workflowRun.workflow.name；REST 无 → null） */
+  workflowName: string | null;
+  /** 归一化状态（统一大写：COMPLETED/IN_PROGRESS/QUEUED/…） */
+  status: string;
+  /** 归一化结论（统一大写：SUCCESS/FAILURE/CANCELLED/…） */
+  conclusion: string | null;
+  /** 详情链接（GraphQL detailsUrl / REST html_url → Actions run 详情） */
+  detailsUrl: string | null;
+}
+
+/**
+ * GraphQL CheckRun 节点 → 展示项（status/conclusion 统一大写；workflow 名取自 checkSuite）。
+ * StatusContext（旧式 commit status）走单独 toStatusContextItem，二者结构不同不共用。
+ */
+export function toCheckRunItem(g: {
+  name?: unknown;
+  status?: unknown;
+  conclusion?: unknown;
+  detailsUrl?: unknown;
+  checkSuite?: { workflowRun?: { workflow?: { name?: unknown } | null } | null } | null;
+}): CheckRunItem {
+  return {
+    name: typeof g.name === "string" ? g.name : "",
+    workflowName:
+      typeof g.checkSuite?.workflowRun?.workflow?.name === "string"
+        ? g.checkSuite.workflowRun.workflow.name
+        : null,
+    status: typeof g.status === "string" ? g.status.toUpperCase() : "",
+    conclusion: typeof g.conclusion === "string" ? g.conclusion.toUpperCase() : null,
+    detailsUrl: typeof g.detailsUrl === "string" ? g.detailsUrl : null,
+  };
+}
+
+/** StatusContext（旧式 commit status）→ 展示项：state 映射为 status/conclusion，无 workflow 名 */
+export function toStatusContextItem(g: {
+  context?: unknown;
+  state?: unknown;
+  description?: unknown;
+  targetUrl?: unknown;
+}): CheckRunItem {
+  const state = typeof g.state === "string" ? g.state.toUpperCase() : "";
+  const conclusion =
+    state === "SUCCESS" ? "SUCCESS" : state === "FAILURE" || state === "ERROR" ? "FAILURE" : null;
+  const completed = conclusion != null;
+  return {
+    name: typeof g.context === "string" ? g.context : "",
+    workflowName: null,
+    status: completed ? "COMPLETED" : "PENDING",
+    conclusion,
+    detailsUrl: typeof g.targetUrl === "string" ? g.targetUrl : null,
+  };
 }
 
 /** check-runs 汇总（供 PR 行 CI 进度显示） */
@@ -266,6 +326,46 @@ export async function fetchPullCheckRuns(
     return toCheckRunsSummary(runs);
   } catch {
     return null; // 404（无 checks）/ 网络错误 → 不显示
+  }
+}
+
+/**
+ * 获取 PR head commit 的 check-run 列表（Checks tab 逐条列出；REST check_runs 归一）。
+ * 无 checks / 404 返回 null（官方显示无 checks）。REST 无 workflow 名 → workflowName 恒 null。
+ */
+export async function fetchPullCheckRunList(
+  owner: string,
+  repo: string,
+  sha: string,
+  token?: string | null,
+): Promise<CheckRunItem[] | null> {
+  try {
+    const resp = await typedRequest<{
+      total_count: number;
+      check_runs: Array<{
+        name: string;
+        status: string;
+        conclusion: string | null;
+        html_url?: string | null;
+      }>;
+    }>(token, (octokit) =>
+      octokit.rest.checks.listForRef({
+        owner,
+        repo,
+        ref: sha,
+        per_page: 100,
+      }),
+    );
+    const runs = resp.check_runs ?? [];
+    return runs.map((r) => ({
+      name: r.name,
+      workflowName: null,
+      status: (r.status ?? "").toUpperCase(),
+      conclusion: r.conclusion ? r.conclusion.toUpperCase() : null,
+      detailsUrl: r.html_url ?? null,
+    }));
+  } catch {
+    return null;
   }
 }
 

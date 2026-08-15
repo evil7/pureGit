@@ -73,6 +73,7 @@ const NewDiscussionPage = lazy(() =>
   import("@/pages/DiscussionsPage").then((m) => ({ default: m.NewDiscussionPage })),
 );
 const ProjectsPage = lazy(() => import("@/pages/ProjectsPage"));
+const ProjectDetailPage = lazy(() => import("@/pages/ProjectDetailPage"));
 const SettingsLayout = lazy(() => import("@/pages/settings/SettingsLayout"));
 const SettingsIndexRedirect = lazy(() =>
   import("@/pages/settings/SettingsLayout").then((m) => ({
@@ -322,6 +323,7 @@ const router = createBrowserRouter([
           { path: "security/advisories/:ghsaId", element: <SecurityAdvisoryDetailPage /> },
           { path: "pulse", element: <InsightsPage /> },
           { path: "projects", element: <ProjectsPage /> },
+          { path: "projects/:number", element: <ProjectDetailPage /> },
           /* 仓库设置（官方 github.com/:owner/:repo/settings 同路径） */
           { path: "settings", element: <RepoSettingsPage /> },
         ],

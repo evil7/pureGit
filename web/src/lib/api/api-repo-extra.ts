@@ -1,6 +1,6 @@
 /**
  * GitHub API smart layer - repo 扩展（自 api-repo.ts 拆出）
- * Projects v2 / topics / 订阅 / 最近分支 / 删除 / Security 安全公告。
+ * topics / 订阅 / 最近分支 / 删除 / Security 安全公告。
  */
 
 import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
@@ -12,7 +12,6 @@ import {
   UPDATE_ISSUE_SUBSCRIPTION_MUTATION,
   DELETE_REPOSITORY_MUTATION,
   REPO_TOPICS_QUERY,
-  REPO_PROJECTS_V2_QUERY,
   RECENT_BRANCHES_QUERY,
   REPO_BRANCHES_PAGE_QUERY,
   UPDATE_REPOSITORY_TOPICS_MUTATION,
@@ -29,38 +28,6 @@ import {
   fetchBranches,
 } from "../restapi";
 import type { RepoSubscription, SecurityAdvisory, ReadmeInfo } from "../restapi";
-
-// ===== Projects v2（legacy REST 已随官方公告下线，仅 GraphQL 可用；repo scope 已涵盖）=====
-
-/** 仓库 Projects v2 列表项（GraphQL projectsV2 节点） */
-export interface RepoProjectV2 {
-  id: string;
-  title: string;
-  number: number;
-  shortDescription: string | null;
-  url: string;
-  closed: boolean;
-  updatedAt: string;
-  public: boolean;
-}
-
-/**
- * 获取仓库 Projects v2 列表（固定 GraphQL——无 REST 等价，smart 层直连 GraphQL）。
- * 未登录/失败抛错（页面按需处理）；匿名强制 REST 的短路由 graphqlRequest 处理。
- */
-export async function fetchRepoProjectsV2Smart(
-  owner: string,
-  repo: string,
-  token?: string | null,
-): Promise<RepoProjectV2[]> {
-  const resp: GraphQLResponse<{
-    repository: { projectsV2: { nodes: RepoProjectV2[] } | null } | null;
-  }> = await graphqlRequest(REPO_PROJECTS_V2_QUERY, { owner, name: repo, first: 50 }, token);
-  if (hasGraphQLErrors(resp) || !resp.data?.repository?.projectsV2) {
-    throw new Error(resp.errors?.[0]?.message ?? "Projects v2 query failed");
-  }
-  return resp.data.repository.projectsV2.nodes ?? [];
-}
 
 /** 智能获取仓库主题：GraphQL repositoryTopics 首选，失败降级 REST。 */
 export async function fetchRepoTopicsSmart(

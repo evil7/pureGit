@@ -302,27 +302,6 @@ export const REPO_WITH_RELEASES_QUERY = /* GraphQL */ `
   }
 `;
 
-/** 仓库 Projects v2 列表（legacy REST 已下线，仅 GraphQL 可用；repo scope 已涵盖） */
-export const REPO_PROJECTS_V2_QUERY = /* GraphQL */ `
-  query RepoProjectsV2($owner: String!, $name: String!, $first: Int!) {
-    repository(owner: $owner, name: $name) {
-      projectsV2(first: $first) {
-        totalCount
-        nodes {
-          id
-          title
-          number
-          shortDescription
-          url
-          closed
-          updatedAt
-          public
-        }
-      }
-    }
-  }
-`;
-
 /** 当前用户（GraphQL，需 token；含账户设置所需字段） */
 export const VIEWER_QUERY = /* GraphQL */ `
   query Viewer {

@@ -9,12 +9,13 @@
  *   - AssigneesEditor / LabelsEditor / MilestoneEditor：完整 section（标题+内容+编辑 Dialog）
  * 写操作走 REST（issues.* 端点，issue/PR 通用），数据源 smart 双通道。
  */
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { useI18n } from "@/i18n";
-import { Check, Milestone as MilestoneIcon } from "lucide-react";
+import { Check, Columns3, GitPullRequest, Milestone as MilestoneIcon, X } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import {
   Dialog,
   DialogContent,
@@ -37,7 +38,22 @@ import {
   type RepoLabel,
   type RepoMilestone,
 } from "@/lib/restapi";
-import { fetchRepoLabelsSmart, fetchRepoAssigneesSmart, fetchRepoMilestonesSmart } from "@/lib/api";
+import {
+  fetchRepoLabelsSmart,
+  fetchRepoAssigneesSmart,
+  fetchRepoMilestonesSmart,
+  fetchRepoProjectsV2Smart,
+  fetchIssueProjectsSmart,
+  fetchPullProjectsSmart,
+  addProjectV2ItemByIdSmart,
+  deleteProjectV2ItemSmart,
+  resolveIssuePrNodeId,
+  fetchIssueDevelopmentSmart,
+  fetchPullDevelopmentSmart,
+  updatePullRequestBodySmart,
+  type PullProjectItem,
+  type RepoProjectV2,
+} from "@/lib/api";
 import { getLabelStyle } from "@/lib/ui/label-color";
 import { toastSuccess } from "@/lib/ui/toast";
 
@@ -473,6 +489,323 @@ export function MilestoneEditor({
           </div>
         )}
       </EditorDialog>
+    </section>
+  );
+}
+
+/* ── Projects 编辑（完整 section：标题齿轮 + 关联项目列表 + 添加/移除弹窗） ── */
+
+export function ProjectsEditor({
+  owner,
+  repo,
+  number,
+  kind,
+  title,
+  emptyText,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  kind: "issue" | "pr";
+  title: string;
+  emptyText: string;
+}) {
+  const { t } = useI18n();
+  const { token, canWrite } = useAuth();
+  const { canCollaborate } = useRepoPermission();
+  const [items, setItems] = useState<PullProjectItem[] | null>(null);
+  const [open, setOpen] = useState(false);
+  const [candidates, setCandidates] = useState<RepoProjectV2[] | null>(null);
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const loadItems = () => {
+    if (!token) return;
+    const fn = kind === "issue" ? fetchIssueProjectsSmart : fetchPullProjectsSmart;
+    fn(owner, repo, number, token)
+      .then(setItems)
+      .catch(() => setItems([]));
+  };
+
+  useEffect(() => {
+    setItems(null);
+    loadItems();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [owner, repo, number, token, kind]);
+
+  const openDialog = () => {
+    setOpen(true);
+    setError(null);
+    if (candidates) return;
+    fetchRepoProjectsV2Smart(owner, repo, token)
+      .then((ctx) => setCandidates(ctx.projects.filter((p) => !p.closed)))
+      .catch(() => setCandidates([]));
+  };
+
+  const add = async (projectId: string) => {
+    if (!token || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      const contentId = await resolveIssuePrNodeId(owner, repo, number, token);
+      if (!contentId) throw new Error("resolve node id failed");
+      await addProjectV2ItemByIdSmart(projectId, contentId, token);
+      loadItems();
+      setOpen(false);
+    } catch (e) {
+      setError(apiErrorMessage(e, "添加项目失败"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const remove = async (item: PullProjectItem) => {
+    if (!token || busy) return;
+    setBusy(true);
+    setError(null);
+    try {
+      await deleteProjectV2ItemSmart(item.project.id, item.id, token);
+      loadItems();
+    } catch (e) {
+      setError(apiErrorMessage(e, "移除项目失败"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <section>
+      <SidebarHeading
+        title={title}
+        action={
+          canWrite && canCollaborate ? (
+            <EditActionButton label={title} onClick={openDialog} />
+          ) : undefined
+        }
+      />
+      {items === null ? (
+        <p className="text-muted-foreground">—</p>
+      ) : items.length === 0 ? (
+        <p className="text-muted-foreground">{emptyText}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {items.map((p) => (
+            <li key={p.id} className="flex items-center gap-2 text-sm">
+              <a
+                href={p.project.url}
+                target="_blank"
+                rel="noreferrer"
+                className="min-w-0 truncate text-foreground hover:underline"
+              >
+                {p.project.title}
+              </a>
+              {p.status && (
+                <span className="shrink-0 text-xs text-muted-foreground">· {p.status}</span>
+              )}
+              {canWrite && canCollaborate && (
+                <button
+                  type="button"
+                  onClick={() => remove(p)}
+                  disabled={busy}
+                  aria-label={`移除 ${p.project.title}`}
+                  className="ml-auto shrink-0 rounded p-0.5 text-muted-foreground hover:bg-muted hover:text-destructive"
+                >
+                  <X className="size-3.5" />
+                </button>
+              )}
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+          </DialogHeader>
+          <div className="max-h-64 space-y-1 overflow-y-auto">
+            {candidates === null ? (
+              <Skeleton className="h-32 w-full" />
+            ) : candidates.length === 0 ? (
+              <p className="text-sm text-muted-foreground">{t("pullDetail.noProjects")}</p>
+            ) : (
+              candidates.map((proj) => (
+                <button
+                  key={proj.id}
+                  type="button"
+                  onClick={() => add(proj.id)}
+                  disabled={busy}
+                  className="flex w-full items-center gap-2 rounded-md px-2 py-1.5 text-left text-sm hover:bg-muted"
+                >
+                  <Columns3 className="size-4 shrink-0 text-muted-foreground" />
+                  <span className="truncate">{proj.title}</span>
+                </button>
+              ))
+            )}
+          </div>
+          {error && <p className="text-sm text-red-500">{error}</p>}
+        </DialogContent>
+      </Dialog>
+    </section>
+  );
+}
+
+/* ── Development 编辑（PR/issue 通用：关联 issue/PR/branch 只读 + PR 手动关联） ── */
+
+export function DevelopmentSection({
+  owner,
+  repo,
+  number,
+  kind,
+  title,
+  emptyText,
+  prBody,
+  pullRequestId,
+  onPrBodyChange,
+}: {
+  owner: string;
+  repo: string;
+  number: number;
+  kind: "issue" | "pr";
+  title: string;
+  emptyText: string;
+  /** PR 描述（手动关联 issue 时追加 closing keywords 用；仅 kind="pr" 需要） */
+  prBody?: string;
+  pullRequestId?: string;
+  onPrBodyChange?: (body: string) => void;
+}) {
+  const { t } = useI18n();
+  const { token, canWrite } = useAuth();
+  const { canCollaborate } = useRepoPermission();
+  const [data, setData] = useState<{
+    issues: { number: number; title: string; url: string | null }[];
+    prs: { number: number; title: string; url: string | null }[];
+    branches: string[];
+  } | null>(null);
+  const [open, setOpen] = useState(false);
+  const [issueInput, setIssueInput] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const load = () => {
+    if (!token) return;
+    const fallback = { issues: [], prs: [], branches: [] };
+    if (kind === "issue") {
+      fetchIssueDevelopmentSmart(owner, repo, number, token)
+        .then((d) => setData({ issues: [], prs: d.prs, branches: d.branches }))
+        .catch(() => setData(fallback));
+    } else {
+      fetchPullDevelopmentSmart(owner, repo, number, token)
+        .then((d) => setData({ issues: d.issues, prs: [], branches: d.branches }))
+        .catch(() => setData(fallback));
+    }
+  };
+
+  useEffect(() => {
+    setData(null);
+    load();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [owner, repo, number, token, kind]);
+
+  const linkIssue = async () => {
+    if (!token || !pullRequestId || busy) return;
+    const n = Number(issueInput.trim());
+    if (!Number.isInteger(n) || n <= 0) {
+      setError(t("metadata.linkIssueInvalid"));
+      return;
+    }
+    setBusy(true);
+    setError(null);
+    try {
+      const keyword = `Closes #${n}`;
+      const base = prBody && prBody.trim() ? `${prBody.trimEnd()}\n\n${keyword}` : keyword;
+      await updatePullRequestBodySmart(pullRequestId, base, token);
+      onPrBodyChange?.(base);
+      setIssueInput("");
+      setOpen(false);
+      load();
+    } catch (e) {
+      setError(apiErrorMessage(e, "关联 issue 失败"));
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  const hasContent =
+    data !== null && data.issues.length + data.prs.length + data.branches.length > 0;
+
+  return (
+    <section>
+      <SidebarHeading
+        title={title}
+        action={
+          kind === "pr" && canWrite && canCollaborate ? (
+            <EditActionButton label={title} onClick={() => setOpen(true)} />
+          ) : undefined
+        }
+      />
+      {data === null ? (
+        <p className="text-muted-foreground">—</p>
+      ) : !hasContent ? (
+        <p className="text-muted-foreground">{emptyText}</p>
+      ) : (
+        <ul className="space-y-1.5">
+          {data.issues.map((i) => (
+            <li key={`i${i.number}`} className="text-sm">
+              <a
+                href={i.url ?? undefined}
+                target="_blank"
+                rel="noreferrer"
+                className="text-foreground hover:underline"
+              >
+                #{i.number} {i.title}
+              </a>
+            </li>
+          ))}
+          {data.prs.map((p) => (
+            <li key={`p${p.number}`} className="text-sm">
+              <a
+                href={p.url ?? undefined}
+                target="_blank"
+                rel="noreferrer"
+                className="text-foreground hover:underline"
+              >
+                #{p.number} {p.title}
+              </a>
+            </li>
+          ))}
+          {data.branches.map((b) => (
+            <li key={b} className="flex items-center gap-1.5 text-sm">
+              <GitPullRequest className="size-3.5 text-muted-foreground" />
+              <code className="font-mono text-xs">{b}</code>
+            </li>
+          ))}
+        </ul>
+      )}
+
+      <Dialog open={open} onOpenChange={setOpen}>
+        <DialogContent className="sm:max-w-md">
+          <DialogHeader>
+            <DialogTitle>{title}</DialogTitle>
+            <DialogDescription>{t("metadata.linkIssueDesc")}</DialogDescription>
+          </DialogHeader>
+          <Input
+            value={issueInput}
+            onChange={(e) => setIssueInput(e.target.value)}
+            placeholder={t("metadata.linkIssuePlaceholder")}
+            inputMode="numeric"
+          />
+          {error && <p className="text-sm text-red-500">{error}</p>}
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setOpen(false)} disabled={busy}>
+              {t("common.cancel")}
+            </Button>
+            <Button onClick={linkIssue} disabled={busy || !issueInput.trim()}>
+              {busy ? t("common.saving") : t("metadata.linkIssue")}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
     </section>
   );
 }

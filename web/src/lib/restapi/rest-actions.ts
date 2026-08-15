@@ -57,6 +57,11 @@ export interface WorkflowRun {
   workflow_id?: number;
   /** workflow 定义文件路径（.github/workflows/xxx.yml；用于站内跳 blob 页） */
   path?: string;
+  /** 关联的 PR（head_sha/head_branch 匹配的 PR；pull_request 事件触发时非空） */
+  pull_requests?: Array<{
+    number: number;
+    head: { ref: string; sha: string; repo: { name: string } | null } | null;
+  }>;
 }
 
 /** Run Job（GET /repos/{o}/{r}/actions/runs/{id}/jobs） */
@@ -92,7 +97,7 @@ export async function fetchWorkflows(
   return data.workflows ?? [];
 }
 
-/** Workflow runs 列表（可按 workflow/branch/event/status/actor 过滤） */
+/** Workflow runs 列表（可按 workflow/branch/event/status/actor/head_sha 过滤） */
 export async function fetchWorkflowRuns(
   owner: string,
   repo: string,
@@ -105,6 +110,7 @@ export async function fetchWorkflowRuns(
     event?: string;
     status?: string;
     actor?: string;
+    headSha?: string;
   } = {},
 ): Promise<{ total_count: number; runs: WorkflowRun[] }> {
   const data = await typedRequest<{
@@ -121,6 +127,7 @@ export async function fetchWorkflowRuns(
       ...(opts.event ? { event: opts.event } : {}),
       ...(opts.status ? { status: opts.status as WorkflowRunStatus } : {}),
       ...(opts.actor ? { actor: opts.actor } : {}),
+      ...(opts.headSha ? { head_sha: opts.headSha } : {}),
     }),
   );
   return { total_count: data.total_count ?? 0, runs: data.workflow_runs ?? [] };

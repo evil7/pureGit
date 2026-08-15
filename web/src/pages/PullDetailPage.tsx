@@ -13,12 +13,14 @@ import {
   CheckCircle2,
   CircleDashed,
   CircleX,
+  ExternalLink,
   FileDiff,
   GitBranch,
   GitCommit,
   GitMerge,
   GitPullRequest,
   GitPullRequestClosed,
+  Loader2,
   MessageSquare,
   Minus,
   Plus,
@@ -53,6 +55,7 @@ import {
   updatePullRequestStateSmart,
   fetchPullCommitsSmart,
   fetchPullCheckRunsSmart,
+  fetchPullCheckRunListSmart,
   setIssueSubscriptionSmart,
   normalizeApiError,
   ApiError,
@@ -61,11 +64,15 @@ import {
 } from "@/lib/api";
 import {
   fetchPullFiles,
+  fetchWorkflowRuns,
   apiErrorMessage,
   type CheckRunsSummary,
+  type CheckRunItem,
   type PullCommit,
+  type WorkflowRun,
 } from "@/lib/restapi";
 import type { PullRequest, IssueComment, PullFile } from "@/lib/restapi";
+import { runStatusIcon } from "./actions/shared";
 
 /** CI checks 徽标（完整文字版——详情页 Checks tab 用：绿=全过 / 黄=pending / 红=失败） */
 function ChecksBadge({ summary }: { summary: CheckRunsSummary }) {
@@ -91,6 +98,72 @@ function ChecksBadge({ summary }: { summary: CheckRunsSummary }) {
       )}
       {summary.success}/{summary.total} checks OK
     </span>
+  );
+}
+
+/** 单个 check run 行（Checks tab 列表项：状态图标 + 名字 [workflow / job] + Details 链接） */
+function CheckRunRow({ run }: { run: CheckRunItem }) {
+  const done = run.status === "COMPLETED";
+  const failed =
+    done &&
+    (run.conclusion === "FAILURE" ||
+      run.conclusion === "CANCELLED" ||
+      run.conclusion === "TIMED_OUT" ||
+      run.conclusion === "STARTUP_FAILURE" ||
+      run.conclusion === "ACTION_REQUIRED");
+  const ok = done && run.conclusion === "SUCCESS";
+  const Icon = ok ? CheckCircle2 : failed ? CircleX : done ? CircleDashed : Loader2;
+  const iconCls = ok
+    ? "text-green-600"
+    : failed
+      ? "text-red-600"
+      : done
+        ? "text-muted-foreground"
+        : "text-yellow-500";
+  const name = run.workflowName ? `${run.workflowName} / ${run.name}` : run.name;
+  return (
+    <div className="flex items-center gap-2 px-4 py-2.5">
+      <Icon className={cn("size-4 shrink-0", iconCls, !done && "animate-spin")} />
+      <span className="min-w-0 flex-1 truncate text-sm">{name || "—"}</span>
+      {run.detailsUrl && (
+        <a
+          href={run.detailsUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="flex shrink-0 items-center gap-1 text-xs font-medium text-primary hover:underline"
+        >
+          Details
+          <ExternalLink className="size-3" />
+        </a>
+      )}
+    </div>
+  );
+}
+
+/** 单个 workflow run 行（Checks tab：关联 head commit 的实际运行 workflow；站内跳 run 详情） */
+function WorkflowRunRow({
+  run,
+  owner,
+  repo,
+  fmt,
+}: {
+  run: WorkflowRun;
+  owner: string;
+  repo: string;
+  fmt: (s: string) => string;
+}) {
+  const title = run.display_title || run.name || `Run #${run.run_number}`;
+  return (
+    <div className="flex items-center gap-2 px-4 py-2.5">
+      <span className="shrink-0">{runStatusIcon(run.status, run.conclusion)}</span>
+      <Link
+        to={`/${owner}/${repo}/actions/runs/${run.id}`}
+        className="min-w-0 flex-1 truncate text-sm font-medium hover:text-primary hover:underline"
+      >
+        {title}
+      </Link>
+      <span className="shrink-0 text-xs text-muted-foreground">{fmt(run.created_at)}</span>
+    </div>
   );
 }
 
@@ -139,11 +212,19 @@ export default function PullDetailPage() {
   const [filesLoadingMore, setFilesLoadingMore] = useState(false);
   const [commits, setCommits] = useState<PullCommit[] | null>(null);
   const [checks, setChecks] = useState<CheckRunsSummary | null | undefined>(undefined); // undefined=加载中 null=无checks
+  // check-run 列表（Checks tab 逐条列出；与汇总同步懒加载）
+  const [checkRunList, setCheckRunList] = useState<CheckRunItem[] | null>(null);
+  // 关联 head commit 的 workflow run（REST actions/runs head_sha；dynamic/push 触发无 check run 也在此列出）
+  const [workflowRuns, setWorkflowRuns] = useState<WorkflowRun[] | null>(null);
   const [reviewSummary, setReviewSummary] = useState<PullReviewSummary | null | undefined>(
     undefined,
   );
   // 时间线（GraphQL timelineItems；null=查询失败降级回退三段式渲染）
   const [timeline, setTimeline] = useState<PullTimelineEvent[] | null | undefined>(undefined);
+  // 时间线分页（timelineItems cursor 分页；endCursor 为空 = 无更多）
+  const [timelineCursor, setTimelineCursor] = useState<string | null>(null);
+  const [timelineHasMore, setTimelineHasMore] = useState(false);
+  const [timelineLoadingMore, setTimelineLoadingMore] = useState(false);
   const [tab, setTab] = useState<"conversation" | "commits" | "checks" | "files">("conversation");
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<ApiError | null>(null);
@@ -163,7 +244,9 @@ export default function PullDetailPage() {
           setPr(data);
           setComments(cs);
           setReviewSummary(summary);
-          setTimeline(tl);
+          setTimeline(tl ? tl.events : null);
+          setTimelineCursor(tl?.endCursor ?? null);
+          setTimelineHasMore(tl?.hasNextPage ?? false);
           // 订阅状态（GraphQL viewerSubscription）
           if (data.subscription) {
             setSubscribed(data.subscription !== "UNSUBSCRIBED");
@@ -193,13 +276,22 @@ export default function PullDetailPage() {
     };
   }, [tab, commits, owner, repo, number, token]);
 
-  // Checks：切到该 tab 时懒加载（open PR 且 head.sha 存在）
+  // Checks：切到该 tab 时懒加载（open PR 且 head.sha 存在）；汇总 + 列表 + workflow run 并行
   useEffect(() => {
     if (tab !== "checks" || checks !== undefined || !pr?.head?.sha) return;
     let cancelled = false;
-    fetchPullCheckRunsSmart(owner!, repo!, pr.head.sha, token)
-      .then((s) => !cancelled && setChecks(s ?? null))
-      .catch(() => !cancelled && setChecks(null));
+    Promise.all([
+      fetchPullCheckRunsSmart(owner!, repo!, pr.head.sha, token),
+      fetchPullCheckRunListSmart(owner!, repo!, pr.head.sha, token),
+      fetchWorkflowRuns(owner!, repo!, token, { headSha: pr.head.sha, perPage: 100 })
+        .then((r) => r.runs)
+        .catch(() => []),
+    ]).then(([summary, list, runs]) => {
+      if (cancelled) return;
+      setChecks(summary ?? null);
+      setCheckRunList(list ?? []);
+      setWorkflowRuns(runs);
+    });
     return () => {
       cancelled = true;
     };
@@ -240,6 +332,41 @@ export default function PullDetailPage() {
     }
   };
 
+  // Files changed 行内评论后：重新拉取时间线（review thread 事件进入 Conversation 时间线）
+  const refreshTimeline = async () => {
+    if (!token) return;
+    const tl = await fetchPullTimelineSmart(owner!, repo!, Number(number), token);
+    if (tl) {
+      setTimeline(tl.events);
+      setTimelineCursor(tl.endCursor);
+      setTimelineHasMore(tl.hasNextPage);
+    }
+  };
+
+  // 时间线加载更多（timelineItems 分页：追加下一页事件，官方「Load more」）
+  const loadMoreTimeline = async () => {
+    if (!token || !timelineCursor || timelineLoadingMore) return;
+    setTimelineLoadingMore(true);
+    try {
+      const page = await fetchPullTimelineSmart(
+        owner!,
+        repo!,
+        Number(number),
+        token,
+        timelineCursor,
+      );
+      if (page) {
+        setTimeline((prev) => [...(prev ?? []), ...page.events]);
+        setTimelineCursor(page.endCursor);
+        setTimelineHasMore(page.hasNextPage);
+      }
+    } catch (e) {
+      toastError(apiErrorMessage(e, "加载更多时间线失败"));
+    } finally {
+      setTimelineLoadingMore(false);
+    }
+  };
+
   // 新评论即时追加：评论列表计数 + 时间线事件（官方发表评论后立即出现在 Conversation）
   const appendTimelineComment = (c: IssueComment) => {
     setComments((prev) => [...(prev ?? []), c]);
@@ -251,8 +378,11 @@ export default function PullDetailPage() {
               kind: "comment",
               id: String(c.id),
               author: { login: c.user.login, avatarUrl: c.user.avatar_url ?? null },
+              authorAssociation: null,
               createdAt: c.created_at,
+              lastEditedAt: null,
               body: c.body ?? "",
+              reactions: [],
             } satisfies PullTimelineEvent,
           ]
         : prev,
@@ -576,6 +706,8 @@ export default function PullDetailPage() {
               milestone={pr.milestone ?? null}
               locked={pr.locked ?? false}
               pullRequestId={reviewSummary?.pullRequestId}
+              prBody={pr.body ?? ""}
+              onPrBodyChange={(body) => setPr((p) => (p ? { ...p, body } : p))}
               participants={participants}
               subscribed={subscribed}
               subscribing={subscribing}
@@ -625,7 +757,15 @@ export default function PullDetailPage() {
               {/* 时间线（GraphQL timelineItems 事件混排；null=失败降级回退下方三段式） */}
               {timeline !== null && timeline !== undefined ? (
                 <>
-                  <PullTimeline events={timeline} owner={owner!} repo={repo!} />
+                  <PullTimeline
+                    events={timeline}
+                    owner={owner!}
+                    repo={repo!}
+                    prAuthor={pr.user?.login ?? null}
+                    hasMore={timelineHasMore}
+                    loadingMore={timelineLoadingMore}
+                    onLoadMore={() => void loadMoreTimeline()}
+                  />
                   {/* 评论区仅保留编辑器（评论列表已在时间线内；新评论即时追加到时间线） */}
                   {comments && (
                     <CommentsSection
@@ -736,33 +876,67 @@ export default function PullDetailPage() {
             </div>
           )}
 
-          {/* Checks：check-runs 汇总 + 状态 */}
+          {/* Checks：check-runs 汇总 + 状态 + 关联 workflow run */}
           {tab === "checks" && (
             <div className="mt-4 space-y-3">
               {checks === undefined ? (
                 <Skeleton className="h-24 w-full" />
-              ) : checks === null ? (
-                <p className="py-8 text-center text-sm text-muted-foreground">
-                  {t("pullDetail.noCheckRun")}
-                </p>
               ) : (
-                <Card>
-                  <CardContent className="space-y-2 p-4">
-                    <div className="flex items-center gap-2">
-                      <ChecksBadge summary={checks} />
-                      <span className="text-sm text-muted-foreground">
-                        {t("pullDetail.checkRunCount", { count: checks.total })}
-                      </span>
-                    </div>
-                    <div className="text-xs text-muted-foreground">
-                      {t("pullDetail.checkSummary", {
-                        success: checks.success,
-                        failure: checks.failure,
-                        pending: checks.pending,
-                      })}
-                    </div>
-                  </CardContent>
-                </Card>
+                <>
+                  {checks !== null && (
+                    <Card>
+                      <CardContent className="space-y-2 p-4">
+                        <div className="flex items-center gap-2">
+                          <ChecksBadge summary={checks} />
+                          <span className="text-sm text-muted-foreground">
+                            {t("pullDetail.checkRunCount", { count: checks.total })}
+                          </span>
+                        </div>
+                        <div className="text-xs text-muted-foreground">
+                          {t("pullDetail.checkSummary", {
+                            success: checks.success,
+                            failure: checks.failure,
+                            pending: checks.pending,
+                          })}
+                        </div>
+                      </CardContent>
+                    </Card>
+                  )}
+                  {checkRunList && checkRunList.length > 0 && (
+                    <Card>
+                      <CardContent className="divide-y p-0">
+                        {checkRunList.map((run, i) => (
+                          <CheckRunRow key={`${run.name}-${i}`} run={run} />
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+                  {workflowRuns && workflowRuns.length > 0 && (
+                    <Card>
+                      <div className="border-b bg-muted/50 px-4 py-2 text-sm font-semibold">
+                        {t("pullDetail.workflowRuns")}
+                      </div>
+                      <CardContent className="divide-y p-0">
+                        {workflowRuns.map((run) => (
+                          <WorkflowRunRow
+                            key={run.id}
+                            run={run}
+                            owner={owner!}
+                            repo={repo!}
+                            fmt={fmt ?? ((s: string) => s)}
+                          />
+                        ))}
+                      </CardContent>
+                    </Card>
+                  )}
+                  {checks === null &&
+                    (!checkRunList || checkRunList.length === 0) &&
+                    (!workflowRuns || workflowRuns.length === 0) && (
+                      <p className="py-8 text-center text-sm text-muted-foreground">
+                        {t("pullDetail.noCheckRun")}
+                      </p>
+                    )}
+                </>
               )}
             </div>
           )}
@@ -785,6 +959,7 @@ export default function PullDetailPage() {
                     number={Number(number)}
                     baseSha={pr.base?.sha}
                     headSha={pr.head?.sha}
+                    onCommentAdded={() => void refreshTimeline()}
                   />
                   {files.hasMore && (
                     <div className="flex justify-center pt-1">

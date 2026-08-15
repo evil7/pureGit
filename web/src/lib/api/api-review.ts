@@ -17,14 +17,18 @@ import {
   UNRESOLVE_REVIEW_THREAD_MUTATION,
   PR_COMMITS_QUERY,
   PR_CHECK_RUNS_QUERY,
+  PR_CHECK_RUN_LIST_QUERY,
   REPO_COLLABORATORS_QUERY,
   PR_PROJECTS_QUERY,
+  ISSUE_PROJECTS_QUERY,
   PR_DEVELOPMENT_QUERY,
+  ISSUE_DEVELOPMENT_QUERY,
   PR_TIMELINE_QUERY,
   LOCK_PULL_REQUEST_MUTATION,
   UNLOCK_PULL_REQUEST_MUTATION,
   CLOSE_PULL_REQUEST_MUTATION,
   REOPEN_PULL_REQUEST_MUTATION,
+  UPDATE_PULL_REQUEST_BODY_MUTATION,
   CLOSE_ISSUE_MUTATION,
   REOPEN_ISSUE_MUTATION,
 } from "../graphql";
@@ -34,6 +38,7 @@ import {
   fetchPullRequestedReviewers,
   fetchPullCommits,
   fetchPullCheckRuns,
+  fetchPullCheckRunList,
   fetchCollaborators,
   createPullReview,
   mergePullRequest,
@@ -53,9 +58,10 @@ import type {
   PullMergeMethod,
   PullCommit,
   CheckRunsSummary,
+  CheckRunItem,
   Collaborator,
 } from "../restapi";
-import { toCheckRunsSummary } from "../restapi";
+import { toCheckRunsSummary, toCheckRunItem, toStatusContextItem } from "../restapi";
 import { toPull, toIssueComment } from "./api-issue";
 import type { GraphQLPullNode, GraphQLCommentNode } from "./api-issue";
 
@@ -569,7 +575,7 @@ export async function setPullLockedSmart(
 /** PR 关联 ProjectsV2（GraphQL-only 只读；失败静默空——侧栏非核心，参照 ForkInfoBar 静默先例）。 */
 export type PullProjectItem = {
   id: string;
-  project: { number: number; title: string; url: string; public: boolean };
+  project: { id: string; number: number; title: string; url: string; public: boolean };
   status: string | null;
 };
 export async function fetchPullProjectsSmart(
@@ -586,7 +592,7 @@ export async function fetchPullProjectsSmart(
           projectItems: {
             nodes: Array<{
               id: string;
-              project: { number: number; title: string; url: string; public: boolean };
+              project: { id: string; number: number; title: string; url: string; public: boolean };
               fieldValueByName: { __typename: string; name?: string } | null;
             }>;
           } | null;
@@ -609,6 +615,46 @@ export async function fetchPullProjectsSmart(
   } catch (e) {
     // 侧栏非核心 → 静默空，补 [Warn] 保留诊断
     logWarn("fetchPullProjectsSmart", `PR Projects 查询失败（静默空）: ${String(e)}`);
+    return [];
+  }
+}
+
+/** Issue 关联 ProjectsV2（GraphQL-only 只读；失败静默空——侧栏非核心）。与 fetchPullProjectsSmart 同构，仅 subject 不同。 */
+export async function fetchIssueProjectsSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<PullProjectItem[]> {
+  if (!token) return [];
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        issue: {
+          projectItems: {
+            nodes: Array<{
+              id: string;
+              project: { id: string; number: number; title: string; url: string; public: boolean };
+              fieldValueByName: { __typename: string; name?: string } | null;
+            }>;
+          } | null;
+        } | null;
+      } | null;
+    }> = await graphqlRequest(ISSUE_PROJECTS_QUERY, { owner, name: repo, number }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.issue?.projectItems) {
+      logWarn("fetchIssueProjectsSmart", `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`);
+      return [];
+    }
+    return resp.data.repository.issue.projectItems.nodes.map((n) => ({
+      id: n.id,
+      project: n.project,
+      status:
+        n.fieldValueByName && "name" in n.fieldValueByName
+          ? (n.fieldValueByName.name ?? null)
+          : null,
+    }));
+  } catch (e) {
+    logWarn("fetchIssueProjectsSmart", `Issue Projects 查询失败（静默空）: ${String(e)}`);
     return [];
   }
 }
@@ -661,7 +707,92 @@ export async function fetchPullDevelopmentSmart(
   }
 }
 
+/** Issue 开发关联（GraphQL-only 只读：linked branches + 关联 PR；失败静默空）。 */
+export type IssueDevelopment = {
+  prs: { number: number; title: string; url: string | null }[];
+  branches: string[];
+};
+export async function fetchIssueDevelopmentSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<IssueDevelopment> {
+  if (!token) return { prs: [], branches: [] };
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        issue: {
+          linkedBranches: { nodes: Array<{ ref: { name: string } | null }> } | null;
+          timelineItems: {
+            nodes: Array<{
+              source: { number?: unknown; title?: unknown; url?: unknown } | null;
+            }>;
+          } | null;
+        } | null;
+      } | null;
+    }> = await graphqlRequest(ISSUE_DEVELOPMENT_QUERY, { owner, name: repo, number }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.issue) {
+      logWarn(
+        "fetchIssueDevelopmentSmart",
+        `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`,
+      );
+      return { prs: [], branches: [] };
+    }
+    const issue = resp.data.repository.issue;
+    const prs = (issue.timelineItems?.nodes ?? [])
+      .map((n) => n.source)
+      .filter((s): s is NonNullable<typeof s> => Boolean(s))
+      .map((s) => ({
+        number: typeof s.number === "number" ? s.number : 0,
+        title: typeof s.title === "string" ? s.title : "",
+        url: typeof s.url === "string" ? s.url : null,
+      }))
+      .filter((p) => p.number > 0);
+    const branches = (issue.linkedBranches?.nodes ?? [])
+      .map((n) => n.ref?.name)
+      .filter((n): n is string => Boolean(n));
+    return { prs, branches };
+  } catch (e) {
+    logWarn("fetchIssueDevelopmentSmart", `Issue Development 查询失败（静默空）: ${String(e)}`);
+    return { prs: [], branches: [] };
+  }
+}
+
+/** 更新 PR 描述（body；Development 手动关联 issue 时追加 closing keywords）。 */
+export async function updatePullRequestBodySmart(
+  pullRequestId: string,
+  body: string,
+  token: string,
+): Promise<void> {
+  const resp: GraphQLResponse<{ updatePullRequest: { pullRequest: { id: string } | null } }> =
+    await graphqlRequest(UPDATE_PULL_REQUEST_BODY_MUTATION, { pullRequestId, body }, token);
+  if (hasGraphQLErrors(resp) || !resp.data?.updatePullRequest?.pullRequest) {
+    throw new Error(resp.errors?.[0]?.message ?? "Update pull request failed");
+  }
+}
+
 // ===== PR Conversation 时间线（PullTimeline；GraphQL-only，失败降级 null → 页面回退现有评论渲染） =====
+
+/** 表情反应组（官方 ReactionGroup：content 为 ReactionContent 枚举，count 为 reactors 总数） */
+export interface PullReaction {
+  content: string;
+  count: number;
+}
+
+/** 行内评审评论（review 内嵌 / review-thread 内的单条评论，均含 diff hunk 代码片段）。 */
+export interface PullReviewComment {
+  id: string;
+  author: { login: string; avatarUrl: string | null } | null;
+  authorAssociation: string | null;
+  createdAt: string;
+  lastEditedAt: string | null;
+  body: string;
+  diffHunk: string | null;
+  path: string | null;
+  line: number | null;
+  reactions: PullReaction[];
+}
 
 /** 时间线事件（归一后的轻量结构，覆盖官方 Conversation 常用事件类型）。 */
 export type PullTimelineEvent =
@@ -669,17 +800,23 @@ export type PullTimelineEvent =
       kind: "comment";
       id: string;
       author: { login: string; avatarUrl: string | null } | null;
+      authorAssociation: string | null;
       createdAt: string;
+      lastEditedAt: string | null;
       body: string;
+      reactions: PullReaction[];
     }
   | {
       kind: "review";
       id: string;
       author: { login: string; avatarUrl: string | null } | null;
+      authorAssociation: string | null;
       createdAt: string;
       submittedAt: string | null;
       state: string;
       body: string | null;
+      reactions: PullReaction[];
+      comments: PullReviewComment[];
     }
   | {
       kind: "review-thread";
@@ -689,12 +826,7 @@ export type PullTimelineEvent =
       line: number | null;
       originalLine: number | null;
       startLine: number | null;
-      comments: Array<{
-        id: string;
-        author: { login: string; avatarUrl: string | null } | null;
-        createdAt: string;
-        body: string;
-      }>;
+      comments: PullReviewComment[];
     }
   | {
       kind: "commit";
@@ -710,6 +842,7 @@ export type PullTimelineEvent =
       actor: { login: string; avatarUrl: string | null } | null;
       createdAt: string;
       mergeRefName: string | null;
+      commit: { oid: string; abbreviatedOid: string; url: string | null } | null;
     }
   | {
       kind: "closed";
@@ -802,13 +935,51 @@ export type PullTimelineEvent =
       id: string;
       actor: { login: string; avatarUrl: string | null } | null;
       createdAt: string;
+      beforeCommit: string | null;
+      afterCommit: string | null;
     }
   | {
       kind: "ready-for-review";
       id: string;
       actor: { login: string; avatarUrl: string | null } | null;
       createdAt: string;
+    }
+  | {
+      kind: "head-ref-deleted";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      headRefName: string;
+    }
+  | {
+      kind: "mentioned";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+    }
+  | {
+      kind: "deployed";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      environment: string | null;
+      environmentUrl: string | null;
+    }
+  | {
+      kind: "cross-referenced";
+      id: string;
+      actor: { login: string; avatarUrl: string | null } | null;
+      createdAt: string;
+      isCrossRepository: boolean;
+      source: { number: number; title: string; url: string | null } | null;
     };
+
+/** 时间线分页结果（events 本页事件 / endCursor 下一页游标 / hasNextPage 是否还有更多） */
+export interface PullTimelinePage {
+  events: PullTimelineEvent[];
+  endCursor: string | null;
+  hasNextPage: boolean;
+}
 
 /** 时间线查询（GraphQL-only：REST 无 timeline 通道；失败返回 null → 页面回退评论+评审拼接渲染）。 */
 export async function fetchPullTimelineSmart(
@@ -816,20 +987,28 @@ export async function fetchPullTimelineSmart(
   repo: string,
   number: number,
   token: string,
-): Promise<PullTimelineEvent[] | null> {
+  cursor?: string,
+): Promise<PullTimelinePage | null> {
   if (!token) return null;
   try {
     const resp: GraphQLResponse<{
       repository: {
-        pullRequest: { timelineItems: { nodes: unknown[] } | null } | null;
+        pullRequest: {
+          timelineItems: {
+            nodes: unknown[];
+            pageInfo: { endCursor: string | null; hasNextPage: boolean } | null;
+          } | null;
+        } | null;
       } | null;
-    }> = await graphqlRequest(PR_TIMELINE_QUERY, { owner, name: repo, number }, token);
+    }> = await graphqlRequest(PR_TIMELINE_QUERY, { owner, name: repo, number, cursor }, token);
     if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest?.timelineItems) {
       // GraphQL errors → 降级 null（页面回退三段式渲染），补 [Warn] 保留错误详情
       logWarn("fetchPullTimelineSmart", `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`);
       return null;
     }
-    const nodes = resp.data.repository.pullRequest.timelineItems.nodes;
+    const timeline = resp.data.repository.pullRequest.timelineItems;
+    const nodes = timeline.nodes;
+    const pageInfo = timeline.pageInfo;
     const events: PullTimelineEvent[] = [];
     for (const raw of nodes) {
       const n = raw as Record<string, unknown> & { __typename?: string };
@@ -841,6 +1020,36 @@ export async function fetchPullTimelineSmart(
         return { login: x.login ?? "", avatarUrl: x.avatarUrl ?? null };
       };
       const at = (v: unknown) => (typeof v === "string" ? v : "");
+      // reactionGroups 为 LIST（非连接），直接 map 出 content + reactors.totalCount
+      const reactionsOf = (v: unknown): PullReaction[] => {
+        if (!Array.isArray(v)) return [];
+        return v
+          .map((g) => {
+            const x = g as { content?: unknown; reactors?: { totalCount?: unknown } | null };
+            const count = x.reactors?.totalCount;
+            return {
+              content: typeof x.content === "string" ? x.content : "",
+              count: typeof count === "number" ? count : 0,
+            };
+          })
+          .filter((r) => r.content && r.count > 0);
+      };
+      // 行内评论节点解析（review.comments 与 reviewThread.comments 同构，复用同一映射）
+      const commentOf = (c: unknown): PullReviewComment => {
+        const cc = c as Record<string, unknown> & { author?: unknown };
+        return {
+          id: String(cc.id),
+          author: actor(cc.author),
+          authorAssociation: typeof cc.authorAssociation === "string" ? cc.authorAssociation : null,
+          createdAt: typeof cc.createdAt === "string" ? cc.createdAt : "",
+          lastEditedAt: typeof cc.lastEditedAt === "string" ? cc.lastEditedAt : null,
+          body: typeof cc.body === "string" ? cc.body : "",
+          diffHunk: typeof cc.diffHunk === "string" ? cc.diffHunk : null,
+          path: typeof cc.path === "string" ? cc.path : null,
+          line: typeof cc.line === "number" ? cc.line : null,
+          reactions: reactionsOf(cc.reactionGroups),
+        };
+      };
       if (t === "IssueComment") {
         const body = typeof n.body === "string" ? n.body : "";
         if (body.trim()) {
@@ -848,19 +1057,26 @@ export async function fetchPullTimelineSmart(
             kind: "comment",
             id: String(n.id),
             author: actor(n.author),
+            authorAssociation: typeof n.authorAssociation === "string" ? n.authorAssociation : null,
             createdAt: at(n.createdAt),
+            lastEditedAt: typeof n.lastEditedAt === "string" ? n.lastEditedAt : null,
             body,
+            reactions: reactionsOf(n.reactionGroups),
           });
         }
       } else if (t === "PullRequestReview") {
+        const reviewCommentsRaw = (n.comments as { nodes?: unknown[] } | null)?.nodes ?? [];
         events.push({
           kind: "review",
           id: String(n.id),
           author: actor(n.author),
+          authorAssociation: typeof n.authorAssociation === "string" ? n.authorAssociation : null,
           createdAt: at(n.createdAt),
           submittedAt: typeof n.submittedAt === "string" ? n.submittedAt : null,
           state: String(n.state),
           body: typeof n.body === "string" && n.body ? n.body : null,
+          reactions: reactionsOf(n.reactionGroups),
+          comments: reviewCommentsRaw.map(commentOf),
         });
       } else if (t === "PullRequestReviewThread") {
         const commentsRaw = (n.comments as { nodes?: unknown[] } | null)?.nodes ?? [];
@@ -872,15 +1088,7 @@ export async function fetchPullTimelineSmart(
           line: typeof n.line === "number" ? n.line : null,
           originalLine: typeof n.originalLine === "number" ? n.originalLine : null,
           startLine: typeof n.startLine === "number" ? n.startLine : null,
-          comments: commentsRaw.map((c) => {
-            const cc = c as Record<string, unknown> & { author?: unknown };
-            return {
-              id: String(cc.id),
-              author: actor(cc.author),
-              createdAt: typeof cc.createdAt === "string" ? cc.createdAt : "",
-              body: typeof cc.body === "string" ? cc.body : "",
-            };
-          }),
+          comments: commentsRaw.map(commentOf),
         });
       } else if (t === "PullRequestCommit") {
         const commit = n.commit as {
@@ -904,12 +1112,20 @@ export async function fetchPullTimelineSmart(
             : { login: null, avatarUrl: null, name: ca?.name ?? null },
         });
       } else if (t === "MergedEvent") {
+        const mc = n.commit as { oid?: unknown; abbreviatedOid?: unknown; url?: unknown } | null;
         events.push({
           kind: "merged",
           id: String(n.id),
           actor: actor(n.actor),
           createdAt: at(n.createdAt),
           mergeRefName: typeof n.mergeRefName === "string" ? n.mergeRefName : null,
+          commit: mc
+            ? {
+                oid: typeof mc.oid === "string" ? mc.oid : "",
+                abbreviatedOid: typeof mc.abbreviatedOid === "string" ? mc.abbreviatedOid : "",
+                url: typeof mc.url === "string" ? mc.url : null,
+              }
+            : null,
         });
       } else if (t === "ClosedEvent") {
         events.push({
@@ -998,11 +1214,15 @@ export async function fetchPullTimelineSmart(
           currentTitle: String(n.currentTitle ?? ""),
         });
       } else if (t === "HeadRefForcePushedEvent") {
+        const before = (n.beforeCommit as { oid?: unknown } | null)?.oid;
+        const after = (n.afterCommit as { oid?: unknown } | null)?.oid;
         events.push({
           kind: "force-pushed",
           id: String(n.id),
           actor: actor(n.actor),
           createdAt: at(n.createdAt),
+          beforeCommit: typeof before === "string" ? before : null,
+          afterCommit: typeof after === "string" ? after : null,
         });
       } else if (t === "ReadyForReviewEvent") {
         events.push({
@@ -1011,9 +1231,64 @@ export async function fetchPullTimelineSmart(
           actor: actor(n.actor),
           createdAt: at(n.createdAt),
         });
+      } else if (t === "HeadRefDeletedEvent") {
+        events.push({
+          kind: "head-ref-deleted",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+          headRefName: typeof n.headRefName === "string" ? n.headRefName : "",
+        });
+      } else if (t === "MentionedEvent") {
+        events.push({
+          kind: "mentioned",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+        });
+      } else if (t === "DeployedEvent") {
+        const dep = n.deployment as {
+          environment?: unknown;
+          latestStatus?: { environmentUrl?: unknown } | null;
+        } | null;
+        events.push({
+          kind: "deployed",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+          environment: typeof dep?.environment === "string" ? dep.environment : null,
+          environmentUrl:
+            typeof dep?.latestStatus?.environmentUrl === "string"
+              ? dep.latestStatus.environmentUrl
+              : null,
+        });
+      } else if (t === "CrossReferencedEvent") {
+        const src = n.source as {
+          number?: unknown;
+          title?: unknown;
+          url?: unknown;
+        } | null;
+        events.push({
+          kind: "cross-referenced",
+          id: String(n.id),
+          actor: actor(n.actor),
+          createdAt: at(n.createdAt),
+          isCrossRepository: Boolean(n.isCrossRepository),
+          source: src
+            ? {
+                number: typeof src.number === "number" ? src.number : 0,
+                title: typeof src.title === "string" ? src.title : "",
+                url: typeof src.url === "string" ? src.url : null,
+              }
+            : null,
+        });
       }
     }
-    return events;
+    return {
+      events,
+      endCursor: pageInfo?.endCursor ?? null,
+      hasNextPage: pageInfo?.hasNextPage ?? false,
+    };
   } catch (e) {
     // 时间线 GraphQL-only，失败降级 null → 页面回退评论拼接；补 [Warn] 保留诊断
     logWarn("fetchPullTimelineSmart", `PR 时间线查询失败（降级 null）: ${String(e)}`);
@@ -1131,6 +1406,72 @@ export async function fetchPullCheckRunsSmart(
     }
   }
   return fetchPullCheckRuns(owner, repo, sha, token);
+}
+
+/** 智能获取 PR head commit 的 check-run 列表（Checks tab 逐条列出；GraphQL 首选，失败降级 REST）。 */
+export async function fetchPullCheckRunListSmart(
+  owner: string,
+  repo: string,
+  sha: string,
+  token?: string | null,
+): Promise<CheckRunItem[] | null> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          object: {
+            statusCheckRollup: {
+              contexts: {
+                nodes: Array<
+                  | {
+                      __typename?: string;
+                      name?: unknown;
+                      status?: unknown;
+                      conclusion?: unknown;
+                      detailsUrl?: unknown;
+                      checkSuite?: {
+                        workflowRun?: { workflow?: { name?: unknown } | null } | null;
+                      } | null;
+                    }
+                  | {
+                      __typename?: string;
+                      context?: unknown;
+                      state?: unknown;
+                      description?: unknown;
+                      targetUrl?: unknown;
+                    }
+                >;
+              };
+            };
+          } | null;
+        } | null;
+      }> = await graphqlRequest(
+        PR_CHECK_RUN_LIST_QUERY,
+        { owner, name: repo, expression: sha },
+        token,
+      );
+      if (!hasGraphQLErrors(resp) && resp.data?.repository?.object) {
+        const nodes = resp.data.repository.object.statusCheckRollup?.contexts?.nodes ?? [];
+        return nodes.map((n) =>
+          n.__typename === "CheckRun"
+            ? toCheckRunItem(n as Parameters<typeof toCheckRunItem>[0])
+            : toStatusContextItem(n as Parameters<typeof toStatusContextItem>[0]),
+        );
+      }
+      return withRestFallback(
+        () => fetchPullCheckRunList(owner, repo, sha, token),
+        "fetchPullCheckRunListSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchPullCheckRunList(owner, repo, sha, token),
+        "fetchPullCheckRunListSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchPullCheckRunList(owner, repo, sha, token);
 }
 
 /**

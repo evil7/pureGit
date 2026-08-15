@@ -12,29 +12,24 @@
  *   - 底部操作组（用户指定）：分割线 + 无框按钮「取消订阅 / 锁定会话」（不单独设通知/锁定板块）
  * 数据源 smart 双通道。
  */
-import { useEffect, useState } from "react";
-import { GitPullRequest, Lock, LockOpen } from "lucide-react";
+import { useState } from "react";
+import { Lock, LockOpen } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/hooks/useAuth";
 import { useRepoPermission } from "@/hooks/useRepoPermission";
 import { useI18n } from "@/i18n";
 import { apiErrorMessage, type GitHubUser } from "@/lib/restapi";
-import {
-  setPullLockedSmart,
-  fetchPullProjectsSmart,
-  fetchPullDevelopmentSmart,
-  type PullProjectItem,
-  type PullDevelopment,
-  type PullReviewSummary,
-} from "@/lib/api";
+import { setPullLockedSmart, type PullReviewSummary } from "@/lib/api";
 import { toastSuccess, toastError } from "@/lib/ui/toast";
-import { SidebarSection, SubscribeButton } from "@/components/SidebarSection";
+import { SubscribeButton } from "@/components/SidebarSection";
 import { ParticipantsSection } from "@/components/ParticipantsSection";
 import { ReviewersSidebar } from "@/components/PullReviewPanel";
 import {
   AssigneesEditor,
   LabelsEditor,
   MilestoneEditor,
+  ProjectsEditor,
+  DevelopmentSection,
   type SidebarLabel,
   type SidebarAssignee,
   type SidebarMilestone,
@@ -55,6 +50,7 @@ export function PullMetadataSidebar({
   milestone,
   locked,
   pullRequestId,
+  prBody,
   participants,
   subscribed,
   subscribing,
@@ -63,6 +59,7 @@ export function PullMetadataSidebar({
   onLabelsChange,
   onMilestoneChange,
   onLockedChange,
+  onPrBodyChange,
 }: {
   owner: string;
   repo: string;
@@ -78,6 +75,8 @@ export function PullMetadataSidebar({
   milestone: SidebarMilestone | null;
   locked: boolean;
   pullRequestId?: string;
+  /** PR 描述（Development 手动关联 issue 时追加 closing keywords 用） */
+  prBody?: string;
   participants: GitHubUser[];
   /** 订阅状态与切换（底部「取消订阅/订阅」无框按钮） */
   subscribed: boolean;
@@ -87,28 +86,12 @@ export function PullMetadataSidebar({
   onLabelsChange: (labels: SidebarLabel[]) => void;
   onMilestoneChange: (m: SidebarMilestone | null) => void;
   onLockedChange: (locked: boolean) => void;
+  onPrBodyChange?: (body: string) => void;
 }) {
   const { token, user, canWrite } = useAuth();
   const { canCollaborate } = useRepoPermission();
   const { t } = useI18n();
-  // Projects / Development（GraphQL-only 只读，登录加载；失败静默空）
-  const [projects, setProjects] = useState<PullProjectItem[] | null>(null);
-  const [development, setDevelopment] = useState<PullDevelopment | null>(null);
   const [lockBusy, setLockBusy] = useState(false);
-
-  useEffect(() => {
-    if (!token) return;
-    let cancelled = false;
-    fetchPullProjectsSmart(owner, repo, number, token).then((ps) => {
-      if (!cancelled) setProjects(ps);
-    });
-    fetchPullDevelopmentSmart(owner, repo, number, token).then((d) => {
-      if (!cancelled) setDevelopment(d);
-    });
-    return () => {
-      cancelled = true;
-    };
-  }, [owner, repo, number, token]);
 
   // 锁定/解锁（smart 双通道；底部无框按钮触发）
   const toggleLock = async () => {
@@ -159,32 +142,15 @@ export function PullMetadataSidebar({
         emptyText={t("issueDetail.noLabels")}
       />
 
-      {/* Projects（GraphQL-only 只读） */}
-      <SidebarSection title={t("pullDetail.projects")}>
-        {projects === null ? (
-          <p className="text-muted-foreground">—</p>
-        ) : projects.length === 0 ? (
-          <p className="text-muted-foreground">{t("pullDetail.noProjects")}</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {projects.map((p) => (
-              <li key={p.id} className="text-sm">
-                <a
-                  href={p.project.url}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-foreground hover:underline"
-                >
-                  {p.project.title}
-                </a>
-                {p.status && (
-                  <span className="ml-1.5 text-xs text-muted-foreground">· {p.status}</span>
-                )}
-              </li>
-            ))}
-          </ul>
-        )}
-      </SidebarSection>
+      {/* Projects（GraphQL-only；齿轮添加/移除） */}
+      <ProjectsEditor
+        owner={owner}
+        repo={repo}
+        number={number}
+        kind="pr"
+        title={t("pullDetail.projects")}
+        emptyText={t("pullDetail.noProjects")}
+      />
 
       {/* Milestone */}
       <MilestoneEditor
@@ -197,30 +163,18 @@ export function PullMetadataSidebar({
         emptyText={t("issueDetail.noMilestone")}
       />
 
-      {/* Development（GraphQL-only 只读） */}
-      <SidebarSection title={t("pullDetail.development")}>
-        {development === null ? (
-          <p className="text-muted-foreground">—</p>
-        ) : development.issues.length === 0 && development.branches.length === 0 ? (
-          <p className="text-muted-foreground">{t("pullDetail.noDevelopment")}</p>
-        ) : (
-          <ul className="space-y-1.5">
-            {development.issues.map((i) => (
-              <li key={i.number} className="text-sm">
-                <a href={i.url} target="_blank" rel="noreferrer" className="hover:underline">
-                  #{i.number} {i.title}
-                </a>
-              </li>
-            ))}
-            {development.branches.map((b) => (
-              <li key={b} className="flex items-center gap-1.5 text-sm">
-                <GitPullRequest className="size-3.5 text-muted-foreground" />
-                <code className="font-mono text-xs">{b}</code>
-              </li>
-            ))}
-          </ul>
-        )}
-      </SidebarSection>
+      {/* Development（GraphQL-only；PR 侧栏可手动关联 issue） */}
+      <DevelopmentSection
+        owner={owner}
+        repo={repo}
+        number={number}
+        kind="pr"
+        title={t("pullDetail.development")}
+        emptyText={t("pullDetail.noDevelopment")}
+        prBody={prBody}
+        pullRequestId={pullRequestId}
+        onPrBodyChange={onPrBodyChange}
+      />
 
       {/* Participants：官方「{n} participants」计数 + 重叠头像栈（超出 +n） */}
       <ParticipantsSection

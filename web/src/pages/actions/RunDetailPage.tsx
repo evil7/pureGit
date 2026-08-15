@@ -6,7 +6,16 @@
  */
 import { useEffect, useMemo, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import { Download, FileText, GitBranch, Package, RotateCcw, Trash2, XCircle } from "lucide-react";
+import {
+  Download,
+  FileText,
+  GitBranch,
+  GitPullRequest,
+  Package,
+  RotateCcw,
+  Trash2,
+  XCircle,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Skeleton } from "@/components/ui/skeleton";
@@ -38,7 +47,7 @@ import {
 } from "@/lib/api";
 import type { WorkflowRun, WorkflowJob, RunArtifact } from "@/lib/restapi";
 import PageLayout from "@/components/PageLayout";
-import { fmtDuration, runBadge, runStatusIcon, stepIcon } from "./shared";
+import { fmtDuration, runBadge, runStatusIcon } from "./shared";
 
 export default function RunDetailPage() {
   const { owner = "", repo = "", runId = "" } = useParams();
@@ -208,6 +217,17 @@ export default function RunDetailPage() {
             <span>
               {run.event} · by {run.actor?.login ?? "ghost"}
             </span>
+            {(run.pull_requests ?? []).map((p) => (
+              <span key={p.number} className="flex items-center gap-0.5">
+                <GitPullRequest className="size-3" />
+                <Link
+                  to={`/${owner}/${repo}/pull/${p.number}`}
+                  className="font-medium text-primary hover:underline"
+                >
+                  #{p.number}
+                </Link>
+              </span>
+            ))}
             {run.head_branch && (
               <span className="flex items-center gap-0.5">
                 <GitBranch className="size-3" />
@@ -358,7 +378,7 @@ export default function RunDetailPage() {
           )}
         </div>
 
-        {/* Jobs（官方 job 卡：step 耗时 + 链接到 job 页） */}
+        {/* Jobs（官方 job 列表：状态图标 + 名称 + 耗时，点击进 job 详情页） */}
         <div className="space-y-3">
           <h2 className="text-sm font-semibold">{t("actions.jobs")}</h2>
           {jobs.length === 0 ? (
@@ -366,44 +386,31 @@ export default function RunDetailPage() {
               {t("actions.noJobs")}
             </p>
           ) : (
-            jobs.map((j) => (
-              <div key={j.id} className="overflow-hidden rounded-lg border bg-card">
-                <div className="flex items-center gap-2 border-b bg-muted/50 px-4 py-2 text-sm">
-                  {runBadge(j.status, j.conclusion)}
+            <ul className="divide-y overflow-hidden rounded-lg border bg-card">
+              {jobs.map((j) => (
+                <li key={j.id}>
                   <Link
                     to={`/${owner}/${repo}/actions/runs/${run.id}/job/${j.id}`}
-                    className="font-medium hover:text-primary hover:underline"
+                    className="flex items-center gap-3 px-4 py-3 text-sm hover:bg-accent/50"
                   >
-                    {j.name}
+                    <span className="shrink-0">{runStatusIcon(j.status, j.conclusion)}</span>
+                    <span className="min-w-0 flex-1 truncate font-medium hover:text-primary">
+                      {j.name}
+                    </span>
+                    <span className="shrink-0 text-xs text-muted-foreground">
+                      {j.started_at && j.completed_at
+                        ? t("actions.succeededIn").replace(
+                            "{duration}",
+                            fmtDuration(
+                              new Date(j.completed_at).getTime() - new Date(j.started_at).getTime(),
+                            ),
+                          )
+                        : j.status}
+                    </span>
                   </Link>
-                  <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                    {j.started_at && j.completed_at
-                      ? t("actions.succeededIn").replace(
-                          "{duration}",
-                          fmtDuration(
-                            new Date(j.completed_at).getTime() - new Date(j.started_at).getTime(),
-                          ),
-                        )
-                      : j.status}
-                  </span>
-                </div>
-                <ul className="divide-y">
-                  {j.steps.map((s) => (
-                    <li key={s.number} className="flex items-center gap-2 px-4 py-2 text-sm">
-                      {stepIcon(s.status, s.conclusion, "size-3.5")}
-                      <span className="truncate">{s.name}</span>
-                      <span className="ml-auto shrink-0 text-xs text-muted-foreground">
-                        {s.started_at && s.completed_at
-                          ? fmtDuration(
-                              new Date(s.completed_at).getTime() - new Date(s.started_at).getTime(),
-                            )
-                          : (s.conclusion ?? s.status)}
-                      </span>
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            ))
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </div>

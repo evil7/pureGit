@@ -43,7 +43,13 @@ import { MarkdownView } from "@/components/MarkdownView";
 import { repoRawBase } from "@/lib/repo/repo-raw";
 import { STATE_BADGE_SOLID } from "@/lib/ui/state-colors";
 import { UserAvatar } from "@/components/UserAvatar";
-import { AssigneesEditor, LabelsEditor, MilestoneEditor } from "@/components/MetadataEditors";
+import {
+  AssigneesEditor,
+  LabelsEditor,
+  MilestoneEditor,
+  ProjectsEditor,
+  DevelopmentSection,
+} from "@/components/MetadataEditors";
 import { ParticipantsSection } from "@/components/ParticipantsSection";
 import { SubscribeButton } from "@/components/SidebarSection";
 import { cn } from "@/lib/utils";
@@ -226,6 +232,16 @@ export function IssueDetailPage() {
               emptyText={t("issueDetail.noLabels")}
             />
 
+            {/* Projects（GraphQL-only；齿轮添加/移除） */}
+            <ProjectsEditor
+              owner={owner!}
+              repo={repo!}
+              number={Number(number)}
+              kind="issue"
+              title={t("issueDetail.projects")}
+              emptyText={t("issueDetail.noProjects")}
+            />
+
             {/* Milestone */}
             <MilestoneEditor
               owner={owner!}
@@ -237,13 +253,23 @@ export function IssueDetailPage() {
               emptyText={t("issueDetail.noMilestone")}
             />
 
+            {/* Development（GraphQL-only 只读：关联 PR + linked branches） */}
+            <DevelopmentSection
+              owner={owner!}
+              repo={repo!}
+              number={Number(number)}
+              kind="issue"
+              title={t("issueDetail.development")}
+              emptyText={t("issueDetail.noDevelopment")}
+            />
+
             {/* Participants */}
             <ParticipantsSection
               title={t("issueDetail.participants")}
               participants={participants}
             />
 
-            {/* 底部操作组：订阅（ghost 无框弱强调；不单独设通知板块） */}
+            {/* 底部操作组：订阅 + 关闭/重新打开（ghost 无框弱强调；不单独设通知板块） */}
             {token && (
               <div className="space-y-1 border-t pt-3">
                 <SubscribeButton
@@ -253,6 +279,50 @@ export function IssueDetailPage() {
                   subscribeLabel={t("issueDetail.subscribe")}
                   unsubscribeLabel={t("issueDetail.unsubscribe")}
                 />
+                {/* 关闭 / 重新打开（需仓库协作权限 TRIAGE+ 或 issue 作者本人） */}
+                {canWrite &&
+                  (canCollaborate || user?.login === issue.user.login) &&
+                  (issue.state === "open" ? (
+                    <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
+                      <AlertDialogTrigger asChild>
+                        <Button
+                          variant="ghost"
+                          className="w-full justify-start px-2 text-muted-foreground"
+                          disabled={closing}
+                        >
+                          <XCircle className="size-3.5" />
+                          {t("issueDetail.close")}
+                        </Button>
+                      </AlertDialogTrigger>
+                      <AlertDialogContent>
+                        <AlertDialogHeader>
+                          <AlertDialogTitle>{t("issueDetail.closeConfirmTitle")}</AlertDialogTitle>
+                          <AlertDialogDescription>
+                            {t("issueDetail.closeConfirmDesc")}
+                          </AlertDialogDescription>
+                        </AlertDialogHeader>
+                        <AlertDialogFooter>
+                          <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
+                          <AlertDialogAction
+                            onClick={() => updateState("closed")}
+                            disabled={closing}
+                          >
+                            {t("issueDetail.close")}
+                          </AlertDialogAction>
+                        </AlertDialogFooter>
+                      </AlertDialogContent>
+                    </AlertDialog>
+                  ) : (
+                    <Button
+                      variant="ghost"
+                      className="w-full justify-start px-2 text-muted-foreground"
+                      disabled={closing}
+                      onClick={() => updateState("open")}
+                    >
+                      <CheckCircle2 className="size-3.5" />
+                      {t("issueDetail.reopen")}
+                    </Button>
+                  ))}
               </div>
             )}
           </aside>
@@ -353,41 +423,6 @@ export function IssueDetailPage() {
             )}
           </CardContent>
         </Card>
-
-        {/* 关闭 / 重新打开（需仓库协作权限 TRIAGE+ 或 issue 作者本人） */}
-        {canWrite && (canCollaborate || user?.login === issue.user.login) && (
-          <div className="mt-4 flex justify-end">
-            {issue.state === "open" ? (
-              <AlertDialog open={confirmClose} onOpenChange={setConfirmClose}>
-                <AlertDialogTrigger asChild>
-                  <Button variant="outline" disabled={closing}>
-                    <XCircle className="size-3.5" />
-                    {t("issueDetail.close")}
-                  </Button>
-                </AlertDialogTrigger>
-                <AlertDialogContent>
-                  <AlertDialogHeader>
-                    <AlertDialogTitle>{t("issueDetail.closeConfirmTitle")}</AlertDialogTitle>
-                    <AlertDialogDescription>
-                      {t("issueDetail.closeConfirmDesc")}
-                    </AlertDialogDescription>
-                  </AlertDialogHeader>
-                  <AlertDialogFooter>
-                    <AlertDialogCancel>{t("common.cancel")}</AlertDialogCancel>
-                    <AlertDialogAction onClick={() => updateState("closed")} disabled={closing}>
-                      {t("issueDetail.close")}
-                    </AlertDialogAction>
-                  </AlertDialogFooter>
-                </AlertDialogContent>
-              </AlertDialog>
-            ) : (
-              <Button variant="outline" disabled={closing} onClick={() => updateState("open")}>
-                <CheckCircle2 className="size-3.5" />
-                {t("issueDetail.reopen")}
-              </Button>
-            )}
-          </div>
-        )}
 
         {/* 评论区（官方风格：编号 + hover 操作 + 发表） */}
         {comments && (

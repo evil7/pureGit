@@ -109,6 +109,37 @@ export const ISSUE_DETAIL_QUERY = /* GraphQL */ `
   }
 `;
 
+/** Issue 开发关联（issue 侧栏 Development 只读展示：linked branches + 关联 PR；GraphQL-only） */
+export const ISSUE_DEVELOPMENT_QUERY = /* GraphQL */ `
+  query IssueDevelopment($owner: String!, $name: String!, $number: Int!) {
+    repository(owner: $owner, name: $name) {
+      issue(number: $number) {
+        id
+        linkedBranches(first: 10) {
+          nodes {
+            ref {
+              name
+            }
+          }
+        }
+        timelineItems(first: 50, itemTypes: [CROSS_REFERENCED_EVENT]) {
+          nodes {
+            ... on CrossReferencedEvent {
+              source {
+                ... on PullRequest {
+                  number
+                  title
+                  url
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+`;
+
 /** PR 计数（列表分页用）：语义与 PULLS_QUERY 的 openCount/closedCount 完全一致（CLOSED+MERGED 合计） */
 export const PULL_COUNTS_QUERY = /* GraphQL */ `
   query RepoPullCounts($owner: String!, $name: String!) {

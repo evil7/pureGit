@@ -60,6 +60,7 @@ export function hasGraphQLErrors<T>(resp: GraphQLResponse<T>): boolean {
 
 // ===== 模板 barrel（按业务域拆分） =====
 export * from "./queries-common";
+export * from "./project";
 export * from "./issue-pr";
 export * from "./discussions";
 export * from "./search";
