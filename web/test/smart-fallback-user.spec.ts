@@ -1,0 +1,396 @@
+/**
+ * ============================================================================
+ * api-user smart 降级决策 单元测试 —— viewer/组织/仓库/SSH/资料 通路质量门
+ * ============================================================================
+ *
+ * 【本文件针对的验收基线（第一性原理，勿降断言）】
+ * api-user 是当前用户（viewer）相关 smart 层，统一「GraphQL 首选 + REST 降级」：
+ * - fetchViewerSmart：GraphQL viewer 首选 → ViewerProfile 映射（email ?? null）；降级 REST /user →
+ *   映射（blog → websiteUrl、plan?.name ?? null、pronouns ?? null）
+ * - fetchUserOrgsSmart：GraphQL viewer.organizations 首选；降级 REST → 映射（description 固定 null）
+ * - fetchMyReposSmart：GraphQL viewer.repositories 首选 → toRepository 转换；降级 REST
+ * - fetchSshKeysSmart：REST 唯一通道（GraphQL key 类型无 databaseId，删除需 REST 数字 id）
+ * - fetchUserEmailsSmart：**无 GraphQL 通道**（GitHub GraphQL 无 User.emails 字段，实测 400）
+ *   → 仅 REST /user/emails（纯透传 + 字段裁剪，不经 graphqlRequest）
+ *
+ * 【测试方式与风控红线】全部 mock（graphqlRequest / rest 层），api-repo.toRepository
+ * 为纯函数真实执行（无网络）。**零真实网络请求**——无风控风险。
+ */
+import { describe, it, expect, beforeEach, vi } from "vitest";
+
+vi.mock("@/lib/api/api-core", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/api/api-core")>();
+  return {
+    ...actual,
+    graphqlRequest: vi.fn(),
+    hasGraphQLErrors: (resp: { errors?: unknown[] } | undefined) => Boolean(resp?.errors?.length),
+  };
+});
+
+vi.mock("@/lib/repo/raw-proxy", () => ({
+  fetchRawContentSmart: vi.fn(),
+}));
+
+vi.mock("@/lib/restapi", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("@/lib/restapi")>();
+  return {
+    ...actual,
+    fetchCurrentUser: vi.fn(),
+    fetchUserEmails: vi.fn(),
+    fetchUserOrgs: vi.fn(),
+    fetchMyRepos: vi.fn(),
+    updateUserProfile: vi.fn(),
+    fetchSSHKeys: vi.fn(),
+    isFollowing: vi.fn(),
+    setFollowing: vi.fn(),
+    addSSHKey: vi.fn(),
+    deleteSSHKey: vi.fn(),
+    fetchMyGists: vi.fn(),
+  };
+});
+
+import {
+  fetchViewerSmart,
+  fetchUserEmailsSmart,
+  fetchUserOrgsSmart,
+  fetchMyReposSmart,
+  fetchSshKeysSmart,
+  fetchMyGistsSmart,
+} from "@/lib/api/api-user";
+import { graphqlRequest } from "@/lib/api/api-core";
+import {
+  fetchCurrentUser,
+  fetchUserEmails,
+  fetchUserOrgs,
+  fetchMyRepos,
+  fetchSSHKeys,
+  fetchMyGists,
+  type GitHubUser,
+  type Repository,
+} from "@/lib/restapi";
+
+const mockGraphql = vi.mocked(graphqlRequest);
+const mockFetchCurrentUser = vi.mocked(fetchCurrentUser);
+const mockFetchUserEmails = vi.mocked(fetchUserEmails);
+const mockFetchUserOrgs = vi.mocked(fetchUserOrgs);
+const mockFetchMyRepos = vi.mocked(fetchMyRepos);
+const mockFetchSSHKeys = vi.mocked(fetchSSHKeys);
+const mockFetchMyGists = vi.mocked(fetchMyGists);
+
+/** GraphQL viewer 节点夹具（ViewerProfile 映射源） */
+const gqlViewer = {
+  login: "alice",
+  name: "Alice",
+  avatarUrl: "https://avatars/a.png",
+  bio: "hello",
+  company: "ACME",
+  location: "SH",
+  websiteUrl: "https://alice.dev",
+  email: "a@x.com",
+  pronouns: "she/her",
+};
+
+/** REST /user 响应夹具（降级映射源） */
+const restUser: GitHubUser = {
+  login: "alice",
+  name: "Alice",
+  avatar_url: "https://avatars/a.png",
+  bio: "hello",
+  company: "ACME",
+  location: "SH",
+  blog: "https://alice.dev",
+  email: "a@x.com",
+  plan: { name: "free" },
+  pronouns: "she/her",
+};
+
+/** GraphQL 仓库节点夹具（toRepository 映射源，最小字段） */
+const gqlRepo = {
+  databaseId: 99,
+  name: "puregit",
+  nameWithOwner: "alice/puregit",
+  description: null,
+  homepageUrl: null,
+  url: "https://github.com/alice/puregit",
+  owner: { login: "alice", avatarUrl: null },
+  stargazerCount: 0,
+  forkCount: 0,
+  watchers: undefined,
+  viewerSubscription: null,
+  viewerHasStarred: false,
+  primaryLanguage: { name: "TypeScript" },
+  languages: undefined,
+  repositoryTopics: undefined,
+  licenseInfo: null,
+  updatedAt: "2026-07-01T00:00:00Z",
+  defaultBranchRef: { name: "main" },
+  isPrivate: false,
+  isArchived: false,
+  isFork: false,
+  parent: null,
+  diskUsage: null,
+};
+
+const restRepo: Repository = {
+  id: 1,
+  name: "puregit",
+  full_name: "alice/puregit",
+  owner: { login: "alice" },
+  description: null,
+  homepage: null,
+  private: false,
+  html_url: "https://github.com/alice/puregit",
+  default_branch: "main",
+  fork: false,
+  updated_at: "2026-07-01T00:00:00Z",
+  pushed_at: "2026-07-01T00:00:00Z",
+  stargazers_count: 0,
+  forks_count: 0,
+  language: null,
+};
+
+beforeEach(() => {
+  vi.clearAllMocks();
+  mockGraphql.mockResolvedValue({ data: {} } as never);
+  mockFetchCurrentUser.mockResolvedValue(restUser);
+  mockFetchUserEmails.mockResolvedValue([
+    { email: "a@x.com", primary: true, verified: true, visibility: "private" },
+  ]);
+  mockFetchUserOrgs.mockResolvedValue([{ login: "acme", name: "ACME", avatar_url: undefined }]);
+  mockFetchMyRepos.mockResolvedValue([restRepo]);
+  mockFetchSSHKeys.mockResolvedValue([
+    {
+      id: 1,
+      key: "ssh-rsa AAA",
+      url: "",
+      title: "laptop",
+      created_at: "2026-01-01",
+      verified: true,
+      read_only: false,
+      last_used: null,
+    },
+  ]);
+  mockFetchMyGists.mockResolvedValue([
+    {
+      id: "abc123",
+      description: "a gist",
+      html_url: "https://gist.github.com/alice/abc123",
+      public: false,
+      created_at: "2026-01-01",
+      updated_at: "2026-01-02",
+      files: {
+        "a.ts": {
+          filename: "a.ts",
+          type: "text/plain",
+          language: "TypeScript",
+          size: 10,
+          raw_url: "",
+        },
+      },
+      owner: { login: "alice", avatar_url: "https://avatars/a.png" },
+    },
+  ]);
+});
+
+describe("fetchViewerSmart（GraphQL 首选 + REST 降级）", () => {
+  it("GraphQL 成功 → ViewerProfile 全字段映射（email ?? null）", async () => {
+    mockGraphql.mockResolvedValue({ data: { viewer: gqlViewer } } as never);
+    const v = await fetchViewerSmart("gho_x");
+    expect(mockFetchCurrentUser).not.toHaveBeenCalled();
+    expect(v).toEqual({
+      login: "alice",
+      name: "Alice",
+      avatarUrl: "https://avatars/a.png",
+      bio: "hello",
+      company: "ACME",
+      location: "SH",
+      websiteUrl: "https://alice.dev",
+      email: "a@x.com",
+      pronouns: "she/her",
+    });
+    expect(v.plan).toBeUndefined(); // GraphQL 路径无 plan 字段
+  });
+
+  it("GraphQL viewer 缺 email → email 兜底 null", async () => {
+    mockGraphql.mockResolvedValue({
+      data: { viewer: { ...gqlViewer, email: undefined } },
+    } as never);
+    const v = await fetchViewerSmart("gho_x");
+    expect(v.email).toBeNull();
+  });
+
+  it("GraphQL errors → 降级 REST /user 映射（blog→websiteUrl、plan?.name ?? null）", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
+    const v = await fetchViewerSmart("gho_x");
+    expect(mockFetchCurrentUser).toHaveBeenCalled();
+    expect(v).toEqual({
+      login: "alice",
+      name: "Alice",
+      avatarUrl: "https://avatars/a.png",
+      bio: "hello",
+      company: "ACME",
+      location: "SH",
+      websiteUrl: "https://alice.dev",
+      email: "a@x.com",
+      plan: "free",
+      pronouns: "she/her",
+    });
+  });
+
+  it("GraphQL 抛异常 → 降级 REST", async () => {
+    mockGraphql.mockRejectedValue(new TypeError("net"));
+    const v = await fetchViewerSmart("gho_x");
+    expect(mockFetchCurrentUser).toHaveBeenCalled();
+    expect(v.login).toBe("alice");
+  });
+});
+
+describe("fetchUserEmailsSmart（仅 REST：GraphQL 无 User.emails 字段，实测 400）", () => {
+  it("不经 graphqlRequest，直接 REST /user/emails 并裁剪字段", async () => {
+    const emails = await fetchUserEmailsSmart("gho_x");
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchUserEmails).toHaveBeenCalledWith("gho_x");
+    expect(emails).toEqual([
+      { email: "a@x.com", primary: true, verified: true, visibility: "private" },
+    ]);
+  });
+});
+
+describe("fetchUserOrgsSmart（GraphQL 首选 + REST 降级）", () => {
+  it("GraphQL 成功 → 原样返回组织节点", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        viewer: {
+          organizations: {
+            nodes: [{ login: "acme", name: "ACME", avatarUrl: null, description: null }],
+          },
+        },
+      },
+    } as never);
+    const orgs = await fetchUserOrgsSmart("gho_x");
+    expect(mockFetchUserOrgs).not.toHaveBeenCalled();
+    expect(orgs).toEqual([{ login: "acme", name: "ACME", avatarUrl: null, description: null }]);
+  });
+
+  it("GraphQL errors → 降级 REST 映射（description 固定 null）", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
+    const orgs = await fetchUserOrgsSmart("gho_x");
+    expect(mockFetchUserOrgs).toHaveBeenCalled();
+    expect(orgs).toEqual([{ login: "acme", name: "ACME", avatarUrl: null, description: null }]);
+  });
+});
+
+describe("fetchMyReposSmart（GraphQL 首选游标分页 + REST 降级）", () => {
+  it("GraphQL 成功 → toRepository 转换 + pageInfo 游标（full_name / language）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        viewer: {
+          repositories: {
+            nodes: [gqlRepo],
+            pageInfo: { endCursor: "cur_1", hasNextPage: true },
+          },
+        },
+      },
+    } as never);
+    const { repos, endCursor, hasNextPage } = await fetchMyReposSmart("gho_x");
+    expect(mockFetchMyRepos).not.toHaveBeenCalled();
+    expect(repos[0]).toMatchObject({
+      id: 99,
+      full_name: "alice/puregit",
+      language: "TypeScript",
+      default_branch: "main",
+    });
+    expect(endCursor).toBe("cur_1");
+    expect(hasNextPage).toBe(true);
+  });
+
+  it("GraphQL 成功无 pageInfo → endCursor null / hasNextPage false", async () => {
+    mockGraphql.mockResolvedValue({
+      data: { viewer: { repositories: { nodes: [gqlRepo] } } },
+    } as never);
+    const { repos, endCursor, hasNextPage } = await fetchMyReposSmart("gho_x");
+    expect(repos[0].id).toBe(99);
+    expect(endCursor).toBeNull();
+    expect(hasNextPage).toBe(false);
+  });
+
+  it("GraphQL errors / 异常 → 降级 REST（返回 repos + 无游标）", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
+    expect((await fetchMyReposSmart("gho_x")).repos[0].id).toBe(1);
+    mockGraphql.mockRejectedValue(new Error("net"));
+    expect((await fetchMyReposSmart("gho_x")).repos[0].id).toBe(1);
+    expect(mockFetchMyRepos).toHaveBeenCalledTimes(2);
+  });
+
+  it("游标续接（cursor 传入）→ GraphQL 用 after 变量", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        viewer: {
+          repositories: {
+            nodes: [gqlRepo],
+            pageInfo: { endCursor: "cur_2", hasNextPage: false },
+          },
+        },
+      },
+    } as never);
+    const { endCursor, hasNextPage } = await fetchMyReposSmart("gho_x", "cur_1");
+    expect(mockGraphql).toHaveBeenCalledWith(expect.any(String), { after: "cur_1" }, "gho_x");
+    expect(endCursor).toBe("cur_2");
+    expect(hasNextPage).toBe(false);
+  });
+});
+
+describe("fetchSshKeysSmart（REST 唯一通道：GraphQL 无 databaseId，删除需数字 id）", () => {
+  it("始终走 REST fetchSSHKeys，返回真实数字 id（供 DELETE /user/keys/{id} 删除）", async () => {
+    const keys = await fetchSshKeysSmart("gho_x");
+    expect(mockGraphql).not.toHaveBeenCalled();
+    expect(mockFetchSSHKeys).toHaveBeenCalledWith("gho_x");
+    expect(keys[0].id).toBe(1);
+  });
+});
+
+describe("fetchMyGistsSmart（GraphQL viewer.gists 游标分页首选 + REST 降级）", () => {
+  it("GraphQL 成功 → 映射（resourcePath 提取 REST id / isPublic→public / files 转 Record）", async () => {
+    mockGraphql.mockResolvedValue({
+      data: {
+        viewer: {
+          gists: {
+            nodes: [
+              {
+                resourcePath: "/alice/abc123",
+                description: "a gist",
+                isPublic: false,
+                createdAt: "2026-01-01T00:00:00Z",
+                updatedAt: "2026-01-02T00:00:00Z",
+                owner: { login: "alice", avatarUrl: "https://avatars/a.png" },
+                comments: { totalCount: 3 },
+                files: [{ name: "a.ts", language: { name: "TypeScript" }, size: 10 }],
+              },
+            ],
+            pageInfo: { endCursor: "cur_1", hasNextPage: true },
+          },
+        },
+      },
+    } as never);
+    const { gists, endCursor, hasNextPage } = await fetchMyGistsSmart("gho_x");
+    expect(mockFetchMyGists).not.toHaveBeenCalled();
+    expect(endCursor).toBe("cur_1");
+    expect(hasNextPage).toBe(true);
+    // REST gist id 从 resourcePath 末段提取（详情页 fetchGistDetail 需 REST id）
+    expect(gists[0].id).toBe("abc123");
+    expect(gists[0].public).toBe(false);
+    expect(gists[0].comments).toBe(3);
+    expect(Object.keys(gists[0].files)).toEqual(["a.ts"]);
+    expect(gists[0].files["a.ts"].language).toBe("TypeScript");
+  });
+
+  it("GraphQL errors / 异常 → 降级 REST（page 近似续接）", async () => {
+    mockGraphql.mockResolvedValue({ errors: [{ message: "x" }] } as never);
+    const r1 = await fetchMyGistsSmart("gho_x");
+    expect(r1.gists[0].id).toBe("abc123");
+    expect(r1.hasNextPage).toBe(false);
+    mockGraphql.mockRejectedValue(new Error("net"));
+    await fetchMyGistsSmart("gho_x");
+    expect(mockFetchMyGists).toHaveBeenCalledTimes(2);
+  });
+});

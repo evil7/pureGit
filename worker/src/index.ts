@@ -1,0 +1,218 @@
+/**
+ * PureGit Worker 入口
+ *
+ * 职责（架构红线）：① OAuth2 令牌管理 ② CLI git 镜像代理 ③ Wiki 代理（/$wiki）④ Raw 代理（/$raw）⑤ Release 代理（/$release）+ 健康检查（/$healthz）
+ * 1. OAuth2 令牌管理（/$auth/login、/$auth/callback、/$auth/session、/$auth/logout）
+ * 2. CLI git 镜像端点自动代理（M4 实施，暂未接入）
+ * 3. Wiki 内容代理（/$wiki/...，raw.githubusercontent.com/wiki——无官方 API，
+ *    ADR 扩展；服务端 fetch 解决前端 raw 被墙）
+ * 4. Raw 内容代理（/$raw/...，任意仓库任意 ref 下任意路径；README 图片降级等）
+ * 5. Release 资产代理（/$release/...，release 二进制下载，流式透传不缓存）
+ * 6. 健康检查（/$healthz，通用在线探活）
+ *
+ * ⚠️ API 调试工具（/$debug）已于 改为**纯前端路由**（App.tsx lazy 页），
+ * Worker 不再参与——前端直连 api.github.com（当前会话 token 或匿名），无鉴权需求，
+ * `DEBUG_ROUTE_ENABLE` 环境变量已删除。
+ *
+ * 路由优先级：系统前缀保留段（/$auth、/$wiki、/$raw、/$release、/$healthz、git 端点）> 用户级通配。
+ *   - 系统前缀：/$auth、/$wiki、/$raw、/$release、/$healthz、git 端点（owner/repo.git/...）
+ *   - `$` 符号前缀论证：GitHub 用户名/仓库名规范不含 `$`（仅字母数字+连字符）→ /$auth /$wiki
+ *     /$raw /$release 永不被 /:owner/:repo 用户通配路由占用（系统路由 = 单段符号前缀 + 固定语义；
+ *     /auth 为自定义鉴权系统（非 GitHub 复刻面），统一 /$auth 系统前缀语义）
+ *   - 判断顺序：auth（switch）→ 系统代理（/$wiki、/$raw、/$release 匿名闸）→ git 端点 →
+ *     前端静态资源（SPA fallback）。
+ */
+
+import {
+  handleCallback,
+  handleLogin,
+  handleLogout,
+  handleLogoutAll,
+  handlePatLogin,
+  handlePrefs,
+  handleRevokeApp,
+  handleSession,
+  handleSessionLogout,
+  handleSessionPatch,
+  handleSessionsList,
+  getSessionToken,
+} from "./auth";
+import { corsHeaders } from "./cookies";
+import { handleGitProxy, isGitRequest } from "./git-proxy";
+import { handleWikiProxy, isWikiRequest } from "./wiki-proxy";
+import { handleRawProxy, isRawRequest } from "./raw-proxy";
+import {
+  handleReleaseProxy,
+  isReleaseRequest,
+  handleReleaseUploadProxy,
+  isReleaseUploadRequest,
+} from "./release-proxy";
+
+/**
+ * Proxy 反代开关（RAW_PROXY_ENABLE / RELEASE_PROXY_ENABLE）：
+ * /$wiki、/$raw、/$release 反代防滥用。三段式：
+ *   - off：完全关闭反代（部署方不承担反代流量）→ 403
+ *   - login（默认）：仅登录用户可用（匿名不提供，防刷）→ 匿名 401
+ *   - on：全部放行（兼容旧 PROXY_ALLOW_ANON="true"）
+ * 返回 null = 放行；返回 Response = 拦截（401/403）。
+ * @param enableKey 独立 ENV 名（RAW_PROXY_ENABLE / RELEASE_PROXY_ENABLE），各通道解耦管控。
+ */
+async function requireProxyAuth(
+  request: Request,
+  env: Env,
+  enableKey: "RAW_PROXY_ENABLE" | "RELEASE_PROXY_ENABLE",
+): Promise<Response | null> {
+  // 读模式：运行时实际为 off/login/on 三段式（wrangler 类型生成为默认值字面量，宽化断言）
+  const mode = env[enableKey] as "off" | "login" | "on";
+  if (mode === "off") {
+    return new Response(JSON.stringify({ error: "proxy_disabled" }), {
+      status: 403,
+      headers: {
+        ...corsHeaders(env.FRONTEND_URL),
+        "Content-Type": "application/json",
+      },
+    });
+  }
+  if (mode === "login") {
+    // 登录判定以会话 token 为准（login 字段可能因 OAuth 回调时 /user 网络降级而为空），
+    // 避免「前端有 token、cookie/KV 会话有效，但 login 空」导致代理误判 401。
+    const token = await getSessionToken(request, env);
+    if (token) return null;
+    return new Response(JSON.stringify({ error: "auth_required" }), {
+      status: 401,
+      headers: {
+        ...corsHeaders(env.FRONTEND_URL),
+        "Content-Type": "application/json",
+      },
+    });
+  }
+  // "on"（默认）：全部放行
+  return null;
+}
+
+export default {
+  async fetch(request, env, ctx): Promise<Response> {
+    const url = new URL(request.url);
+
+    // CORS 预检
+    if (request.method === "OPTIONS") {
+      return new Response(null, {
+        status: 204,
+        headers: corsHeaders(env.FRONTEND_URL),
+      });
+    }
+
+    // 健康检查（/$healthz）：无条件轻量响应，不经过任何业务逻辑
+    // （通用在线探活端点：外部监控程序/本机调试均可探活，返回即时 JSON）。
+    // 下发反代能力矩阵（proxies.raw / proxies.release）供前端收敛 $raw/$release 通道。
+    if (url.pathname === "/$healthz") {
+      const rawMode = env.RAW_PROXY_ENABLE;
+      const releaseMode = env.RELEASE_PROXY_ENABLE;
+      return new Response(
+        JSON.stringify({
+          ok: true,
+          service: "puregit-worker",
+          ts: Date.now(),
+          proxies: { raw: rawMode, release: releaseMode },
+        }),
+        {
+          status: 200,
+          headers: { "Content-Type": "application/json; charset=utf-8" },
+        },
+      );
+    }
+
+    switch (url.pathname) {
+      case "/$auth/login":
+        return handleLogin(request, env);
+      case "/$auth/callback":
+        return handleCallback(request, env);
+      case "/$auth/pat":
+        return handlePatLogin(request, env);
+      case "/$auth/session":
+        // GET 恢复会话 / POST 补全用户元数据（前端补齐 login/userId 写回）
+        return request.method === "POST"
+          ? handleSessionPatch(request, env)
+          : handleSession(request, env, ctx);
+      case "/$auth/logout/all":
+        return handleLogoutAll(request, env);
+      case "/$auth/logout":
+        return handleLogout(request, env);
+      case "/$auth/sessions":
+        return handleSessionsList(request, env);
+      case "/$auth/prefs":
+        return handlePrefs(request, env);
+      case "/$auth/revoke":
+        return handleRevokeApp(request, env);
+      default:
+        // POST /$auth/sessions/:id/logout — 本地登出指定设备
+        const sessionLogout = url.pathname.match(/^\/\$auth\/sessions\/([^/]+)\/logout$/);
+        if (sessionLogout && request.method === "POST") {
+          return handleSessionLogout(request, env, decodeURIComponent(sessionLogout[1]));
+        }
+        break;
+    }
+
+    // ── 系统代理前缀（优先于 git/用户级通配）──────
+    // /$raw 统一入口：requireProxyAuth 门控（off=403 / login=匿名 401 / on=全放）。
+    // 后端仅纯透传 raw（带 token），获取内容由前端直发 API（登录带 token / 匿名不带）。
+    if (isWikiRequest(url.pathname)) {
+      const gate = await requireProxyAuth(request, env, "RAW_PROXY_ENABLE");
+      if (gate) return gate;
+      return handleWikiProxy(request, env);
+    }
+    if (isRawRequest(url.pathname)) {
+      const gate = await requireProxyAuth(request, env, "RAW_PROXY_ENABLE");
+      if (gate) return gate;
+      return handleRawProxy(request, env, ctx);
+    }
+    if (isReleaseUploadRequest(url.pathname)) {
+      const gate = await requireProxyAuth(request, env, "RELEASE_PROXY_ENABLE");
+      if (gate) return gate;
+      return handleReleaseUploadProxy(request, env, ctx);
+    }
+    if (isReleaseRequest(url.pathname)) {
+      const gate = await requireProxyAuth(request, env, "RELEASE_PROXY_ENABLE");
+      if (gate) return gate;
+      return handleReleaseProxy(request, env, ctx);
+    }
+
+    // CLI git 镜像端点自动代理（M4）：owner/repo.git/... 请求转发至 GitHub
+    if (isGitRequest(url.pathname)) {
+      return handleGitProxy(request);
+    }
+
+    // 前端静态资源：env.ASSETS 由 wrangler assets 注入（构建产物 dist/client）。
+    // run_worker_first 路由数组已把 /assets/** 留给边缘直服，其余先进本 Worker。
+    // 独立部署（无 ASSETS binding）时兜底返回服务信息。
+    const assets = (env as { ASSETS?: Fetcher }).ASSETS;
+    if (assets) {
+      let asset = await assets.fetch(request);
+      if (asset.status !== 404) return asset;
+      // SPA 回退（智能分发）：非匹配请求统一走内部 404 体系（不自定义静态 404）——
+      // - 无文件扩展名的深层路由（/settings/xxx、/owner/repo）→ 返回 index.html
+      //   交给前端路由；未知前端路径由应用内 NotFoundPage（animejs 粒子 404）呈现
+      // - 带扩展名的路径（如缺失的 /foo.js）→ 仅当浏览器以 Accept: text/html
+      //   导航时回退（前端路由页面）；纯资源请求保持 404（not_found_handling 默认 none）
+      const accept = request.headers.get("Accept") ?? "";
+      const wantsHtml = accept.includes("text/html") || accept.includes("application/xhtml+xml");
+      if (request.method === "GET" && (!url.pathname.match(/\.[a-zA-Z0-9]{1,8}$/) || wantsHtml)) {
+        asset = await assets.fetch(
+          new Request(new URL("/index.html", url), {
+            method: "GET",
+            headers: request.headers,
+          }),
+        );
+        if (asset.status !== 404) return asset;
+      }
+      // 缺失资源：原样返回 ASSETS 的 404 响应
+      return asset;
+    }
+
+    // 无 ASSETS binding（纯 worker 独立部署/调试）：返回服务信息
+    return new Response(JSON.stringify({ ok: true, service: "PureGit-worker" }), {
+      status: 200,
+      headers: { "Content-Type": "application/json" },
+    });
+  },
+} satisfies ExportedHandler<Env>;

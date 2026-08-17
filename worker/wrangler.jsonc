@@ -1,0 +1,98 @@
+/**
+ * For more details on how to configure Wrangler, refer to:
+ * https://developers.cloudflare.com/workers/wrangler/configuration/
+ */
+{
+	"$schema": "node_modules/wrangler/config-schema.json",
+	"name": "puregit",
+	"main": "src/index.ts",
+	"compatibility_date": "2026-08-10",
+	// 仅保留自定义域名 git.deepwn.io 单一入口（关闭 *.workers.dev）：
+	// OAuth 回调只登记自定义域名，workers.dev 入口无法完整登录，双入口易混淆。
+	"workers_dev": false,
+	"observability": {
+		"enabled": true
+	},
+	// 上传 source map（排障辅助）：配合 observability 把生产错误堆栈还原为 TS 源码；
+	// 非必须（不参与运行时，不影响 Worker 体积限制），0.0.x 试错阶段排障价值高，保留。
+	"upload_source_maps": true,
+	/**
+	 * 本地 dev 固定端口 8787：vite.config.ts 的 server.proxy（/$auth、git 端点）写死转发到
+	 * 127.0.0.1:8787。⚠️ wrangler 4.118 检测到 AI agent 环境（AI_AGENT 变量）会把默认端口
+	 * 偏移到 8788（并启用 Local Explorer），不固定端口会导致 proxy 502（2026-08-08 实测）。
+	 */
+	"dev": {
+		"port": 8787
+	},
+	"compatibility_flags": [
+		"nodejs_compat"
+	],
+	/**
+	 * 前端静态资产（S53 修复）：指向 web 构建产物 dist/client。
+	 * 部署前必须先 `pnpm --filter web build`。
+	 *
+	 * run_worker_first 选择性路由（Cloudflare 推荐）：
+	 *   - /assets/**（构建产物）由边缘直接服务，不进 Worker，缓存/性能最优
+	 *   - 其余（/$auth|/$wiki|/$raw|/$healthz、git 端点、SPA 路由）先进 Worker
+	 *     （系统路由判断见 src/index.ts；SPA 深层链接由 Worker 回退 index.html）
+	 *
+	 * not_found_handling 默认 none（不自定义静态 404 模板）：非匹配请求的 404
+	 * 由 Worker 智能分发（见 src/index.ts）——SPA 深层链接回退 index.html →
+	 * 前端 NotFoundPage（animejs 粒子 404）；缺失资源保持纯 404。
+	 */
+	"assets": {
+		"directory": "../web/dist/client",
+		"binding": "ASSETS",
+		"run_worker_first": ["/*", "!/assets/**"]
+	},
+	/**
+	 * OAuth2 与前端配置
+	 * GITHUB_CLIENT_SECRET 不在此配置（敏感），本地用 .dev.vars，生产用 wrangler secret put
+	 */
+	"vars": {
+		"GITHUB_CLIENT_ID": "Ov23ligtlGVmtMZC2Ilc",
+		"GITHUB_OAUTH_CALLBACK": "https://git.deepwn.io/$auth/callback",
+		"SESSION_COOKIE_NAME": "puregit_session",
+		"FRONTEND_URL": "https://git.deepwn.io",
+		/**
+		 * 反代开关（off/login/on）：控制 /$wiki 与 /$raw 反代可用性。
+		 * off = 完全关闭反代（部署方不承担反代流量，任何请求 403）；
+		 * login（默认）= 仅登录用户可用（匿名不提供，防刷，匿名 401）；
+		 * on = 全部放行（兼容旧 PROXY_ALLOW_ANON="true"）。
+		 */
+		"RAW_PROXY_ENABLE": "login",
+		/**
+		 * Release 反代开关（off/login/on）：控制 /$release 反代可用性（独立于 RAW_PROXY_ENABLE）。
+		 * release 二进制 ≤2GiB、匿名刷量风险更高，故与 raw 解耦独立管控。
+		 * 语义同 RAW_PROXY_ENABLE：off 完全关闭 / login（默认）仅登录用户 / on 全部放行。
+		 */
+		"RELEASE_PROXY_ENABLE": "login"
+	},
+	/**
+	 * KV 会话存储
+	 * 生产部署: `pnpm --filter worker kv:create` 创建后填入 id（2026-08-06 已创建）
+	 * 本地开发: wrangler dev 默认使用本地模拟 KV，无需真实 id
+	 *
+	 * ⚠️ 他人部署：下方 id 属于原作者账户，必须替换为你自己的
+	 * （`pnpm --filter worker kv:create` 输出的 id）；完整模板见 wrangler.jsonc.example
+	 */
+	"kv_namespaces": [
+		{
+			"binding": "SESSIONS",
+			"id": "ee0ee6ed88ba4918888fead1fd41df34"
+		}
+	],
+	/**
+	 * 自定义域名（S52/Q03）：git.deepwn.io 作为 Worker 主域。
+	 * 前提：deepwn.io zone 已在同 Cloudflare 账户；custom_domain 会自动创建 DNS 记录与证书。
+	 *
+	 * ⚠️ 他人部署：不使用自定义域名时删除整个 routes 块（默认 *.workers.dev 即可）；
+	 * 使用自定义域名则替换为你自己的域名。
+	 */
+	"routes": [
+		{
+			"pattern": "git.deepwn.io",
+			"custom_domain": true
+		}
+	]
+}

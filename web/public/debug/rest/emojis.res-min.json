@@ -1,0 +1,1 @@
+{"tag":"emojis","paths":{"/emojis":{"get":[{"s":"200","desc":"Response"},{"s":"304","desc":"Not modified"}]}}}

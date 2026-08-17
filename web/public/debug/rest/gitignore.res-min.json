@@ -1,0 +1,1 @@
+{"tag":"gitignore","paths":{"/gitignore/templates":{"get":[{"s":"200","desc":"Response"},{"s":"304","desc":"Not modified"}]},"/gitignore/templates/{name}":{"get":[{"s":"200","desc":"Response"},{"s":"304","desc":"Not modified"}]}}}

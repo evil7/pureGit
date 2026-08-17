@@ -1,0 +1,16 @@
+packages:
+  - web
+  - worker
+# 依赖覆盖（安全修复）：nth-check <2.0.1 存在 ReDoS（GHSA-rp65-9cf3-cjxr），
+# 由 @uiw/react-markdown-preview → rehype-ignore/rehype-rewrite → hast-util-select 引入；
+# 上游未锁安全版本，overrides 强制升至 2.0.1+（补丁级，API 兼容）。
+overrides:
+  nth-check: ^2.0.1
+allowBuilds:
+  esbuild: true
+  sharp: true
+  workerd: true
+minimumReleaseAgeExclude:
+  - '@cloudflare/vite-plugin@1.51.0'
+  - miniflare@5.20260801.0-alpha || 5.20260804.1-alpha
+  - wrangler@4.119.0 || 4.121.0

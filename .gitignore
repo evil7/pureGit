@@ -1,0 +1,40 @@
+# Dependencies
+node_modules/
+.pnp
+.pnp.js
+
+# Build outputs
+dist/
+build/
+*.tsbuildinfo
+
+# Cloudflare
+.wrangler/
+.dev.vars
+
+# Environment
+.env
+.env.*
+!.env.example
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+pnpm-debug.log*
+
+# Editor
+.vscode/*
+!.vscode/extensions.json
+.idea/
+.DS_Store
+
+# Test coverage
+coverage/
+
+# Temp
+tmp/
+*.tmp
+
+# 开发工具 GraphQL 实时 schema 缓存（apiidx gql 子命令生成，含实时 introspection 结果，不提交）
+scripts/data/graphql-live.json

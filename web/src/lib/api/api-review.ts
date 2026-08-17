@@ -1,0 +1,1196 @@
+/**
+ * GitHub API smart layer - PR 评审与详情（自 api-issue.ts 拆出）
+ * fetchPullDetailFullSmart + 评审工作流 / 详情侧栏增强 / Conversation 时间线 / commits / check-runs / 协作者。
+ */
+
+import { graphqlRequest, hasGraphQLErrors, withRestFallback } from "./api-core";
+import type { GraphQLResponse } from "./api-core";
+import { logWarn } from "./api-log";
+import {
+  ISSUE_ID_QUERY,
+  PULL_DETAIL_FULL_QUERY,
+  PULL_REVIEW_SUMMARY_QUERY,
+  ADD_PULL_REQUEST_REVIEW_MUTATION,
+  MERGE_PULL_REQUEST_MUTATION,
+  DISMISS_PULL_REQUEST_REVIEW_MUTATION,
+  UPDATE_PULL_REQUEST_BRANCH_MUTATION,
+  UPDATE_PULL_REQUEST_REVIEW_MUTATION,
+  DELETE_PULL_REQUEST_REVIEW_MUTATION,
+  REQUEST_REVIEWS_MUTATION,
+  RESOLVE_REVIEW_THREAD_MUTATION,
+  UNRESOLVE_REVIEW_THREAD_MUTATION,
+  PR_COMMITS_QUERY,
+  PR_CHECK_RUNS_QUERY,
+  PR_CHECK_RUN_LIST_QUERY,
+  REPO_COLLABORATORS_QUERY,
+  PR_PROJECTS_QUERY,
+  ISSUE_PROJECTS_QUERY,
+  PR_DEVELOPMENT_QUERY,
+  ISSUE_DEVELOPMENT_QUERY,
+  LOCK_PULL_REQUEST_MUTATION,
+  UNLOCK_PULL_REQUEST_MUTATION,
+  CLOSE_PULL_REQUEST_MUTATION,
+  REOPEN_PULL_REQUEST_MUTATION,
+  UPDATE_PULL_REQUEST_BODY_MUTATION,
+  CLOSE_ISSUE_MUTATION,
+  REOPEN_ISSUE_MUTATION,
+} from "../graphql";
+import {
+  fetchIssueComments,
+  fetchPullReviews,
+  fetchPullRequestedReviewers,
+  fetchPullCommits,
+  fetchPullCheckRuns,
+  fetchPullCheckRunList,
+  fetchCollaborators,
+  createPullReview,
+  dismissPullReview,
+  updateReview,
+  deletePendingReview,
+  updatePullBranch,
+  mergePullRequest,
+  requestReviewers,
+  updatePullRequestState,
+  updateIssueState,
+  lockPullRequest,
+  unlockPullRequest,
+  fetchPullDetail,
+} from "../restapi";
+import type {
+  Issue,
+  PullRequest,
+  IssueComment,
+  PullReview,
+  ReviewEvent,
+  PullMergeMethod,
+  PullCommit,
+  CheckRunsSummary,
+  CheckRunItem,
+  Collaborator,
+} from "../restapi";
+import { toCheckRunsSummary, toCheckRunItem, toStatusContextItem } from "../restapi";
+import { toPull, toIssueComment } from "./api-issue";
+import type { GraphQLPullNode, GraphQLCommentNode } from "./api-issue";
+
+/**
+ * PR 详情完整复合查询（detail + comments + reviewSummary 一次 GraphQL 请求）。
+ * 替代 PullDetailPage 原先 fetchPullDetailWithCommentsSmart + fetchPullReviewSummarySmart 两次请求——
+ * 省一次网络往返 + 配额；timeline 保持独立（timelineItems 巨大且失败语义独立）。
+ * 失败降级 REST 分步（复用 rest 层，日志 ↪ 标记）；reviewSummary 由 toReviewSummary 转换。
+ */
+export async function fetchPullDetailFullSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<{ pr: PullRequest; comments: IssueComment[]; reviewSummary: PullReviewSummary | null }> {
+  // REST 降级分步（reviewSummary 由 reviews 列表推断 reviewDecision）
+  const fromRest = async (): Promise<{
+    pr: PullRequest;
+    comments: IssueComment[];
+    reviewSummary: PullReviewSummary | null;
+  }> => {
+    const [pr, comments, reviewSummary] = await Promise.all([
+      fetchPullDetail(owner, repo, number, token),
+      fetchIssueComments(owner, repo, number, token ?? null),
+      reviewSummaryFromRest(owner, repo, number, token),
+    ]);
+    return { pr, comments, reviewSummary };
+  };
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          pullRequest: (GraphQLPullNode & { comments: { nodes: GraphQLCommentNode[] } }) | null;
+        } | null;
+      }> = await graphqlRequest(PULL_DETAIL_FULL_QUERY, { owner, name: repo, number }, token);
+      const g = resp.data?.repository?.pullRequest;
+      if (!hasGraphQLErrors(resp) && g) {
+        return {
+          pr: toPull(g),
+          comments: g.comments.nodes.map(toIssueComment),
+          reviewSummary: toReviewSummary(g),
+        };
+      }
+      // GraphQL 失败 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchPullDetailFullSmart", resp);
+    } catch {
+      // 网络层错误 → 熔断降级 REST 分步
+      return withRestFallback(fromRest, "fetchPullDetailFullSmart", undefined);
+    }
+  }
+  // 匿名强制 REST 分步
+  return fromRest();
+}
+
+// ===== B1 评审工作流 smart 层：GraphQL 首选 + REST 降级 =====
+
+/** PR 评审摘要（reviewDecision + reviews + reviewRequests + mergeable + pullRequestId） */
+export interface PullReviewSummary {
+  pullRequestId: string;
+  reviewDecision: "APPROVED" | "CHANGES_REQUESTED" | "REVIEW_REQUIRED" | null;
+  mergeable: "MERGEABLE" | "CONFLICTING" | "UNKNOWN" | null;
+  reviews: PullReview[];
+  reviewRequests: { login: string; avatarUrl: string }[];
+}
+
+/** GraphQL reviews 节点 → REST PullReview（state 枚举对齐 REST：APPROVED/CHANGES_REQUESTED/COMMENTED/DISMISSED）
+ * export 供 api-issue.ts 的 GraphQLPullNode.reviews.nodes 引用（跨文件类型）。 */
+export interface GraphQLReviewNode {
+  id: string;
+  state: "APPROVED" | "CHANGES_REQUESTED" | "COMMENTED" | "DISMISSED" | "PENDING";
+  body: string | null;
+  submittedAt: string | null;
+  author: { login: string; avatarUrl: string } | null;
+}
+
+/** 评审摘要 GraphQL 节点（PULL_REVIEW_SUMMARY_QUERY 与 PULL_DETAIL_FULL_QUERY 共用字段） */
+interface GraphQLReviewSummaryNode {
+  id?: string;
+  reviewDecision?: string | null;
+  mergeable?: string | null;
+  reviews?: { nodes?: GraphQLReviewNode[] };
+  reviewRequests?: {
+    nodes: {
+      requestedReviewer: {
+        __typename: string;
+        login?: string;
+        avatarUrl?: string;
+        name?: string;
+      } | null;
+    }[];
+  };
+}
+
+/** GraphQL 评审摘要节点 → PullReviewSummary（pullRequestId 供 merge/review 操作；reviewRequests 过滤无 login 的 Team） */
+function toReviewSummary(g: GraphQLReviewSummaryNode): PullReviewSummary {
+  return {
+    pullRequestId: g.id ?? "",
+    reviewDecision: (g.reviewDecision as PullReviewSummary["reviewDecision"]) ?? null,
+    mergeable: (g.mergeable as PullReviewSummary["mergeable"]) ?? null,
+    reviews: (g.reviews?.nodes ?? []).map((r) => ({
+      id: -1,
+      nodeId: r.id,
+      user: r.author ? { login: r.author.login, avatar_url: r.author.avatarUrl } : null,
+      body: r.body ?? "",
+      state: r.state,
+      submitted_at: r.submittedAt ?? undefined,
+    })),
+    reviewRequests: (g.reviewRequests?.nodes ?? [])
+      .map((n) => n.requestedReviewer)
+      .filter((x): x is { __typename: string; login?: string; avatarUrl?: string } =>
+        Boolean(x?.login),
+      )
+      .map((x) => ({ login: x.login!, avatarUrl: x.avatarUrl ?? "" })),
+  };
+}
+
+/** REST 降级：reviews 列表 + reviewRequests + reviewDecision 由最新非 COMMENTED 评审推断（REST 无 reviewDecision 字段） */
+async function reviewSummaryFromRest(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<PullReviewSummary> {
+  const [reviews, reviewRequests] = await Promise.all([
+    fetchPullReviews(owner, repo, number, token),
+    fetchPullRequestedReviewers(owner, repo, number, token),
+  ]);
+  const latest = reviews.find((r) => r.state === "APPROVED" || r.state === "CHANGES_REQUESTED");
+  return {
+    pullRequestId: "",
+    reviewDecision: latest ? (latest.state as PullReviewSummary["reviewDecision"]) : null,
+    mergeable: null,
+    reviews,
+    reviewRequests,
+  };
+}
+
+/** 智能获取 PR 评审摘要：GraphQL reviewDecision+reviews 首选，失败降级 REST（reviewDecision 由 reviews 推断）。 */
+export async function fetchPullReviewSummarySmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<PullReviewSummary | null> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: { pullRequest: GraphQLReviewSummaryNode | null } | null;
+      }> = await graphqlRequest(PULL_REVIEW_SUMMARY_QUERY, { owner, name: repo, number }, token);
+      const g = resp.data?.repository?.pullRequest;
+      if (!hasGraphQLErrors(resp) && g) {
+        return toReviewSummary(g);
+      }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => reviewSummaryFromRest(owner, repo, number, token),
+        "fetchPullReviewSummarySmart",
+        resp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => reviewSummaryFromRest(owner, repo, number, token),
+        "fetchPullReviewSummarySmart",
+        undefined,
+      );
+    }
+  }
+  // 匿名强制 REST
+  return reviewSummaryFromRest(owner, repo, number, token);
+}
+
+/** 智能提交评审（三态）：GraphQL submitPullRequestReview 首选，失败降级 REST create-review。 */
+export async function submitPullReviewSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  event: ReviewEvent,
+  body: string,
+  token: string,
+): Promise<PullReview> {
+  try {
+    // 前置：pullRequestId（submitPullRequestReview 需要）
+    const pidResp: GraphQLResponse<{
+      repository: { pullRequest: { id: string } | null } | null;
+    }> = await graphqlRequest(
+      /* GraphQL */ `
+        query PullRequestId($owner: String!, $name: String!, $number: Int!) {
+          repository(owner: $owner, name: $name) {
+            pullRequest(number: $number) {
+              id
+            }
+          }
+        }
+      `,
+      { owner, name: repo, number },
+      token,
+    );
+    const pid = pidResp.data?.repository?.pullRequest?.id;
+    if (pid && !hasGraphQLErrors(pidResp)) {
+      const mutResp: GraphQLResponse<{
+        addPullRequestReview: { pullRequestReview: GraphQLReviewNode } | null;
+      }> = await graphqlRequest(
+        ADD_PULL_REQUEST_REVIEW_MUTATION,
+        { pullRequestId: pid, event, body: body || null },
+        token,
+      );
+      const r = mutResp.data?.addPullRequestReview?.pullRequestReview;
+      if (r && !hasGraphQLErrors(mutResp)) {
+        return {
+          id: -1,
+          user: r.author ? { login: r.author.login, avatar_url: r.author.avatarUrl } : null,
+          body: r.body ?? "",
+          state: r.state,
+          submitted_at: r.submittedAt ?? undefined,
+        };
+      }
+      // mutation 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => createPullReview(owner, repo, number, { event, body }, token),
+        "submitPullReviewSmart",
+        mutResp,
+      );
+    }
+    // pullRequest node id 缺失 → 熔断降级 REST
+    return withRestFallback(
+      () => createPullReview(owner, repo, number, { event, body }, token),
+      "submitPullReviewSmart",
+      pidResp,
+    );
+  } catch {
+    // 网络层错误 → 熔断降级 REST
+    return withRestFallback(
+      () => createPullReview(owner, repo, number, { event, body }, token),
+      "submitPullReviewSmart",
+      undefined,
+    );
+  }
+}
+
+/** 驳回评审：GraphQL dismissPullRequestReview 首选（需 review node id），失败降级 REST（数字 id）。 */
+export async function dismissPullReviewSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  review: { nodeId?: string; id: number },
+  message: string,
+  token: string,
+): Promise<void> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      async () => {
+        await dismissPullReview(owner, repo, number, review.id, message, token);
+      },
+      "dismissPullReviewSmart",
+      gqlResp,
+    );
+  if (review.nodeId) {
+    try {
+      const mutResp: GraphQLResponse<unknown> = await graphqlRequest(
+        DISMISS_PULL_REQUEST_REVIEW_MUTATION,
+        { pullRequestReviewId: review.nodeId, message },
+        token,
+      );
+      if (!hasGraphQLErrors(mutResp)) return;
+      return fromRest(mutResp);
+    } catch {
+      return fromRest(undefined);
+    }
+  }
+  return fromRest(undefined);
+}
+
+/**
+ * 更新 pending 评审草稿：GraphQL updatePullRequestReview 首选（需 nodeId），
+ * 失败降级 REST（数字 id）。
+ */
+export async function updatePullReviewSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  review: { nodeId?: string; id: number },
+  body: string,
+  token: string,
+): Promise<void> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      async () => {
+        await updateReview(owner, repo, number, review.id, body, token);
+      },
+      "updatePullReviewSmart",
+      gqlResp,
+    );
+  if (review.nodeId) {
+    try {
+      const mutResp: GraphQLResponse<unknown> = await graphqlRequest(
+        UPDATE_PULL_REQUEST_REVIEW_MUTATION,
+        { pullRequestReviewId: review.nodeId, body },
+        token,
+      );
+      if (!hasGraphQLErrors(mutResp)) return;
+      return fromRest(mutResp);
+    } catch {
+      return fromRest(undefined);
+    }
+  }
+  return fromRest(undefined);
+}
+
+/**
+ * 删除 pending 评审草稿：GraphQL deletePullRequestReview 首选（需 nodeId），
+ * 失败降级 REST（数字 id）；不可恢复。
+ */
+export async function deletePendingReviewSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  review: { nodeId?: string; id: number },
+  token: string,
+): Promise<void> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      () => deletePendingReview(owner, repo, number, review.id, token),
+      "deletePendingReviewSmart",
+      gqlResp,
+    );
+  if (review.nodeId) {
+    try {
+      const mutResp: GraphQLResponse<unknown> = await graphqlRequest(
+        DELETE_PULL_REQUEST_REVIEW_MUTATION,
+        { pullRequestReviewId: review.nodeId },
+        token,
+      );
+      if (!hasGraphQLErrors(mutResp)) return;
+      return fromRest(mutResp);
+    } catch {
+      return fromRest(undefined);
+    }
+  }
+  return fromRest(undefined);
+}
+
+/** 更新 PR 分支：GraphQL updatePullRequestBranch 首选（需 pullRequest node id），失败降级 REST。 */
+export async function updatePullBranchSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  pullRequestId: string | undefined,
+  token: string,
+): Promise<void> {
+  const fromRest = (gqlResp?: GraphQLResponse<unknown>) =>
+    withRestFallback(
+      () => updatePullBranch(owner, repo, number, token),
+      "updatePullBranchSmart",
+      gqlResp,
+    );
+  if (token && pullRequestId) {
+    try {
+      const mutResp: GraphQLResponse<unknown> = await graphqlRequest(
+        UPDATE_PULL_REQUEST_BRANCH_MUTATION,
+        { pullRequestId },
+        token,
+      );
+      if (!hasGraphQLErrors(mutResp)) return;
+      return fromRest(mutResp);
+    } catch {
+      return fromRest(undefined);
+    }
+  }
+  return fromRest(undefined);
+}
+
+/** 智能合并 PR：GraphQL mergePullRequest 首选，失败降级 REST pulls/merge。 */
+export async function mergePullRequestSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  method: PullMergeMethod,
+  token: string,
+  pullRequestId?: string,
+): Promise<{ merged: boolean; message: string }> {
+  if (token && pullRequestId) {
+    try {
+      const mutResp: GraphQLResponse<{
+        mergePullRequest: { pullRequest: { state: string; mergedAt: string | null } } | null;
+      }> = await graphqlRequest(
+        MERGE_PULL_REQUEST_MUTATION,
+        { pullRequestId, mergeMethod: method.toUpperCase() },
+        token,
+      );
+      const m = mutResp.data?.mergePullRequest?.pullRequest;
+      if (!hasGraphQLErrors(mutResp) && m) {
+        return { merged: m.mergedAt != null || m.state === "MERGED", message: "" };
+      }
+      // mutation 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => mergePullRequest(owner, repo, number, method, token),
+        "mergePullRequestSmart",
+        mutResp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => mergePullRequest(owner, repo, number, method, token),
+        "mergePullRequestSmart",
+        undefined,
+      );
+    }
+  }
+  // pullRequestId 缺失 → REST
+  return mergePullRequest(owner, repo, number, method, token);
+}
+
+/** 智能请求评审者：GraphQL requestReviews 首选，失败降级 REST。 */
+export async function requestReviewersSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  reviewers: string[],
+  token: string,
+  pullRequestId?: string,
+): Promise<void> {
+  if (token && pullRequestId && reviewers.length) {
+    try {
+      // 前置：用户 node id（requestReviews 需 userIds）
+      const userIds: string[] = [];
+      for (const login of reviewers) {
+        const u: GraphQLResponse<{ user: { id: string } | null }> = await graphqlRequest(
+          /* GraphQL */ `
+            query UserId($login: String!) {
+              user(login: $login) {
+                id
+              }
+            }
+          `,
+          { login },
+          token,
+        );
+        if (u.data?.user?.id && !hasGraphQLErrors(u)) userIds.push(u.data.user.id);
+      }
+      if (userIds.length) {
+        const mutResp: GraphQLResponse<{ requestReviews: { pullRequest: { id: string } } }> =
+          await graphqlRequest(REQUEST_REVIEWS_MUTATION, { pullRequestId, userIds }, token);
+        if (!hasGraphQLErrors(mutResp) && mutResp.data?.requestReviews) return;
+        // mutation 失败 → 熔断降级 REST
+        await withRestFallback(
+          () => requestReviewers(owner, repo, number, reviewers, token),
+          "requestReviewersSmart",
+          mutResp,
+        );
+        return;
+      }
+      // 用户 node id 全部缺失 → 熔断降级 REST
+      await withRestFallback(
+        () => requestReviewers(owner, repo, number, reviewers, token),
+        "requestReviewersSmart",
+        undefined,
+      );
+      return;
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      await withRestFallback(
+        () => requestReviewers(owner, repo, number, reviewers, token),
+        "requestReviewersSmart",
+        undefined,
+      );
+    }
+  }
+  // 无 pullRequestId / 匿名 → REST
+  await requestReviewers(owner, repo, number, reviewers, token);
+}
+
+/** 智能更新 PR 状态（关闭/重新打开）：GraphQL closePullRequest/reopenPullRequest 首选（需 pullRequestId），
+ * 无 pullRequestId（如 REST 降级详情）/ GraphQL 失败 → 熔断降级 REST PATCH /pulls/{n}。 */
+export async function updatePullRequestStateSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  state: "open" | "closed",
+  token: string,
+  pullRequestId?: string,
+): Promise<PullRequest> {
+  if (token && pullRequestId) {
+    try {
+      const resp: GraphQLResponse<{
+        closePullRequest?: { pullRequest: { id: string; state: string } };
+        reopenPullRequest?: { pullRequest: { id: string; state: string } };
+      }> = await graphqlRequest(
+        state === "closed" ? CLOSE_PULL_REQUEST_MUTATION : REOPEN_PULL_REQUEST_MUTATION,
+        { pullRequestId },
+        token,
+      );
+      if (!hasGraphQLErrors(resp)) {
+        const pr = (resp.data?.closePullRequest ?? resp.data?.reopenPullRequest)?.pullRequest;
+        // 调用点乐观更新（忽略返回值），仅回填 state
+        if (pr) return { state: pr.state.toLowerCase() } as PullRequest;
+      }
+      // GraphQL 失败 → 熔断降级 REST
+      return withRestFallback(
+        () => updatePullRequestState(owner, repo, number, state, token),
+        "updatePullRequestStateSmart",
+        resp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => updatePullRequestState(owner, repo, number, state, token),
+        "updatePullRequestStateSmart",
+        undefined,
+      );
+    }
+  }
+  // 无 pullRequestId / 匿名 → REST
+  return updatePullRequestState(owner, repo, number, state, token);
+}
+
+/** 智能更新 issue 状态（关闭/重新打开）：GraphQL closeIssue/reopenIssue 首选（需 ISSUE_ID_QUERY 前置查 node id），
+ * 前置查 id 或 mutation 失败 → 熔断降级 REST PATCH /issues/{n}。 */
+export async function updateIssueStateSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  state: "closed" | "open",
+  token: string,
+): Promise<Issue> {
+  if (token) {
+    try {
+      // 前置：issue node id（GraphQL mutation 需要）
+      const idResp: GraphQLResponse<{
+        repository: { issue: { id: string } | null } | null;
+      }> = await graphqlRequest(ISSUE_ID_QUERY, { owner, name: repo, number }, token);
+      const issueId = idResp.data?.repository?.issue?.id;
+      if (issueId && !hasGraphQLErrors(idResp)) {
+        const mutResp: GraphQLResponse<{
+          closeIssue?: { issue: { id: string; state: string } };
+          reopenIssue?: { issue: { id: string; state: string } };
+        }> = await graphqlRequest(
+          state === "closed" ? CLOSE_ISSUE_MUTATION : REOPEN_ISSUE_MUTATION,
+          { issueId },
+          token,
+        );
+        if (!hasGraphQLErrors(mutResp)) {
+          const issue = (mutResp.data?.closeIssue ?? mutResp.data?.reopenIssue)?.issue;
+          // 调用点乐观更新（忽略返回值），仅回填 state
+          if (issue) return { state: issue.state.toLowerCase() } as Issue;
+        }
+        // mutation 失败 → 熔断降级 REST
+        return withRestFallback(
+          () => updateIssueState(owner, repo, number, state, token),
+          "updateIssueStateSmart",
+          mutResp,
+        );
+      }
+      // node id 缺失 → 熔断降级 REST
+      return withRestFallback(
+        () => updateIssueState(owner, repo, number, state, token),
+        "updateIssueStateSmart",
+        idResp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        () => updateIssueState(owner, repo, number, state, token),
+        "updateIssueStateSmart",
+        undefined,
+      );
+    }
+  }
+  // 匿名强制 REST
+  return updateIssueState(owner, repo, number, state, token);
+}
+
+/** 解决/取消解决评审线程（GraphQL-only——REST 无端点；需 reviewThread node id，由评论的 threadId 提供）。 */
+export async function setReviewThreadResolvedSmart(
+  threadId: string,
+  resolved: boolean,
+  token: string,
+): Promise<void> {
+  try {
+    const resp: GraphQLResponse<{
+      resolveReviewThread?: { thread: { id: string; isResolved: boolean } };
+      unresolveReviewThread?: { thread: { id: string; isResolved: boolean } };
+    }> = await graphqlRequest(
+      resolved ? RESOLVE_REVIEW_THREAD_MUTATION : UNRESOLVE_REVIEW_THREAD_MUTATION,
+      { threadId },
+      token,
+    );
+    if (!hasGraphQLErrors(resp)) return;
+  } catch (e) {
+    // GraphQL 失败（REST 无等价端点可降级）→ 记录后抛错
+    logWarn("setReviewThreadResolvedSmart", `评审线程解决失败: ${String(e)}`);
+  }
+  throw new Error("线程解决失败（GraphQL 不可用）");
+}
+
+// ===== PR 详情侧栏增强（B1 补：Lock / Projects / Development） =====
+
+/** 智能锁定/解锁对话：GraphQL lockLockable 首选（需 pullRequestId），失败降级 REST issues/lock。 */
+export async function setPullLockedSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  locked: boolean,
+  token: string,
+  pullRequestId?: string,
+): Promise<void> {
+  if (token && pullRequestId) {
+    try {
+      const mutResp: GraphQLResponse<{
+        lockLockable?: { lockedRecord: { id: string; locked: boolean } };
+        unlockLockable?: { unlockedRecord: { id: string; locked: boolean } };
+      }> = await graphqlRequest(
+        locked ? LOCK_PULL_REQUEST_MUTATION : UNLOCK_PULL_REQUEST_MUTATION,
+        { lockableId: pullRequestId },
+        token,
+      );
+      if (!hasGraphQLErrors(mutResp)) return;
+      // mutation 失败 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          if (locked) await lockPullRequest(owner, repo, number, token);
+          else await unlockPullRequest(owner, repo, number, token);
+        },
+        "setPullLockedSmart",
+        mutResp,
+      );
+    } catch {
+      // 网络层错误 → 熔断降级 REST
+      return withRestFallback(
+        async () => {
+          if (locked) await lockPullRequest(owner, repo, number, token);
+          else await unlockPullRequest(owner, repo, number, token);
+        },
+        "setPullLockedSmart",
+        undefined,
+      );
+    }
+  }
+  // 无 pullRequestId → REST
+  if (locked) await lockPullRequest(owner, repo, number, token);
+  else await unlockPullRequest(owner, repo, number, token);
+}
+
+/** PR 关联 ProjectsV2（GraphQL-only 只读；失败静默空——侧栏非核心，参照 ForkInfoBar 静默先例）。 */
+export type PullProjectItem = {
+  id: string;
+  project: { id: string; number: number; title: string; url: string; public: boolean };
+  status: string | null;
+};
+export async function fetchPullProjectsSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<PullProjectItem[]> {
+  if (!token) return [];
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        pullRequest: {
+          projectItems: {
+            nodes: Array<{
+              id: string;
+              project: { id: string; number: number; title: string; url: string; public: boolean };
+              fieldValueByName: { __typename: string; name?: string } | null;
+            }>;
+          } | null;
+        } | null;
+      } | null;
+    }> = await graphqlRequest(PR_PROJECTS_QUERY, { owner, name: repo, number }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest?.projectItems) {
+      // GraphQL errors（侧栏非核心）→ 静默空，补 [Warn] 保留错误详情
+      logWarn("fetchPullProjectsSmart", `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`);
+      return [];
+    }
+    return resp.data.repository.pullRequest.projectItems.nodes.map((n) => ({
+      id: n.id,
+      project: n.project,
+      status:
+        n.fieldValueByName && "name" in n.fieldValueByName
+          ? (n.fieldValueByName.name ?? null)
+          : null,
+    }));
+  } catch (e) {
+    // 侧栏非核心 → 静默空，补 [Warn] 保留诊断
+    logWarn("fetchPullProjectsSmart", `PR Projects 查询失败（静默空）: ${String(e)}`);
+    return [];
+  }
+}
+
+/** Issue 关联 ProjectsV2（GraphQL-only 只读；失败静默空——侧栏非核心）。与 fetchPullProjectsSmart 同构，仅 subject 不同。 */
+export async function fetchIssueProjectsSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<PullProjectItem[]> {
+  if (!token) return [];
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        issue: {
+          projectItems: {
+            nodes: Array<{
+              id: string;
+              project: { id: string; number: number; title: string; url: string; public: boolean };
+              fieldValueByName: { __typename: string; name?: string } | null;
+            }>;
+          } | null;
+        } | null;
+      } | null;
+    }> = await graphqlRequest(ISSUE_PROJECTS_QUERY, { owner, name: repo, number }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.issue?.projectItems) {
+      logWarn("fetchIssueProjectsSmart", `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`);
+      return [];
+    }
+    return resp.data.repository.issue.projectItems.nodes.map((n) => ({
+      id: n.id,
+      project: n.project,
+      status:
+        n.fieldValueByName && "name" in n.fieldValueByName
+          ? (n.fieldValueByName.name ?? null)
+          : null,
+    }));
+  } catch (e) {
+    logWarn("fetchIssueProjectsSmart", `Issue Projects 查询失败（静默空）: ${String(e)}`);
+    return [];
+  }
+}
+
+/** PR 开发关联（GraphQL-only 只读：closingIssuesReferences；PullRequest 无 linkedBranches 字段，关联分支不可得）。 */
+export type PullDevelopment = {
+  issues: { number: number; title: string; state: string; url: string }[];
+  branches: string[];
+};
+export async function fetchPullDevelopmentSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<PullDevelopment> {
+  if (!token) return { issues: [], branches: [] };
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        pullRequest: {
+          closingIssuesReferences: {
+            nodes: Array<{ number: number; title: string; state: string; url: string }>;
+          } | null;
+        } | null;
+      } | null;
+    }> = await graphqlRequest(PR_DEVELOPMENT_QUERY, { owner, name: repo, number }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.pullRequest) {
+      // GraphQL errors（侧栏非核心）→ 静默空，补 [Warn] 保留错误详情
+      logWarn(
+        "fetchPullDevelopmentSmart",
+        `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`,
+      );
+      return { issues: [], branches: [] };
+    }
+    const pr = resp.data.repository.pullRequest;
+    return {
+      issues: (pr.closingIssuesReferences?.nodes ?? []).map((n) => ({
+        number: n.number,
+        title: n.title,
+        state: n.state,
+        url: n.url,
+      })),
+      // PullRequest 无 linkedBranches 字段（GitHub schema 实测），关联分支不可得 → 恒空
+      branches: [],
+    };
+  } catch (e) {
+    // 侧栏非核心 → 静默空，补 [Warn] 保留诊断
+    logWarn("fetchPullDevelopmentSmart", `PR Development 查询失败（静默空）: ${String(e)}`);
+    return { issues: [], branches: [] };
+  }
+}
+
+/** Issue 开发关联（GraphQL-only 只读：linked branches + 关联 PR；失败静默空）。 */
+export type IssueDevelopment = {
+  prs: { number: number; title: string; url: string | null }[];
+  branches: string[];
+};
+export async function fetchIssueDevelopmentSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token: string,
+): Promise<IssueDevelopment> {
+  if (!token) return { prs: [], branches: [] };
+  try {
+    const resp: GraphQLResponse<{
+      repository: {
+        issue: {
+          linkedBranches: { nodes: Array<{ ref: { name: string } | null }> } | null;
+          timelineItems: {
+            nodes: Array<{
+              source: { number?: unknown; title?: unknown; url?: unknown } | null;
+            }>;
+          } | null;
+        } | null;
+      } | null;
+    }> = await graphqlRequest(ISSUE_DEVELOPMENT_QUERY, { owner, name: repo, number }, token);
+    if (hasGraphQLErrors(resp) || !resp.data?.repository?.issue) {
+      logWarn(
+        "fetchIssueDevelopmentSmart",
+        `GraphQL errors: ${resp.errors?.[0]?.message ?? "未知"}`,
+      );
+      return { prs: [], branches: [] };
+    }
+    const issue = resp.data.repository.issue;
+    const prs = (issue.timelineItems?.nodes ?? [])
+      .map((n) => n.source)
+      .filter((s): s is NonNullable<typeof s> => Boolean(s))
+      .map((s) => ({
+        number: typeof s.number === "number" ? s.number : 0,
+        title: typeof s.title === "string" ? s.title : "",
+        url: typeof s.url === "string" ? s.url : null,
+      }))
+      .filter((p) => p.number > 0);
+    const branches = (issue.linkedBranches?.nodes ?? [])
+      .map((n) => n.ref?.name)
+      .filter((n): n is string => Boolean(n));
+    return { prs, branches };
+  } catch (e) {
+    logWarn("fetchIssueDevelopmentSmart", `Issue Development 查询失败（静默空）: ${String(e)}`);
+    return { prs: [], branches: [] };
+  }
+}
+
+/** 更新 PR 描述（body；Development 手动关联 issue 时追加 closing keywords）。 */
+export async function updatePullRequestBodySmart(
+  pullRequestId: string,
+  body: string,
+  token: string,
+): Promise<void> {
+  const resp: GraphQLResponse<{ updatePullRequest: { pullRequest: { id: string } | null } }> =
+    await graphqlRequest(UPDATE_PULL_REQUEST_BODY_MUTATION, { pullRequestId, body }, token);
+  if (hasGraphQLErrors(resp) || !resp.data?.updatePullRequest?.pullRequest) {
+    throw new Error(resp.errors?.[0]?.message ?? "Update pull request failed");
+  }
+}
+
+// PR Conversation 时间线（PullReaction / PullReviewComment / PullTimelineEvent / PullTimelinePage /
+// fetchPullTimelineSmart / extractLogin）已拆至 ./api-pr-timeline.ts。
+
+// ===== PR commits / CI check-runs / 仓库协作者（GraphQL 主通道 + REST 降级） =====
+
+/** 智能获取 PR commit 列表：GraphQL PullRequest.commits 首选，失败降级 REST（GET /pulls/{n}/commits）。 */
+export async function fetchPullCommitsSmart(
+  owner: string,
+  repo: string,
+  number: number,
+  token?: string | null,
+): Promise<PullCommit[]> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          pullRequest: {
+            commits: {
+              nodes: {
+                commit: {
+                  oid: string;
+                  message: string;
+                  committedDate: string;
+                  author: {
+                    name?: string | null;
+                    email?: string | null;
+                    date?: string | null;
+                    user: { login: string } | null;
+                    avatarUrl: string;
+                  } | null;
+                  committer: { user: { login: string } | null } | null;
+                };
+              }[];
+            };
+          } | null;
+        } | null;
+      }> = await graphqlRequest(PR_COMMITS_QUERY, { owner, name: repo, number }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository?.pullRequest) {
+        return resp.data.repository.pullRequest.commits.nodes.map((n) => ({
+          sha: n.commit.oid,
+          commit: {
+            message: n.commit.message,
+            author: {
+              name: n.commit.author?.name ?? "",
+              email: n.commit.author?.email ?? "",
+              date: n.commit.author?.date ?? "",
+            },
+          },
+          author: n.commit.author?.user
+            ? { login: n.commit.author.user.login, avatar_url: n.commit.author.avatarUrl }
+            : null,
+          committer: n.commit.committer?.user ? { login: n.commit.committer.user.login } : null,
+        }));
+      }
+      return withRestFallback(
+        () => fetchPullCommits(owner, repo, number, token),
+        "fetchPullCommitsSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchPullCommits(owner, repo, number, token),
+        "fetchPullCommitsSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchPullCommits(owner, repo, number, token);
+}
+
+/** 智能获取 PR CI check-runs 汇总：GraphQL Commit.statusCheckRollup 首选，失败降级 REST。 */
+export async function fetchPullCheckRunsSmart(
+  owner: string,
+  repo: string,
+  sha: string,
+  token?: string | null,
+): Promise<CheckRunsSummary | null> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          object: {
+            statusCheckRollup: {
+              contexts: { nodes: { status: string; conclusion: string | null }[] };
+            };
+          } | null;
+        } | null;
+      }> = await graphqlRequest(PR_CHECK_RUNS_QUERY, { owner, name: repo, expression: sha }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository?.object) {
+        const runs = resp.data.repository.object.statusCheckRollup?.contexts?.nodes ?? [];
+        return toCheckRunsSummary(runs);
+      }
+      return withRestFallback(
+        () => fetchPullCheckRuns(owner, repo, sha, token),
+        "fetchPullCheckRunsSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchPullCheckRuns(owner, repo, sha, token),
+        "fetchPullCheckRunsSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchPullCheckRuns(owner, repo, sha, token);
+}
+
+/** 智能获取 PR head commit 的 check-run 列表（Checks tab 逐条列出；GraphQL 首选，失败降级 REST）。 */
+export async function fetchPullCheckRunListSmart(
+  owner: string,
+  repo: string,
+  sha: string,
+  token?: string | null,
+): Promise<CheckRunItem[] | null> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          object: {
+            statusCheckRollup: {
+              contexts: {
+                nodes: Array<
+                  | {
+                      __typename?: string;
+                      name?: unknown;
+                      status?: unknown;
+                      conclusion?: unknown;
+                      detailsUrl?: unknown;
+                      checkSuite?: {
+                        workflowRun?: { workflow?: { name?: unknown } | null } | null;
+                      } | null;
+                    }
+                  | {
+                      __typename?: string;
+                      context?: unknown;
+                      state?: unknown;
+                      description?: unknown;
+                      targetUrl?: unknown;
+                    }
+                >;
+              };
+            };
+          } | null;
+        } | null;
+      }> = await graphqlRequest(
+        PR_CHECK_RUN_LIST_QUERY,
+        { owner, name: repo, expression: sha },
+        token,
+      );
+      if (!hasGraphQLErrors(resp) && resp.data?.repository?.object) {
+        const nodes = resp.data.repository.object.statusCheckRollup?.contexts?.nodes ?? [];
+        return nodes.map((n) =>
+          n.__typename === "CheckRun"
+            ? toCheckRunItem(n as Parameters<typeof toCheckRunItem>[0])
+            : toStatusContextItem(n as Parameters<typeof toStatusContextItem>[0]),
+        );
+      }
+      return withRestFallback(
+        () => fetchPullCheckRunList(owner, repo, sha, token),
+        "fetchPullCheckRunListSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchPullCheckRunList(owner, repo, sha, token),
+        "fetchPullCheckRunListSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchPullCheckRunList(owner, repo, sha, token);
+}
+
+/**
+ * 批量获取多个 PR head commit 的 CI check-runs 汇总（列表页批量合并，替代逐行单查）。
+ *
+ * 实现：单次 GraphQL 请求内用**别名重复 object(expression)**（c0/c1/c2… 各对应一个 sha），
+ * 一次网络往返返回全部 commit 的 statusCheckRollup —— 列表页 30 行 PR 由 30 次请求合并为 1 次。
+ * 注：PullRequest.headRef.target.statusCheckRollup 批量内联在 GitHub 侧不稳定（部分返回 null），
+ * object(expression) 别名是可靠通道（详情页单查同通道已验证）。
+ *
+ * 分片：object 别名过多会超 GraphQL 成本限制（statusCheckRollup 计费），每批 10 个，循环直至取完。
+ * 降级：整批 GraphQL 失败 → 逐 sha 走 fetchPullCheckRunsSmart（REST 熔断链，日志自动 ↪ 标记）。
+ */
+export async function fetchPullCheckRunsBatchSmart(
+  owner: string,
+  repo: string,
+  shas: string[],
+  token?: string | null,
+): Promise<Map<string, CheckRunsSummary | null>> {
+  const out = new Map<string, CheckRunsSummary | null>();
+  if (!token || shas.length === 0) return out;
+  const BATCH = 10;
+  for (let i = 0; i < shas.length; i += BATCH) {
+    const batch = shas.slice(i, i + BATCH);
+    // 别名 object(expression)：cN 与 sha 下标一一对应（GraphQL 不支持表达式数组，动态拼接）
+    const aliasFields = batch
+      .map(
+        (sha, j) =>
+          `c${i + j}: object(expression: ${JSON.stringify(sha)}) { ... on Commit { statusCheckRollup { contexts(first: 100) { nodes { ... on CheckRun { status conclusion } } } } } }`,
+      )
+      .join("\n");
+    const query = `query PullChecksBatch($owner: String!, $name: String!) {
+      repository(owner: $owner, name: $name) {
+        ${aliasFields}
+      }
+    }`;
+    try {
+      const resp: GraphQLResponse<{
+        repository: Record<
+          string,
+          {
+            statusCheckRollup: {
+              contexts: { nodes: { status: string; conclusion: string | null }[] };
+            } | null;
+          } | null
+        > | null;
+      }> = await graphqlRequest(query, { owner, name: repo }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        for (let k = 0; k < batch.length; k++) {
+          const node = resp.data.repository[`c${i + k}`];
+          out.set(
+            batch[k],
+            node?.statusCheckRollup
+              ? toCheckRunsSummary(node.statusCheckRollup.contexts.nodes)
+              : null,
+          );
+        }
+        continue; // 本批成功 → 下一批
+      }
+      // 本批 GraphQL 失败 → 逐 sha 单查（熔断链）
+      for (const sha of batch) {
+        out.set(sha, await fetchPullCheckRunsSmart(owner, repo, sha, token));
+      }
+    } catch {
+      for (const sha of batch) {
+        out.set(sha, await fetchPullCheckRunsSmart(owner, repo, sha, token));
+      }
+    }
+  }
+  return out;
+}
+
+/** 智能获取仓库协作者（含权限级别）：GraphQL Repository.collaborators 首选，失败降级 REST。
+ * 返回 Collaborator[]（含 role_name，协作者设置页显示权限级别；reviewer 选人只用 login/avatarUrl）。 */
+export async function fetchCollaboratorsSmart(
+  owner: string,
+  repo: string,
+  token?: string | null,
+): Promise<Collaborator[]> {
+  if (token) {
+    try {
+      const resp: GraphQLResponse<{
+        repository: {
+          collaborators: {
+            edges: { permission: string; node: { login: string; avatarUrl: string } }[];
+          };
+        } | null;
+      }> = await graphqlRequest(REPO_COLLABORATORS_QUERY, { owner, name: repo }, token);
+      if (!hasGraphQLErrors(resp) && resp.data?.repository) {
+        return resp.data.repository.collaborators.edges.map((e) => ({
+          login: e.node.login,
+          avatar_url: e.node.avatarUrl,
+          role_name: e.permission.toLowerCase(),
+        }));
+      }
+      return withRestFallback(
+        () => fetchCollaborators(owner, repo, token),
+        "fetchCollaboratorsSmart",
+        resp,
+      );
+    } catch {
+      return withRestFallback(
+        () => fetchCollaborators(owner, repo, token),
+        "fetchCollaboratorsSmart",
+        undefined,
+      );
+    }
+  }
+  return fetchCollaborators(owner, repo, token);
+}

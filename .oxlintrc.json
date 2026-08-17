@@ -1,0 +1,50 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "plugins": ["react", "typescript", "oxc"],
+  "categories": {
+    "correctness": "error",
+    "suspicious": "error"
+  },
+  "settings": {
+    "react": {
+      "version": "19",
+      "jsxRuntime": "automatic"
+    }
+  },
+  "rules": {
+    "react/rules-of-hooks": "error",
+    "react/react-in-jsx-scope": "off",
+    "react/only-export-components": [
+      "warn",
+      { "allowConstantExport": true, "allowExportNames": ["useAuth"] }
+    ],
+    "eqeqeq": ["error", "always", { "null": "ignore" }],
+    "no-param-reassign": "error",
+    "prefer-const": "error",
+    "no-constant-binary-expression": "error",
+    "no-implied-eval": "error",
+    "no-new-func": "error",
+    "no-return-assign": "error",
+    "no-self-compare": "error",
+    "no-sequences": "error",
+    "no-var": "error",
+    "no-underscore-dangle": [
+      "error",
+      { "allow": ["__schema", "__typename", "__type", "__inputvalue", "__field", "__enumvalue"] }
+    ]
+  },
+  "overrides": [
+    {
+      "files": ["scripts/**", "worker/**"],
+      "env": {
+        "node": true
+      }
+    }
+  ],
+  "ignorePatterns": [
+    "web/src/components/ui/**",
+    "worker/worker-configuration.d.ts",
+    "**/dist/**",
+    "**/node_modules/**"
+  ]
+}

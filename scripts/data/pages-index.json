@@ -1,0 +1,1270 @@
+{
+  "meta": {
+    "generatedAt": "2026-08-17",
+    "counts": {
+      "pages": 104,
+      "covered": 46,
+      "autoOnly": 58,
+      "todo": 58,
+      "done": 41,
+      "partial": 5
+    }
+  },
+  "items": [
+    {
+      "id": "root",
+      "route": "/",
+      "keywords": ["首页", "dashboard", "动态", "feed", "热点"],
+      "module": "HomePage / Dashboard（动态 Feed + 热点）",
+      "framework": "三栏（H 型）：左账户卡 + 中动态 Feed + 右 Explore 热点；依赖 L0 布局与 L1 Feed 卡片组件",
+      "apiIds": [
+        "users/get-authenticated",
+        "activity/list-received-events-for-user",
+        "activity/list-events-for-authenticated-user"
+      ],
+      "components": ["AppLayout"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-",
+      "route": "/:login",
+      "keywords": ["用户", "主页", "profile"],
+      "module": "UserProfilePage / 用户主页",
+      "framework": "E 型左资料卡 + 内容（概览/仓库/关注…）；依赖 UserNavPages",
+      "apiIds": [
+        "users/get-by-username",
+        "repos/list-for-user",
+        "users/list-followers-for-user",
+        "users/list-following-for-user"
+      ],
+      "components": ["UserProfilePage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-",
+      "route": "/:owner/:repo",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["RepoLayout"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-actions",
+      "route": "/:owner/:repo/actions",
+      "keywords": ["actions", "工作流", "CI"],
+      "module": "ActionsPages / Actions 全家（workflows/runs）",
+      "framework": "D 型：左导航（runs/workflows）+ 内容列表；图表子页去杂项",
+      "apiIds": [
+        "actions/list-workflow-runs-for-repo",
+        "actions/list-repo-workflows",
+        "actions/get-workflow-run"
+      ],
+      "components": ["ActionsPage"],
+      "status": "partial",
+      "covered": true
+    },
+    {
+      "id": "-actions-caches",
+      "route": "/:owner/:repo/actions/caches",
+      "keywords": [],
+      "module": "CachesPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["CachesPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-actions-metrics-usage",
+      "route": "/:owner/:repo/actions/metrics/usage",
+      "keywords": [],
+      "module": "ActionsUsagePage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["ActionsUsagePage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-actions-new",
+      "route": "/:owner/:repo/actions/new",
+      "keywords": [],
+      "module": "NewWorkflowPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["NewWorkflowPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-actions-runs-",
+      "route": "/:owner/:repo/actions/runs/:runId",
+      "keywords": [],
+      "module": "RunDetailPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RunDetailPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-actions-runs-job-",
+      "route": "/:owner/:repo/actions/runs/:runId/job/:jobId",
+      "keywords": [],
+      "module": "JobDetailPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["JobDetailPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-actions-workflows",
+      "route": "/:owner/:repo/actions/workflows",
+      "keywords": [],
+      "module": "WorkflowsPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["WorkflowsPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-blob",
+      "route": "/:owner/:repo/blob/*",
+      "keywords": ["文件", "blob", "代码查看", "高亮"],
+      "module": "BlobPage / 文件查看",
+      "framework": "B+ 型：左树 + 内容（代码高亮 CodeMirror 只读）+ 右 symbols 面板；依赖 CodeView 组件",
+      "apiIds": ["repos/get-content", "repos/get"],
+      "components": ["RepoCode", "BlobPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-branches",
+      "route": "/:owner/:repo/branches",
+      "keywords": [],
+      "module": "BranchesPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["BranchesPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-branches-",
+      "route": "/:owner/:repo/branches/:filter",
+      "keywords": [],
+      "module": "BranchesPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["BranchesPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-commit-",
+      "route": "/:owner/:repo/commit/:sha",
+      "keywords": [],
+      "module": "CommitPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["CommitPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-commits",
+      "route": "/:owner/:repo/commits/*",
+      "keywords": [],
+      "module": "CommitsPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["CommitsPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-community",
+      "route": "/:owner/:repo/community",
+      "keywords": [],
+      "module": "CommunityPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["CommunityPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-discussions",
+      "route": "/:owner/:repo/discussions",
+      "keywords": ["discussion", "讨论"],
+      "module": "DiscussionsPage / Discussions 列表 + 详情",
+      "framework": "C 型左分类 + 列表 / F 型详情 + 右 metadata；GraphQL-only（REST 无端点）",
+      "apiIds": ["gql:createDiscussion", "gql:addDiscussionComment"],
+      "components": ["DiscussionsPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-discussions-",
+      "route": "/:owner/:repo/discussions/:number",
+      "keywords": [],
+      "module": "DiscussionDetailPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["DiscussionDetailPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-discussions-categories",
+      "route": "/:owner/:repo/discussions/categories",
+      "keywords": [],
+      "module": "Navigate（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["Navigate"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-discussions-categories-",
+      "route": "/:owner/:repo/discussions/categories/:slug",
+      "keywords": [],
+      "module": "DiscussionCategoryRedirect（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["DiscussionCategoryRedirect"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-discussions-new",
+      "route": "/:owner/:repo/discussions/new",
+      "keywords": [],
+      "module": "NewDiscussionPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["NewDiscussionPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-discussions-new-choose",
+      "route": "/:owner/:repo/discussions/new/choose",
+      "keywords": [],
+      "module": "NewDiscussionChoosePage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["NewDiscussionChoosePage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-edit-",
+      "route": "/:owner/:repo/edit/:branch/*",
+      "keywords": ["编辑", "edit", "commit"],
+      "module": "FileEditorPage / 在线编辑（CodeMirror 6）",
+      "framework": "B 型：左树 + 编辑区；直接 commit 到分支",
+      "apiIds": ["git/create-commit", "repos/get-content"],
+      "components": ["FileEditorPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-fork",
+      "route": "/:owner/:repo/fork",
+      "keywords": [],
+      "module": "ForkPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["ForkPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-forks",
+      "route": "/:owner/:repo/forks",
+      "keywords": [],
+      "module": "ForksPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["ForksPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-graphs-code-frequency",
+      "route": "/:owner/:repo/graphs/code-frequency",
+      "keywords": [],
+      "module": "CodeFrequencyPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["CodeFrequencyPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-graphs-commit-activity",
+      "route": "/:owner/:repo/graphs/commit-activity",
+      "keywords": [],
+      "module": "CommitActivityPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["CommitActivityPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-graphs-contributors",
+      "route": "/:owner/:repo/graphs/contributors",
+      "keywords": [],
+      "module": "ContributorsPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["ContributorsPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-graphs-traffic",
+      "route": "/:owner/:repo/graphs/traffic",
+      "keywords": [],
+      "module": "TrafficPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["TrafficPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-issues",
+      "route": "/:owner/:repo/issues",
+      "keywords": ["issue", "问题", "列表"],
+      "module": "IssuesPage / 仓库 Issues 列表",
+      "framework": "C 型：左过滤栏（label/assignee/milestone）+ 右列表；依赖 RepoSearchInput",
+      "apiIds": ["issues/list-for-repo", "issues/list-labels-for-repo", "issues/list-assignees"],
+      "components": ["IssuesPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-issues-",
+      "route": "/:owner/:repo/issues/:number",
+      "keywords": ["issue", "详情", "评论"],
+      "module": "IssueDetailPage / Issue 详情",
+      "framework": "F 型：内容 + 右 metadata（sticky）；评论流依赖 CommentsSection",
+      "apiIds": ["issues/get", "issues/list-comments-for-repo", "issues/create-comment"],
+      "components": ["IssueDetailPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-issues-new",
+      "route": "/:owner/:repo/issues/new",
+      "keywords": ["新建", "issue", "创建"],
+      "module": "NewIssuePage / 新建 Issue",
+      "framework": "A 型全宽单列 + 右 metadata（F 型变体）；依赖 labels/assignees 选择",
+      "apiIds": ["issues/create", "issues/list-labels-for-repo", "issues/list-assignees"],
+      "components": ["NewIssuePage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-issues-new-choose",
+      "route": "/:owner/:repo/issues/new/choose",
+      "keywords": [],
+      "module": "NewIssuePage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["NewIssuePage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-labels",
+      "route": "/:owner/:repo/labels",
+      "keywords": [],
+      "module": "LabelsPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["LabelsPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-milestones",
+      "route": "/:owner/:repo/milestones",
+      "keywords": [],
+      "module": "MilestonesPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["MilestonesPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-new-",
+      "route": "/:owner/:repo/new/:branch/*",
+      "keywords": [],
+      "module": "FileEditorPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["FileEditorPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-projects",
+      "route": "/:owner/:repo/projects",
+      "keywords": ["projects", "项目", "看板"],
+      "module": "ProjectsPage / Projects 列表",
+      "framework": "C 型左过滤 + 列表；经典 projects 列表",
+      "apiIds": ["projects/list-for-user"],
+      "components": ["ProjectsPage"],
+      "status": "partial",
+      "covered": true
+    },
+    {
+      "id": "-projects-",
+      "route": "/:owner/:repo/projects/:number",
+      "keywords": [],
+      "module": "ProjectDetailPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["ProjectDetailPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-pull",
+      "route": "/:owner/:repo/pull",
+      "keywords": [],
+      "module": "Navigate（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["Navigate"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-pull-",
+      "route": "/:owner/:repo/pull/:number",
+      "keywords": [],
+      "module": "PullDetailPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["PullDetailPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-pulls",
+      "route": "/:owner/:repo/pulls",
+      "keywords": ["PR", "pull", "合并请求", "列表"],
+      "module": "PullsPage / 仓库 PR 列表",
+      "framework": "C 型：左过滤 + 右列表；依赖 RepoSearchInput",
+      "apiIds": ["pulls/list", "issues/list-labels-for-repo"],
+      "components": ["PullsPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-pulls-",
+      "route": "/:owner/:repo/pulls/:author",
+      "keywords": ["PR", "详情", "diff", "评审", "merge", "批准"],
+      "module": "PullDetailPage / PR 详情（评审工作流 B1：三态评审/合并/请求评审者/线程解决）",
+      "framework": "F 型：内容（commits/files/diff/review 摘要）+ 右 metadata（Reviewers 栏）；DiffView 组件；评审操作区（Merge/Review changes/关闭）",
+      "apiIds": [
+        "pulls/get",
+        "pulls/list-files",
+        "pulls/list-commits",
+        "repos/compare-commits-with-basehead",
+        "pulls/list-reviews",
+        "pulls/create-review",
+        "pulls/merge",
+        "pulls/request-reviewers",
+        "pulls/update"
+      ],
+      "components": ["PullsAuthorRedirect"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-pulls-new",
+      "route": "/:owner/:repo/pulls/new",
+      "keywords": ["新建", "PR", "创建"],
+      "module": "NewPullRequestPage / 新建 PR",
+      "framework": "A 型全宽单列；分支选择 + compare 预览",
+      "apiIds": ["pulls/create", "repos/compare-commits-with-basehead", "repos/list-branches"],
+      "components": ["NewPullRequestPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-pulse",
+      "route": "/:owner/:repo/pulse",
+      "keywords": ["insights", "pulse", "统计"],
+      "module": "InsightsPage / Pulse 统计",
+      "framework": "内容 + 右 About；图表子页去杂项",
+      "apiIds": [
+        "repos/list-commits",
+        "issues/list-for-repo",
+        "pulls/list",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["InsightsPage"],
+      "status": "partial",
+      "covered": true
+    },
+    {
+      "id": "-releases",
+      "route": "/:owner/:repo/releases",
+      "keywords": ["release", "版本", "发布"],
+      "module": "ReleasesPages / Releases 列表 + 详情",
+      "framework": "列表页（内容 + 右 About）+ 详情页；依赖 Release 卡片组件",
+      "apiIds": ["repos/list-releases", "repos/get-release"],
+      "components": ["ReleasesPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-releases-tag-",
+      "route": "/:owner/:repo/releases/tag/:tag",
+      "keywords": [],
+      "module": "ReleaseDetailPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["ReleaseDetailPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-security",
+      "route": "/:owner/:repo/security",
+      "keywords": ["security", "安全", "公告", "SECURITY"],
+      "module": "SecurityPages / 安全中心（SECURITY.md + 公告）",
+      "framework": "D 型左导航 + 内容；深度子页（Dependabot/扫描）→ 批次 B5",
+      "apiIds": ["repos/get-content", "security-advisories/list-repository-advisories"],
+      "components": ["SecurityPage"],
+      "status": "partial",
+      "covered": true
+    },
+    {
+      "id": "-security-advisories-",
+      "route": "/:owner/:repo/security/advisories/:ghsaId",
+      "keywords": [],
+      "module": "SecurityAdvisoryDetailPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["SecurityAdvisoryDetailPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-security-code-scanning",
+      "route": "/:owner/:repo/security/code-scanning",
+      "keywords": [],
+      "module": "CodeScanningAlertsPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["CodeScanningAlertsPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-security-dependabot",
+      "route": "/:owner/:repo/security/dependabot",
+      "keywords": [],
+      "module": "DependabotAlertsPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["DependabotAlertsPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-security-secret-scanning",
+      "route": "/:owner/:repo/security/secret-scanning",
+      "keywords": [],
+      "module": "SecretScanningAlertsPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["SecretScanningAlertsPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings",
+      "route": "/:owner/:repo/settings",
+      "keywords": ["设置", "settings", "仓库配置"],
+      "module": "RepoSettingsPage / 仓库设置",
+      "framework": "D 型左导航（通用/危险区/合作者…）+ 内容；danger 操作 AlertDialog",
+      "apiIds": ["repos/update", "repos/delete", "repos/list-collaborators"],
+      "components": ["RepoSettingsLayout"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-settings-branches",
+      "route": "/:owner/:repo/settings/branches",
+      "keywords": [],
+      "module": "RepoBranchesSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoBranchesSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-codespaces",
+      "route": "/:owner/:repo/settings/codespaces",
+      "keywords": [],
+      "module": "RepoCodespacesSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoCodespacesSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-collaborators",
+      "route": "/:owner/:repo/settings/collaborators",
+      "keywords": [],
+      "module": "RepoCollaboratorsSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoCollaboratorsSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-copilot",
+      "route": "/:owner/:repo/settings/copilot",
+      "keywords": [],
+      "module": "RepoCopilotSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoCopilotSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-environments",
+      "route": "/:owner/:repo/settings/environments",
+      "keywords": [],
+      "module": "RepoEnvironmentsSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoEnvironmentsSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-general",
+      "route": "/:owner/:repo/settings/general",
+      "keywords": [],
+      "module": "RepoSettingsPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoSettingsPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-installations",
+      "route": "/:owner/:repo/settings/installations",
+      "keywords": [],
+      "module": "RepoGitHubAppsSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoGitHubAppsSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-keys",
+      "route": "/:owner/:repo/settings/keys",
+      "keywords": [],
+      "module": "RepoDeployKeysSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoDeployKeysSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-moderation",
+      "route": "/:owner/:repo/settings/moderation",
+      "keywords": [],
+      "module": "RepoModerationSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoModerationSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-pages",
+      "route": "/:owner/:repo/settings/pages",
+      "keywords": [],
+      "module": "RepoPagesSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoPagesSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-planning",
+      "route": "/:owner/:repo/settings/planning",
+      "keywords": [],
+      "module": "RepoPlanningSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoPlanningSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-secrets",
+      "route": "/:owner/:repo/settings/secrets",
+      "keywords": [],
+      "module": "RepoSecretsSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoSecretsSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-security",
+      "route": "/:owner/:repo/settings/security",
+      "keywords": [],
+      "module": "RepoSecuritySettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoSecuritySettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-settings-webhooks",
+      "route": "/:owner/:repo/settings/webhooks",
+      "keywords": [],
+      "module": "RepoWebhooksSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["RepoWebhooksSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-stargazers",
+      "route": "/:owner/:repo/stargazers",
+      "keywords": [],
+      "module": "StargazersPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["StargazersPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-tags",
+      "route": "/:owner/:repo/tags",
+      "keywords": [],
+      "module": "TagsPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["TagsPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-tree",
+      "route": "/:owner/:repo/tree/*",
+      "keywords": ["文件树", "tree", "目录"],
+      "module": "TreePage / 仓库文件树",
+      "framework": "B 型：左文件树（SIDEBAR_STICKY_SCROLL）+ 内容；依赖 FileTree 组件",
+      "apiIds": ["repos/get-content", "repos/get-branch", "repos/get-commit", "repos/get"],
+      "components": ["TreePage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-upload-",
+      "route": "/:owner/:repo/upload/:branch/*",
+      "keywords": [],
+      "module": "UploadPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["UploadPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-watchers",
+      "route": "/:owner/:repo/watchers",
+      "keywords": [],
+      "module": "WatchersPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["WatchersPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "-wiki",
+      "route": "/:owner/:repo/wiki/*",
+      "keywords": ["wiki", "文档"],
+      "module": "WikiPage / Wiki",
+      "framework": "内容 + 右侧栏；经 worker /$wiki 代理（API 无 wiki 通道）",
+      "apiIds": [],
+      "components": ["WikiPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "root",
+      "route": "/*",
+      "keywords": ["用户", "主页", "profile"],
+      "module": "UserProfilePage / 用户主页",
+      "framework": "E 型左资料卡 + 内容（概览/仓库/关注…）；依赖 UserNavPages",
+      "apiIds": [
+        "users/get-by-username",
+        "repos/list-for-user",
+        "users/list-followers-for-user",
+        "users/list-following-for-user"
+      ],
+      "components": ["NotFoundPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-debug",
+      "route": "/$debug",
+      "keywords": ["调试", "debug", "GraphQL", "REST", "schema"],
+      "module": "DebugPage / API 调试面板（自研增值）",
+      "framework": "A 型全宽；octokit 零下载转录 schema + 智能请求器（缓存/SWR/预热）；本页非官方页面，为开发工具",
+      "apiIds": ["*"],
+      "components": ["DebugPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "-debug-",
+      "route": "/$debug/:proto",
+      "keywords": [],
+      "module": "DebugPage（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["DebugPage"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "gist",
+      "route": "/gist",
+      "keywords": ["gist", "代码片段"],
+      "module": "GistsPage + GistDetailPage + GistEditPage / Gist 全家",
+      "framework": "E 型左资料卡 + 列表 / A 型详情 / A 型编辑；gist.github.com 独立站集成",
+      "apiIds": ["gists/list", "gists/get", "gists/create", "gists/update"],
+      "components": ["GistsPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "gist-",
+      "route": "/gist/:id",
+      "keywords": ["gist", "代码片段", "详情", "编辑"],
+      "module": "GistDetailPage + GistEditPage / Gist 详情/编辑",
+      "framework": "A 型详情 / A 型编辑；gist.github.com 独立站集成",
+      "apiIds": ["gists/get", "gists/update"],
+      "components": ["GistDetailPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "gist-edit",
+      "route": "/gist/:id/edit",
+      "keywords": ["编辑", "edit", "commit"],
+      "module": "FileEditorPage / 在线编辑（CodeMirror 6）",
+      "framework": "B 型：左树 + 编辑区；直接 commit 到分支",
+      "apiIds": ["git/create-commit", "repos/get-content"],
+      "components": ["GistEditPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "gist-new",
+      "route": "/gist/new",
+      "keywords": ["gist", "代码片段", "详情", "编辑"],
+      "module": "GistDetailPage + GistEditPage / Gist 详情/编辑",
+      "framework": "A 型详情 / A 型编辑；gist.github.com 独立站集成",
+      "apiIds": ["gists/get", "gists/update"],
+      "components": ["NewGistPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "issues",
+      "route": "/issues",
+      "keywords": ["全局", "issue", "我的"],
+      "module": "UserIssuesPage / 全局 Issues",
+      "framework": "C 型左过滤 + 列表；assignee:@me 预填",
+      "apiIds": ["issues/list", "issues/list-labels-for-repo"],
+      "components": ["UserIssuesPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "issues-",
+      "route": "/issues/:tab",
+      "keywords": ["全局", "issue", "tab"],
+      "module": "UserIssuesPage / 全局 Issues（:tab）",
+      "framework": "同 /issues，:tab 参数路由（assigned/created/mentioned/recent）",
+      "apiIds": ["issues/list", "issues/list-labels-for-repo"],
+      "components": ["UserIssuesPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "new",
+      "route": "/new",
+      "keywords": ["新建", "仓库", "create"],
+      "module": "NewRepositoryPage / 新建仓库",
+      "framework": "A 型全宽单列；owner/模板/可见性/初始化选项",
+      "apiIds": ["repos/create-for-authenticated-user", "repos/list-for-authenticated-user"],
+      "components": ["NewRepositoryPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "notifications",
+      "route": "/notifications",
+      "keywords": ["通知", "notifications"],
+      "module": "NotificationsPage / 通知中心",
+      "framework": "C 型左过滤 + 列表；已读标记",
+      "apiIds": [
+        "activity/list-notifications-for-authenticated-user",
+        "activity/mark-notifications-as-read"
+      ],
+      "components": ["NotificationsPage"],
+      "status": "partial",
+      "covered": true
+    },
+    {
+      "id": "organizations-settings",
+      "route": "/organizations/:org/settings",
+      "keywords": ["组织", "设置", "成员", "团队"],
+      "module": "OrgSettingsLayout / 组织设置（通用/成员/团队/仓库）",
+      "framework": "D 型左导航 + 内容",
+      "apiIds": ["orgs/update", "orgs/list-members", "teams/list", "repos/list-for-org"],
+      "components": ["OrgSettingsLayout"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "organizations-settings-people",
+      "route": "/organizations/:org/settings/people",
+      "keywords": [],
+      "module": "OrgMembersSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["OrgMembersSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "organizations-settings-preferences",
+      "route": "/organizations/:org/settings/preferences",
+      "keywords": [],
+      "module": "PreferencesSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["PreferencesSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "organizations-settings-profile",
+      "route": "/organizations/:org/settings/profile",
+      "keywords": [],
+      "module": "OrgGeneralSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["OrgGeneralSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "organizations-settings-repositories",
+      "route": "/organizations/:org/settings/repositories",
+      "keywords": [],
+      "module": "OrgReposSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["OrgReposSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "organizations-settings-teams",
+      "route": "/organizations/:org/settings/teams",
+      "keywords": [],
+      "module": "OrgTeamsSettings（未校正，待补语义）",
+      "framework": "",
+      "apiIds": [],
+      "components": ["OrgTeamsSettings"],
+      "status": "todo",
+      "covered": false
+    },
+    {
+      "id": "orgs-",
+      "route": "/orgs/:org",
+      "keywords": ["组织", "org", "主页"],
+      "module": "OrgProfilePage / 组织主页",
+      "framework": "E 型左资料卡 + 内容（概览/仓库/成员…）",
+      "apiIds": ["orgs/get", "repos/list-for-org", "orgs/list-members"],
+      "components": ["OrgProfileRedirect"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "pulls",
+      "route": "/pulls",
+      "keywords": ["全局", "PR", "我的"],
+      "module": "UserPullsPage / 全局 Pulls",
+      "framework": "C 型左过滤 + 列表",
+      "apiIds": ["pulls/list", "search/issues-and-pull-requests"],
+      "components": ["UserPullsPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "pulls-",
+      "route": "/pulls/:tab",
+      "keywords": ["全局", "PR", "tab"],
+      "module": "UserPullsPage / 全局 Pulls（:tab）",
+      "framework": "同 /pulls，:tab 参数路由",
+      "apiIds": ["pulls/list", "search/issues-and-pull-requests"],
+      "components": ["UserPullsPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "repositories",
+      "route": "/repositories",
+      "keywords": ["我的", "仓库", "repositories"],
+      "module": "ReposNavPage / 我的仓库导航",
+      "framework": "列表 + 类型过滤（owner/member/starred）",
+      "apiIds": [
+        "repos/list-for-authenticated-user",
+        "activity/list-repos-starred-by-authenticated-user"
+      ],
+      "components": ["ReposNavPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "search",
+      "route": "/search",
+      "keywords": ["搜索", "search", "仓库", "用户", "issue"],
+      "module": "SearchPage / 全局搜索",
+      "framework": "两栏：左过滤（类型/语言/排序）+ 右结果列表；依赖 api-search",
+      "apiIds": [
+        "search/repos",
+        "search/users",
+        "search/issues-and-pull-requests",
+        "search/labels",
+        "search/commits",
+        "search/code"
+      ],
+      "components": ["SearchPage"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings",
+      "route": "/settings",
+      "keywords": ["设置", "个人", "资料", "账号", "邮箱"],
+      "module": "SettingsLayout / 个人设置（资料/账号/邮箱/组织/仓库/外观/权限）",
+      "framework": "D 型左导航 + 内容；权限管理（scope 分级 + 重新登录切换）",
+      "apiIds": [
+        "users/get-authenticated",
+        "users/update-authenticated",
+        "users/list-emails-for-authenticated-user",
+        "users/list-public-ssh-keys-for-authenticated-user"
+      ],
+      "components": ["SettingsLayout"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings-account",
+      "route": "/settings/account",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["AccountSettings"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings-appearance",
+      "route": "/settings/appearance",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["Navigate"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings-blocked_users",
+      "route": "/settings/blocked_users",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["BlockedUsersSettings"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings-blocked-users",
+      "route": "/settings/blocked-users",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["Navigate"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings-emails",
+      "route": "/settings/emails",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["Navigate"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings-organizations",
+      "route": "/settings/organizations",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["OrganizationsSettings"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings-preferences",
+      "route": "/settings/preferences",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["PreferencesSettings"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings-profile",
+      "route": "/settings/profile",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["ProfileSettings"],
+      "status": "done",
+      "covered": true
+    },
+    {
+      "id": "settings-repositories",
+      "route": "/settings/repositories",
+      "keywords": ["仓库", "repo", "首页", "README", "About"],
+      "module": "RepoLayout + CodeIndex / 仓库外壳 + Code 首页",
+      "framework": "G 型：内容 README + 右 About（sticky）；仓库六 tab 外壳由 RepoLayout 承载",
+      "apiIds": [
+        "repos/get",
+        "repos/get-readme",
+        "repos/get-content",
+        "repos/list-languages",
+        "activity/list-stargazers-for-repo"
+      ],
+      "components": ["RepositoriesSettings"],
+      "status": "done",
+      "covered": true
+    }
+  ]
+}

@@ -1,0 +1,32 @@
+{
+  "name": "puregit",
+  "private": true,
+  "description": "纯粹的 GitHub 站点库浏览站点：React + shadcn/ui 前端 + Cloudflare Pages Worker (OAuth2 + CLI git 镜像代理)",
+  "scripts": {
+    "dev": "node scripts/dev-fast.mjs",
+    "build": "pnpm --filter web build",
+    "typegen": "pnpm --filter worker typegen",
+    "typecheck": "pnpm --filter web exec tsc -b",
+    "lint": "oxlint . --max-warnings 0",
+    "test": "pnpm --filter web test",
+    "test:watch": "pnpm --filter web test:watch",
+    "format": "oxfmt web/src worker/src worker/test scripts web/test",
+    "format:check": "oxfmt --check web/src worker/src worker/test scripts web/test",
+    "deploy": "pnpm --filter web build && pnpm --filter worker deploy",
+    "clean": "node scripts/clean.mjs --all",
+    "clean:cache": "node scripts/clean.mjs",
+    "update:all": "pnpm -r up && pnpm audit --registry https://registry.npmjs.org --audit-level high",
+    "apiidx": "node scripts/apiidx.mjs",
+    "apiidx:update": "node scripts/apiidx.mjs update"
+  },
+  "engines": {
+    "node": ">=20"
+  },
+  "packageManager": "pnpm@11.21.0+sha512.521705bce689924eac72f5a3587122f362689ef6571e55ba80076fd637c11132ecffada26fad4ea79c485bfddbfd3d5a2a5b05805a77e893de71ec8a6cca3bb1",
+  "devDependencies": {
+    "@octokit/graphql-schema": "^15.26.1",
+    "@octokit/openapi": "^22.0.0",
+    "oxfmt": "^0.62.0",
+    "oxlint": "^1.78.0"
+  }
+}
