@@ -62,33 +62,81 @@ function toDiscussionSummary(g: GraphQLDiscussionNode): DiscussionSummary {
   };
 }
 
+/** Filter 下拉取值（Open/Answered/Unanswered/Closed） */
+export type DiscussionStateFilter = "OPEN" | "CLOSED" | "ANSWERED" | "UNANSWERED";
+/** Sort 下拉取值（Latest activity / Top / Newest） */
+export type DiscussionSort = "latest" | "top" | "newest";
+
+/** Sort 下拉 → GraphQL DiscussionOrder（列表端点） */
+const DISCUSSION_ORDER: Record<DiscussionSort, { field: string; direction: "ASC" | "DESC" }> = {
+  latest: { field: "UPDATED_AT", direction: "DESC" },
+  top: { field: "UPVOTE_COUNT", direction: "DESC" },
+  newest: { field: "CREATED_AT", direction: "DESC" },
+};
+
+/** Sort 下拉 → 搜索 sort: qualifier（Top 无 upvote 排序，用 sort:reactions 近似） */
+const DISCUSSION_SEARCH_SORT: Record<DiscussionSort, string> = {
+  latest: "updated",
+  top: "reactions",
+  newest: "created",
+};
+
 /** 搜索语法 → GitHub 搜索 query 串（discussions search 端点用） */
-export function buildDiscussionSearchQuery(owner: string, repo: string, raw: string): string {
-  // 复用统一语法系统：type:discussion + 默认 is:open + repo 限定
-  return buildSearchQuery(raw, {
-    type: "discussion",
+export function buildDiscussionSearchQuery(
+  owner: string,
+  repo: string,
+  raw: string,
+  opts: {
+    state?: DiscussionStateFilter | null;
+    category?: string | null;
+    sort?: DiscussionSort | null;
+  } = {},
+): string {
+  // 复用统一语法系统：默认 is:open + repo 限定。
+  // 注意：不注入 type:discussion——GraphQL search(type: DISCUSSION) 端点已由 type 参数限定，
+  // query 内再带 type: qualifier 会被 GitHub 拒绝（其余 GraphQL 搜索统一用 is:issue/is:pr，type: 仅 REST 端点有效）。
+  // defaultState：raw 内显式 is: 优先（buildSearchQuery 解析），其次 Filter 下拉，最后兜底 open。
+  const defaultState = opts.state?.toLowerCase() ?? "open";
+  const q = buildSearchQuery(raw, {
     repo: `${owner}/${repo}`,
-    defaultState: "open",
+    defaultState,
   });
+  // category: / sort: qualifier（buildSearchQuery 不识别 category:；sort: 只消费 raw 内的，需单独注入下拉值）
+  const extra: string[] = [];
+  if (opts.category) extra.push(`category:"${opts.category}"`);
+  if (opts.sort && DISCUSSION_SEARCH_SORT[opts.sort] && !/(^|\s)sort:/i.test(raw)) {
+    extra.push(`sort:${DISCUSSION_SEARCH_SORT[opts.sort]}`);
+  }
+  return extra.length ? `${q} ${extra.join(" ")}`.trim() : q;
 }
 
 /**
  * 智能获取 Discussions 列表数据（GraphQL only——REST 无端点）。
- * 支持 categoryId / states / orderBy 过滤；rawQuery 非空时走 search 端点。
+ * 支持 categoryId / Filter 下拉（state）/ Sort 下拉（sort）过滤；rawQuery 非空或 Filter 为
+ * Answered/Unanswered（GraphQL states 无法表达）时走 search 端点，其余走列表端点。
  */
 export async function fetchDiscussionsSmart(
   owner: string,
   repo: string,
   token?: string | null,
   categoryId?: string | null,
-  states?: string[] | null,
-  orderBy?: { field: string; direction: "ASC" | "DESC" } | null,
+  state?: DiscussionStateFilter | null,
+  sort?: DiscussionSort | null,
   rawQuery?: string | null,
   cursor?: string | null,
 ): Promise<DiscussionsData> {
-  // 搜索模式：GraphQL search 端点（type: DISCUSSION）
-  if (rawQuery) {
-    const q = buildDiscussionSearchQuery(owner, repo, rawQuery);
+  // 搜索模式：有搜索词，或 Filter 为 Answered/Unanswered（states 参数无法表达，需走 search 端点）
+  const searchMode = Boolean(rawQuery) || state === "ANSWERED" || state === "UNANSWERED";
+
+  if (searchMode) {
+    // 先拉基础数据（左栏 categories/pinned/mostHelpful）供侧栏渲染与 categoryId→name 解析
+    const base = await fetchDiscussionsSmart(owner, repo, token, null, null, null, null);
+    const cat = categoryId ? base.categories.find((c) => c.id === categoryId) : undefined;
+    const q = buildDiscussionSearchQuery(owner, repo, rawQuery ?? "", {
+      state,
+      category: cat?.name ?? null,
+      sort,
+    });
     const resp: GraphQLResponse<{
       search: {
         discussionCount: number;
@@ -99,8 +147,6 @@ export async function fetchDiscussionsSmart(
       throw new Error(resp.errors?.[0]?.message ?? "discussions 搜索失败");
     }
     const { discussionCount, nodes } = resp.data.search;
-    // 搜索模式不带 pinned/categories → 重新拉一次完整列表供左栏用
-    const base = await fetchDiscussionsSmart(owner, repo, token, null, null, null, null);
     return {
       ...base,
       totalCount: discussionCount,
@@ -113,6 +159,9 @@ export async function fetchDiscussionsSmart(
     };
   }
 
+  // 列表模式：GraphQL repository.discussions（states 仅支持 OPEN/CLOSED）
+  const graphqlStates: ("OPEN" | "CLOSED")[] | null =
+    state === "OPEN" || state === "CLOSED" ? [state] : null;
   const resp: GraphQLResponse<{
     repository: {
       discussions: {
@@ -134,8 +183,8 @@ export async function fetchDiscussionsSmart(
       first: 20,
       after: cursor ?? null,
       categoryId: categoryId ?? null,
-      states: states ?? null,
-      orderBy: orderBy ?? { field: "UPDATED_AT", direction: "DESC" },
+      states: graphqlStates,
+      orderBy: (sort && DISCUSSION_ORDER[sort]) ?? { field: "UPDATED_AT", direction: "DESC" },
     },
     token,
   );

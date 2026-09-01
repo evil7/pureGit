@@ -27,6 +27,6 @@
     "@octokit/graphql-schema": "^15.26.1",
     "@octokit/openapi": "^22.0.0",
     "oxfmt": "^0.62.0",
-    "oxlint": "^1.78.0"
+    "oxlint": "^1.80.0"
   }
 }

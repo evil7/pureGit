@@ -108,8 +108,10 @@ export function TrendingSection({ days }: { days: number }) {
   }, [days, reloadKey]);
 
   // 加载更多（初始批次 + 点击追加共用）
+  // 匿名也允许加载：fetchTrendingRepositoriesSmart 在未登录时走 REST（GraphQL 仅登录态）——
+  // 这里不能以 !token 短路，否则未登录用户永远加载不出热点列表。
   const loadMore = useCallback(async () => {
-    if (!token || loadingRef.current) return;
+    if (loadingRef.current) return;
     loadingRef.current = true;
     setLoading(true);
     setError(null);

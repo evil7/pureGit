@@ -7,7 +7,7 @@
  *       + 右栏（讨论行/空态欢迎卡片）。URL query 驱动（category slug/state/sort/q）。
  * 详情页 → DiscussionDetail.tsx；新建两段式 → NewDiscussion.tsx。
  */
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useState } from "react";
 import { Link, useParams, useSearchParams } from "react-router-dom";
 import { MessageSquare, ArrowUp, Plus, Pin, Heart, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -23,9 +23,13 @@ import { Badge } from "@/components/ui/badge";
 import { useAuth } from "@/hooks/useAuth";
 import { useI18n } from "@/i18n";
 import { useDateFormat } from "@/hooks/useDateFormat";
-import { fetchDiscussionsSmart, categorySlug } from "@/lib/api";
+import {
+  fetchDiscussionsSmart,
+  categorySlug,
+  type DiscussionStateFilter,
+  type DiscussionSort,
+} from "@/lib/api";
 import { normalizeApiError, ApiError } from "@/lib/restapi";
-import { parseSearchSyntax } from "@/lib/api/search-syntax";
 import { UserAvatar } from "@/components/UserAvatar";
 import { LoginPrompt } from "@/components/LoginPrompt";
 import { RepoSearchInput } from "@/components/RepoSearchInput";
@@ -43,8 +47,16 @@ export default function DiscussionsPage() {
 
   // URL query 驱动（官方风格）：category / state / sort / q
   const categorySlugUrl = searchParams.get("category") ?? "";
-  const state = searchParams.get("state") ?? "OPEN";
-  const sort = searchParams.get("sort") ?? "latest";
+  const stateRaw = searchParams.get("state");
+  const state: DiscussionStateFilter = (
+    ["OPEN", "CLOSED", "ANSWERED", "UNANSWERED"].includes(stateRaw ?? "")
+      ? stateRaw
+      : "OPEN"
+  ) as DiscussionStateFilter;
+  const sortRaw = searchParams.get("sort");
+  const sort: DiscussionSort = (
+    ["latest", "top", "newest"].includes(sortRaw ?? "") ? sortRaw : "latest"
+  ) as DiscussionSort;
   const q = searchParams.get("q") ?? "";
 
   const [data, setData] = useState<DiscussionsData | null>(null);
@@ -69,13 +81,6 @@ export default function DiscussionsPage() {
   // slug → id 映射（分类加载后解析）
   const categoryId =
     data?.categories.find((c) => categorySlug(c.name) === categorySlugUrl)?.id ?? null;
-  const order = SORT_OPTIONS.find((s) => s.value === sort)?.order;
-  // 搜索语法解析 → states（is:answered/unanswered 等；effect 与 loadMore 共用）
-  const states = useMemo(() => {
-    const parsed = parseSearchSyntax(q);
-    const stateIs = parsed.is.find((v) => ["open", "closed", "answered", "unanswered"].includes(v));
-    return stateIs ? [stateIs.toUpperCase()] : null;
-  }, [q]);
 
   useEffect(() => {
     if (!token) {
@@ -85,7 +90,7 @@ export default function DiscussionsPage() {
     let cancelled = false;
     setLoading(true);
     setError(null);
-    fetchDiscussionsSmart(owner!, repo!, token, categoryId, states, order ?? null, q || null)
+    fetchDiscussionsSmart(owner!, repo!, token, categoryId, state, sort, q || null)
       .then((d) => {
         if (cancelled) return;
         setData(d);
@@ -102,7 +107,7 @@ export default function DiscussionsPage() {
     return () => {
       cancelled = true;
     };
-  }, [owner, repo, token, categoryId, state, sort, order, q, states]);
+  }, [owner, repo, token, categoryId, state, sort, q]);
 
   /** 加载更多：游标续接追加讨论（仅列表模式；搜索模式 hasNextPage=false 不触发） */
   const loadMore = async () => {
@@ -114,8 +119,8 @@ export default function DiscussionsPage() {
         repo!,
         token,
         categoryId,
-        states,
-        order ?? null,
+        state,
+        sort,
         q || null,
         endCursor,
       );

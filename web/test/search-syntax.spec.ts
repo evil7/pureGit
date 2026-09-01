@@ -34,6 +34,7 @@ import {
   removeQualifier,
   toggleQualifier,
 } from "@/lib/api/search-syntax";
+import { buildDiscussionSearchQuery } from "@/lib/api/api-discussions";
 
 describe("parseSearchSyntax", () => {
   it("空串 → 空过滤器", () => {
@@ -146,6 +147,49 @@ describe("buildSearchQuery", () => {
     const q = buildSearchQuery('label:"good first issue"', { repo: "o/r" });
     expect(q).toContain('label:"good first issue"');
     expect(buildSearchQuery("label:bug", { repo: "o/r" })).toContain("label:bug");
+  });
+
+  it("discussion 搜索：GraphQL search(type: DISCUSSION) 端点下不得注入 type: qualifier", () => {
+    // 端点 type 参数已限定类型，query 内再带 type:discussion 会被 GitHub 拒绝/返回空 → 搜索失效。
+    // 必须复用 is: 状态词 + repo 限定，与其余 GraphQL 搜索（is:issue/is:pr）一致。
+    const q = buildDiscussionSearchQuery("owner", "repo", "react");
+    expect(q).not.toContain("type:discussion");
+    expect(q).toContain("react");
+    expect(q).toContain("is:open");
+    expect(q).toContain("repo:owner/repo");
+  });
+
+  it("discussion 搜索：状态词走 is:，不被默认 open 覆盖", () => {
+    const q = buildDiscussionSearchQuery("owner", "repo", "react is:answered");
+    expect(q).not.toContain("type:discussion");
+    expect(q).toContain("is:answered");
+    expect(q).not.toContain("is:open");
+  });
+
+  it("discussion 搜索：Filter 下拉状态 → is: 状态词（无搜索词也生效）", () => {
+    const answered = buildDiscussionSearchQuery("owner", "repo", "", { state: "ANSWERED" });
+    expect(answered).toContain("is:answered");
+    const closed = buildDiscussionSearchQuery("owner", "repo", "", { state: "CLOSED" });
+    expect(closed).toContain("is:closed");
+    expect(closed).not.toContain("is:open");
+  });
+
+  it("discussion 搜索：分类 → category: qualifier", () => {
+    const q = buildDiscussionSearchQuery("owner", "repo", "react", { category: "Announcements" });
+    expect(q).toContain('category:"Announcements"');
+  });
+
+  it("discussion 搜索：Sort 下拉 → sort: qualifier（raw 内显式 sort: 不重复注入）", () => {
+    const newest = buildDiscussionSearchQuery("owner", "repo", "react", { sort: "newest" });
+    expect(newest).toContain("sort:created");
+    const latest = buildDiscussionSearchQuery("owner", "repo", "react", { sort: "latest" });
+    expect(latest).toContain("sort:updated");
+    // raw 已带 sort:comments → 不重复注入下拉 sort
+    const explicit = buildDiscussionSearchQuery("owner", "repo", "react sort:comments", {
+      sort: "newest",
+    });
+    expect(explicit).toContain("sort:comments");
+    expect(explicit).not.toContain("sort:created");
   });
 
   it("全分段拼接顺序稳定：query → type → is → label → author → repo → in → ranges → sort", () => {
