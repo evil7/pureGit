@@ -12,6 +12,7 @@
  * ③ 修复 isFollowing 字段（user.viewerIsFollowing）与 pinned 降级丢失（fetchProfileSmart）。
  * 三轮（用户）：去概览 tab——只留 仓库/Star（用户）、仓库/成员（组织）；
  * Star 数量随主页查询一次拿到（starredRepositories.totalCount / REST Link 头）。
+ * 四轮（用户）：去 Watching（关注）tab——官方个人页无此 tab，关注列表不对外展示。
  *
  * API：GraphQL 首选 + REST 降级（见 api-org.ts）。
  * 权限差异（用户 4 问核实）：API 自动处置——user(login:)/organization(login:) 对他人只返回公开仓库，
@@ -33,7 +34,6 @@ import {
   UserPlus,
   UserCheck,
   Star,
-  Eye,
   FileCode2,
 } from "lucide-react";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
@@ -50,7 +50,6 @@ import {
   fetchProfileSmart,
   fetchProfileReposSmart,
   fetchUserStarsSmart,
-  fetchUserWatchedSmart,
   fetchOrgMembersSmart,
   isFollowingSmart,
   setFollowingSmart,
@@ -78,7 +77,7 @@ export function OrgProfileRedirect() {
   return <Navigate to={`/${org}`} replace />;
 }
 
-type ProfileTab = "repositories" | "stars" | "watching" | "activity" | "people";
+type ProfileTab = "repositories" | "stars" | "activity" | "people";
 
 /** 用户 Star 的仓库（Stars tab 懒加载数据） */
 interface StarsData {
@@ -95,7 +94,6 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
   const [tab, setTab] = useState<ProfileTab>("repositories");
   // Stars/People/Activity 懒加载（切换 tab 时拉取）
   const [stars, setStars] = useState<StarsData | null>(null);
-  const [watched, setWatched] = useState<import("@/lib/api").Repository[] | null>(null);
   const [people, setPeople] = useState<OrgMembersResult | null>(null);
   // Activity 公开活动流（用户页；分页 append + 游标续接）
   const [activity, setActivity] = useState<ReceivedEvent[] | null>(null);
@@ -154,11 +152,6 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
         ),
       });
       common.push({
-        value: "watching",
-        icon: Eye,
-        label: <>{t("profile.tabWatching")}</>,
-      });
-      common.push({
         value: "activity",
         icon: Activity,
         label: <>{t("profile.tabActivity")}</>,
@@ -187,7 +180,6 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
     setFollowingState(null);
     setTab("repositories");
     setStars(null);
-    setWatched(null);
     setPeople(null);
     setActivity(null);
     setActivityPage(1);
@@ -210,9 +202,6 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
           fetchUserStarsSmart(login, token)
             .then((s) => !cancelled && setStars(s))
             .catch(() => !cancelled && setStars({ totalCount: 0, repos: [] }));
-          fetchUserWatchedSmart(login, token)
-            .then((w) => !cancelled && setWatched(w))
-            .catch(() => !cancelled && setWatched([]));
           // 关注状态优先 GraphQL viewerIsFollowing；REST 降级（null）时单独查询
           if (res.data.viewerIsFollowing !== null) {
             setFollowingState(res.data.viewerIsFollowing);
@@ -478,33 +467,6 @@ function ProfileView({ login, token }: { login: string; token: string | null }) 
                   </Card>
                 );
               })()
-            ) : (
-              <div className="flex flex-col gap-3">
-                {Array.from({ length: 3 }).map((_, i) => (
-                  <Skeleton key={i} className="h-24 w-full" />
-                ))}
-              </div>
-            )}
-          </>
-        )}
-
-        {/* Watching（用户页）：Watching 的仓库列表（GraphQL 无适配 → REST-only；一次拉全，不分页） */}
-        {tab === "watching" && (
-          <>
-            {watched ? (
-              watched.length > 0 ? (
-                <div className="flex flex-col gap-3">
-                  {watched.map((r) => (
-                    <RepositoryCard key={r.full_name} repo={r} />
-                  ))}
-                </div>
-              ) : (
-                <Card>
-                  <CardContent className="p-6 text-sm text-muted-foreground">
-                    {t("profile.noWatched")}
-                  </CardContent>
-                </Card>
-              )
             ) : (
               <div className="flex flex-col gap-3">
                 {Array.from({ length: 3 }).map((_, i) => (
